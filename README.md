@@ -1,5 +1,10 @@
 # Rivus
 
+## Projects
+
+- [`gateway/`](./gateway) — Rust + Pingora data-plane gateway. Serves static sites from object storage; Cloudflare terminates TLS in front.
+- [`management/`](./management) — TypeScript management API. Owns deploys, config writes, replication to primary/secondary stores, and garbage collection.
+
 ## Contract: Atomic Deploys
 
 1. **Releases are immutable and content-addressed.** Each deploy creates `domains/<host>/releases/<sha>/...`. Once written, never modified.
