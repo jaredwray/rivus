@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod config;
+pub mod driver;
 pub mod error;
 pub mod gateway;
 pub mod handler;
@@ -8,6 +9,7 @@ pub mod storage;
 pub mod types;
 
 pub use cache::PointerCache;
+pub use driver::{OpsDriver, PingoraDriver};
 pub use config::{
     AppConfig, BackendSpec, CurrentJson, FailoverConfig, ListenerSpec, ListenersConfig,
     OperatorConfig, PointerCacheConfig, StorageConfig,

@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "default_index": "index.html",
+  "not_found_page": "404.html"
+}
