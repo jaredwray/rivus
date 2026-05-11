@@ -54,33 +54,40 @@ fn glob_to_regex(glob: &str) -> String {
 }
 
 /// Substitute `$1`, `$2`, … in `template` with the corresponding capture.
-/// Unknown indices are left as-is. Use `$$` to write a literal `$`.
+/// Digits after `$` are parsed greedily, so `$10` references capture 10 (not
+/// capture 1 followed by a literal `0`). Unknown indices are left as-is.
+/// Use `$$` to write a literal `$`.
 pub fn expand_template(template: &str, captures: &[&str]) -> String {
     let mut result = String::with_capacity(template.len());
     let mut chars = template.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '$' {
-            match chars.peek() {
-                Some('$') => {
+            if let Some(&next) = chars.peek() {
+                if next == '$' {
                     chars.next();
                     result.push('$');
                     continue;
                 }
-                Some(d) if d.is_ascii_digit() => {
-                    let d = *d;
-                    chars.next();
-                    let idx = d.to_digit(10).unwrap() as usize;
+                if next.is_ascii_digit() {
+                    let mut digits = String::new();
+                    while let Some(&d) = chars.peek() {
+                        if d.is_ascii_digit() {
+                            digits.push(d);
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    let idx: usize = digits.parse().unwrap_or(0);
                     if idx > 0 && idx <= captures.len() {
                         result.push_str(captures[idx - 1]);
-                        continue;
                     } else {
-                        // Unknown index: emit the original sequence.
+                        // Unknown index (or overflow): emit the original sequence.
                         result.push('$');
-                        result.push(d);
-                        continue;
+                        result.push_str(&digits);
                     }
+                    continue;
                 }
-                _ => {}
             }
         }
         result.push(c);
@@ -145,5 +152,21 @@ mod tests {
     #[test]
     fn expand_template_passes_through_unknown_index() {
         assert_eq!(expand_template("/x/$3", &["a"]), "/x/$3");
+    }
+
+    #[test]
+    fn expand_template_parses_multi_digit_indices() {
+        let caps: Vec<&str> = vec![
+            "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l",
+        ];
+        assert_eq!(expand_template("$10", &caps), "j");
+        assert_eq!(expand_template("$12", &caps), "l");
+        // boundary: $1 still works when 10+ captures exist
+        assert_eq!(expand_template("$1", &caps), "a");
+    }
+
+    #[test]
+    fn expand_template_unknown_multi_digit_passes_through() {
+        assert_eq!(expand_template("$99", &["only-one"]), "$99");
     }
 }
