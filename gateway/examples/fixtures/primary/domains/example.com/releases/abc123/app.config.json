@@ -1,5 +1,27 @@
 {
   "schema_version": 1,
   "default_index": "index.html",
-  "not_found_page": "404.html"
+  "not_found_page": "404.html",
+  "spa_fallback": false,
+  "redirects": [
+    { "from": "/old/*", "to": "/new/$1", "status": 301 }
+  ],
+  "rewrites": [
+    { "from": "/api/v1/*", "to": "/api-v1/$1" }
+  ],
+  "headers": [
+    {
+      "path": "/*",
+      "set": {
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff"
+      }
+    },
+    {
+      "path": "/assets/*",
+      "set": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      }
+    }
+  ]
 }

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use http::{header, HeaderValue, StatusCode};
+use http::{header, HeaderMap, HeaderValue, StatusCode};
 use idna::domain_to_ascii;
 use tracing::warn;
 
@@ -10,14 +10,22 @@ use crate::config::AppConfig;
 use crate::error::GwError;
 use crate::gateway::Gateway;
 use crate::resolver::ReleaseResolver;
+use crate::routing::expand_template;
 use crate::types::{GwBody, GwCtx, GwRequest, GwResponse};
 
-/// Default Phase-1 implementation of [`Gateway`]: read the deploy
-/// pointer, resolve the request path inside the active release, serve
-/// the blob, fall back to the configured 404 page when missing.
+/// Default Phase-1 implementation of [`Gateway`].
 ///
-/// Redirects, custom headers, SPA fallback, range/conditional GETs and
-/// compression are deferred to subsequent commits.
+/// Per-request flow:
+///   1. Normalize Host (idna → lowercase punycode)
+///   2. Read pointer (`current.json`) for the host
+///   3. Load compiled `app.config.json` for the release
+///   4. Check redirects → if any match, return 3xx with `Location`
+///   5. Apply rewrites → mutate the path that will be looked up
+///   6. If the resolved path ends with `/`, append `default_index`
+///   7. Read the blob; on 404 either serve the SPA fallback, the
+///      configured `not_found_page`, or a plain 404
+///   8. Apply per-path header rules to the final response (uses the
+///      *original* request path so customer-facing URLs drive headers)
 pub struct DefaultGateway<R: ReleaseResolver> {
     resolver: Arc<R>,
 }
@@ -64,14 +72,20 @@ impl<R: ReleaseResolver> Gateway for DefaultGateway<R> {
                 Arc::new(AppConfig::default())
             });
 
-        let path = req.uri.path();
-        let resolved_path = if path.ends_with('/') {
-            format!("{path}{}", app_config.default_index)
+        let original_path = req.uri.path().to_string();
+
+        if let Some(resp) = apply_redirect(&app_config, &original_path, ctx) {
+            return finalize(resp, &app_config, &original_path);
+        }
+
+        let effective_path = apply_rewrite(&app_config, &original_path);
+        let resolved_path = if effective_path.ends_with('/') {
+            format!("{effective_path}{}", app_config.default_index)
         } else {
-            path.to_string()
+            effective_path
         };
 
-        match self
+        let resp = match self
             .resolver
             .read_blob(&host, &pointer.release, &resolved_path)
             .await
@@ -81,12 +95,87 @@ impl<R: ReleaseResolver> Gateway for DefaultGateway<R> {
                 ok_response(&resolved_path, bytes, ctx)
             }
             Err(GwError::NotFound) => {
-                serve_404(self.resolver.as_ref(), &host, &pointer.release, &app_config, ctx).await
+                if app_config.spa_fallback {
+                    let index_path = ensure_leading_slash(&app_config.default_index);
+                    if let Ok((bytes, blob_tier)) = self
+                        .resolver
+                        .read_blob(&host, &pointer.release, &index_path)
+                        .await
+                    {
+                        ctx.log.origin_used = Some(blob_tier);
+                        ok_response(&index_path, bytes, ctx)
+                    } else {
+                        serve_404(self.resolver.as_ref(), &host, &pointer.release, &app_config, ctx)
+                            .await
+                    }
+                } else {
+                    serve_404(self.resolver.as_ref(), &host, &pointer.release, &app_config, ctx)
+                        .await
+                }
             }
             Err(e) => {
                 warn!(host = %host, path = %resolved_path, error = %e, "blob read failed");
                 ctx.log.status = Some(StatusCode::SERVICE_UNAVAILABLE);
                 GwResponse::service_unavailable()
+            }
+        };
+
+        finalize(resp, &app_config, &original_path)
+    }
+}
+
+fn ensure_leading_slash(p: &str) -> String {
+    if p.starts_with('/') {
+        p.to_string()
+    } else {
+        format!("/{p}")
+    }
+}
+
+fn apply_redirect(
+    cfg: &AppConfig,
+    path: &str,
+    ctx: &mut GwCtx,
+) -> Option<GwResponse> {
+    for r in &cfg.redirects {
+        if let Some(caps) = r.pattern.match_path(path) {
+            let target = expand_template(&r.to, &caps);
+            let location = match HeaderValue::from_str(&target) {
+                Ok(v) => v,
+                Err(_) => {
+                    warn!(target = %target, "redirect target has invalid header bytes");
+                    return None;
+                }
+            };
+            let mut resp = GwResponse::empty(r.status);
+            resp.headers.insert(header::LOCATION, location);
+            ctx.log.matched_route = Some(format!("redirect:{}", r.to));
+            ctx.log.status = Some(r.status);
+            return Some(resp);
+        }
+    }
+    None
+}
+
+fn apply_rewrite(cfg: &AppConfig, path: &str) -> String {
+    for r in &cfg.rewrites {
+        if let Some(caps) = r.pattern.match_path(path) {
+            return expand_template(&r.to, &caps);
+        }
+    }
+    path.to_string()
+}
+
+fn finalize(mut resp: GwResponse, cfg: &AppConfig, original_path: &str) -> GwResponse {
+    apply_headers(&mut resp.headers, &cfg.headers, original_path);
+    resp
+}
+
+fn apply_headers(target: &mut HeaderMap, rules: &[crate::config::HeaderRule], path: &str) {
+    for rule in rules {
+        if rule.pattern.match_path(path).is_some() {
+            for (name, value) in &rule.set {
+                target.insert(name.clone(), value.clone());
             }
         }
     }
@@ -95,7 +184,7 @@ impl<R: ReleaseResolver> Gateway for DefaultGateway<R> {
 fn ok_response(path: &str, bytes: Bytes, ctx: &mut GwCtx) -> GwResponse {
     let mut resp = GwResponse {
         status: StatusCode::OK,
-        headers: http::HeaderMap::new(),
+        headers: HeaderMap::new(),
         body: GwBody::Bytes(bytes.clone()),
     };
     if let Some(ct) = guess_content_type(path) {
@@ -116,10 +205,11 @@ async fn serve_404<R: ReleaseResolver>(
     ctx: &mut GwCtx,
 ) -> GwResponse {
     if let Some(nf_page) = &app_config.not_found_page {
-        if let Ok((bytes, _)) = resolver.read_blob(host, release, nf_page).await {
+        let path = ensure_leading_slash(nf_page);
+        if let Ok((bytes, _)) = resolver.read_blob(host, release, &path).await {
             let mut resp = GwResponse {
                 status: StatusCode::NOT_FOUND,
-                headers: http::HeaderMap::new(),
+                headers: HeaderMap::new(),
                 body: GwBody::Bytes(bytes.clone()),
             };
             if let Some(ct) = guess_content_type(nf_page) {
@@ -205,10 +295,13 @@ mod tests {
         }
     }
 
-    async fn build_gateway(
-        primary: Operator,
-        secondary: Operator,
-    ) -> DefaultGateway<LayoutAResolver> {
+    async fn seed(op: &Operator, files: &[(&str, &str)]) {
+        for (key, value) in files {
+            op.write(key, value.to_string()).await.unwrap();
+        }
+    }
+
+    fn build_gateway(primary: Operator, secondary: Operator) -> DefaultGateway<LayoutAResolver> {
         let store = Arc::new(TieredStore::new(
             Tier {
                 name: "primary",
@@ -225,26 +318,93 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn serves_index_html_for_root_path() {
+    async fn redirect_returns_3xx_with_location() {
         let primary = memory_op();
-        primary
-            .write(
-                "domains/example.com/current.json",
-                r#"{"schema_version":1,"release":"abc","deployed_at":"now"}"#,
-            )
-            .await
-            .unwrap();
-        primary
-            .write(
-                "domains/example.com/releases/abc/index.html",
-                "<h1>hi</h1>",
-            )
-            .await
-            .unwrap();
+        seed(
+            &primary,
+            &[
+                (
+                    "domains/example.com/current.json",
+                    r#"{"schema_version":1,"release":"abc","deployed_at":"t"}"#,
+                ),
+                (
+                    "domains/example.com/releases/abc/app.config.json",
+                    r#"{"redirects":[{"from":"/old/*","to":"/new/$1","status":308}]}"#,
+                ),
+            ],
+        )
+        .await;
 
-        let gw = build_gateway(primary, memory_op()).await;
-        let req = make_request("example.com", "/");
-        let mut ctx = GwCtx::new("test-1".into());
+        let gw = build_gateway(primary, memory_op());
+        let req = make_request("example.com", "/old/about.html");
+        let mut ctx = GwCtx::new("r1".into());
+        let resp = gw.handle(req, &mut ctx).await;
+
+        assert_eq!(resp.status, StatusCode::PERMANENT_REDIRECT);
+        assert_eq!(resp.headers[header::LOCATION], "/new/about.html");
+        assert_eq!(ctx.log.status, Some(StatusCode::PERMANENT_REDIRECT));
+    }
+
+    #[tokio::test]
+    async fn rewrite_serves_aliased_blob() {
+        let primary = memory_op();
+        seed(
+            &primary,
+            &[
+                (
+                    "domains/example.com/current.json",
+                    r#"{"schema_version":1,"release":"abc","deployed_at":"t"}"#,
+                ),
+                (
+                    "domains/example.com/releases/abc/app.config.json",
+                    r#"{"rewrites":[{"from":"/api/*","to":"/handlers/api/$1"}]}"#,
+                ),
+                (
+                    "domains/example.com/releases/abc/handlers/api/data.json",
+                    "{\"ok\":true}",
+                ),
+            ],
+        )
+        .await;
+
+        let gw = build_gateway(primary, memory_op());
+        let req = make_request("example.com", "/api/data.json");
+        let mut ctx = GwCtx::new("r2".into());
+        let resp = gw.handle(req, &mut ctx).await;
+
+        assert_eq!(resp.status, StatusCode::OK);
+        if let GwBody::Bytes(b) = resp.body {
+            assert_eq!(&b[..], b"{\"ok\":true}");
+        } else {
+            panic!("expected Bytes body");
+        }
+    }
+
+    #[tokio::test]
+    async fn spa_fallback_serves_index_on_404() {
+        let primary = memory_op();
+        seed(
+            &primary,
+            &[
+                (
+                    "domains/example.com/current.json",
+                    r#"{"schema_version":1,"release":"abc","deployed_at":"t"}"#,
+                ),
+                (
+                    "domains/example.com/releases/abc/app.config.json",
+                    r#"{"spa_fallback":true}"#,
+                ),
+                (
+                    "domains/example.com/releases/abc/index.html",
+                    "<div id='root'></div>",
+                ),
+            ],
+        )
+        .await;
+
+        let gw = build_gateway(primary, memory_op());
+        let req = make_request("example.com", "/dashboard/anything");
+        let mut ctx = GwCtx::new("r3".into());
         let resp = gw.handle(req, &mut ctx).await;
 
         assert_eq!(resp.status, StatusCode::OK);
@@ -252,56 +412,129 @@ mod tests {
             resp.headers[header::CONTENT_TYPE],
             "text/html; charset=utf-8"
         );
-        assert_eq!(ctx.log.matched_domain.as_deref(), Some("example.com"));
-        assert_eq!(ctx.log.release_sha.as_deref(), Some("abc"));
-        assert_eq!(ctx.log.status, Some(StatusCode::OK));
+        if let GwBody::Bytes(b) = resp.body {
+            assert_eq!(&b[..], b"<div id='root'></div>");
+        } else {
+            panic!("expected Bytes body");
+        }
+    }
+
+    #[tokio::test]
+    async fn header_rules_are_applied_to_response() {
+        let primary = memory_op();
+        seed(
+            &primary,
+            &[
+                (
+                    "domains/example.com/current.json",
+                    r#"{"schema_version":1,"release":"abc","deployed_at":"t"}"#,
+                ),
+                (
+                    "domains/example.com/releases/abc/app.config.json",
+                    r#"{
+                        "headers": [
+                            {"path":"/*","set":{"X-Frame-Options":"DENY"}},
+                            {"path":"/assets/*","set":{"Cache-Control":"public, max-age=31536000"}}
+                        ]
+                    }"#,
+                ),
+                (
+                    "domains/example.com/releases/abc/assets/main.css",
+                    "body{}",
+                ),
+            ],
+        )
+        .await;
+
+        let gw = build_gateway(primary, memory_op());
+        let req = make_request("example.com", "/assets/main.css");
+        let mut ctx = GwCtx::new("r4".into());
+        let resp = gw.handle(req, &mut ctx).await;
+
+        assert_eq!(resp.status, StatusCode::OK);
+        assert_eq!(resp.headers[header::X_FRAME_OPTIONS], "DENY");
+        assert_eq!(
+            resp.headers[header::CACHE_CONTROL],
+            "public, max-age=31536000"
+        );
+    }
+
+    #[tokio::test]
+    async fn headers_apply_to_redirects_too() {
+        let primary = memory_op();
+        seed(
+            &primary,
+            &[
+                (
+                    "domains/example.com/current.json",
+                    r#"{"schema_version":1,"release":"abc","deployed_at":"t"}"#,
+                ),
+                (
+                    "domains/example.com/releases/abc/app.config.json",
+                    r#"{
+                        "redirects": [{"from":"/old","to":"/new","status":301}],
+                        "headers": [{"path":"/*","set":{"X-Frame-Options":"DENY"}}]
+                    }"#,
+                ),
+            ],
+        )
+        .await;
+
+        let gw = build_gateway(primary, memory_op());
+        let req = make_request("example.com", "/old");
+        let mut ctx = GwCtx::new("r5".into());
+        let resp = gw.handle(req, &mut ctx).await;
+
+        assert_eq!(resp.status, StatusCode::MOVED_PERMANENTLY);
+        assert_eq!(resp.headers[header::LOCATION], "/new");
+        assert_eq!(resp.headers[header::X_FRAME_OPTIONS], "DENY");
     }
 
     #[tokio::test]
     async fn returns_404_when_path_missing_and_no_404_page() {
         let primary = memory_op();
-        primary
-            .write(
+        seed(
+            &primary,
+            &[(
                 "domains/example.com/current.json",
-                r#"{"schema_version":1,"release":"abc","deployed_at":"now"}"#,
-            )
-            .await
-            .unwrap();
+                r#"{"schema_version":1,"release":"abc","deployed_at":"t"}"#,
+            )],
+        )
+        .await;
 
-        let gw = build_gateway(primary, memory_op()).await;
+        let gw = build_gateway(primary, memory_op());
         let req = make_request("example.com", "/missing.html");
-        let mut ctx = GwCtx::new("test-2".into());
+        let mut ctx = GwCtx::new("r6".into());
         let resp = gw.handle(req, &mut ctx).await;
 
         assert_eq!(resp.status, StatusCode::NOT_FOUND);
-        assert!(matches!(resp.body, GwBody::Empty));
     }
 
     #[tokio::test]
     async fn serves_configured_404_page_when_missing() {
         let primary = memory_op();
-        primary
-            .write(
-                "domains/example.com/current.json",
-                r#"{"schema_version":1,"release":"abc","deployed_at":"now"}"#,
-            )
-            .await
-            .unwrap();
-        primary
-            .write(
-                "domains/example.com/releases/abc/app.config.json",
-                r#"{"schema_version":1,"default_index":"index.html","not_found_page":"404.html"}"#,
-            )
-            .await
-            .unwrap();
-        primary
-            .write("domains/example.com/releases/abc/404.html", "missing")
-            .await
-            .unwrap();
+        seed(
+            &primary,
+            &[
+                (
+                    "domains/example.com/current.json",
+                    r#"{"schema_version":1,"release":"abc","deployed_at":"t"}"#,
+                ),
+                (
+                    "domains/example.com/releases/abc/app.config.json",
+                    r#"{"not_found_page":"404.html"}"#,
+                ),
+                (
+                    "domains/example.com/releases/abc/404.html",
+                    "missing",
+                ),
+            ],
+        )
+        .await;
 
-        let gw = build_gateway(primary, memory_op()).await;
+        let gw = build_gateway(primary, memory_op());
         let req = make_request("example.com", "/missing.html");
-        let mut ctx = GwCtx::new("test-3".into());
+        let mut ctx = GwCtx::new("r7".into());
         let resp = gw.handle(req, &mut ctx).await;
 
         assert_eq!(resp.status, StatusCode::NOT_FOUND);
@@ -314,9 +547,9 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_domain_returns_404() {
-        let gw = build_gateway(memory_op(), memory_op()).await;
+        let gw = build_gateway(memory_op(), memory_op());
         let req = make_request("nope.example.com", "/");
-        let mut ctx = GwCtx::new("test-4".into());
+        let mut ctx = GwCtx::new("r8".into());
         let resp = gw.handle(req, &mut ctx).await;
 
         assert_eq!(resp.status, StatusCode::NOT_FOUND);

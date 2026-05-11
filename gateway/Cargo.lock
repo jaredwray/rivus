@@ -2384,6 +2384,7 @@ dependencies = [
  "opendal",
  "pingora",
  "pingora-proxy",
+ "regex",
  "serde",
  "serde_json",
  "tempfile",

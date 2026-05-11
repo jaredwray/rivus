@@ -5,14 +5,15 @@ pub mod error;
 pub mod gateway;
 pub mod handler;
 pub mod resolver;
+pub mod routing;
 pub mod storage;
 pub mod types;
 
 pub use cache::PointerCache;
 pub use driver::{OpsDriver, PingoraDriver};
 pub use config::{
-    AppConfig, BackendSpec, CurrentJson, FailoverConfig, ListenerSpec, ListenersConfig,
-    OperatorConfig, PointerCacheConfig, StorageConfig,
+    AppConfig, BackendSpec, CurrentJson, FailoverConfig, HeaderRule, ListenerSpec, ListenersConfig,
+    OperatorConfig, PointerCacheConfig, Redirect, Rewrite, StorageConfig,
 };
 pub use error::GwError;
 pub use gateway::Gateway;

@@ -97,11 +97,7 @@ impl ReleaseResolver for LayoutAResolver {
         }
         let key = Self::app_config_key(host, release);
         let cfg = match self.store.get_with_tier(&key).await {
-            Ok((raw, _)) => {
-                let parsed: AppConfig = serde_json::from_slice(&raw)
-                    .map_err(|e| GwError::Storage(format!("app.config.json parse: {e}")))?;
-                Arc::new(parsed)
-            }
+            Ok((raw, _)) => Arc::new(AppConfig::from_json(&raw)?),
             // Missing app.config.json is allowed — fall back to defaults.
             Err(GwError::NotFound) => Arc::new(AppConfig::default()),
             Err(e) => return Err(e),
