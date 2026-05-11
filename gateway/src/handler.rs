@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -72,15 +73,15 @@ impl<R: ReleaseResolver> Gateway for DefaultGateway<R> {
                 Arc::new(AppConfig::default())
             });
 
-        let original_path = req.uri.path().to_string();
+        let original_path = req.uri.path();
 
-        if let Some(resp) = apply_redirect(&app_config, &original_path, ctx) {
-            return finalize(resp, &app_config, &original_path);
+        if let Some(resp) = apply_redirect(&app_config, original_path, ctx) {
+            return finalize(resp, &app_config, original_path);
         }
 
-        let effective_path = apply_rewrite(&app_config, &original_path);
-        let resolved_path = if effective_path.ends_with('/') {
-            format!("{effective_path}{}", app_config.default_index)
+        let effective_path = apply_rewrite(&app_config, original_path);
+        let resolved_path: Cow<'_, str> = if effective_path.ends_with('/') {
+            Cow::Owned(format!("{effective_path}{}", app_config.default_index))
         } else {
             effective_path
         };
@@ -114,13 +115,13 @@ impl<R: ReleaseResolver> Gateway for DefaultGateway<R> {
                 }
             }
             Err(e) => {
-                warn!(host = %host, path = %resolved_path, error = %e, "blob read failed");
+                warn!(host = %host, path = %&*resolved_path, error = %e, "blob read failed");
                 ctx.log.status = Some(StatusCode::SERVICE_UNAVAILABLE);
                 GwResponse::service_unavailable()
             }
         };
 
-        finalize(resp, &app_config, &original_path)
+        finalize(resp, &app_config, original_path)
     }
 }
 
@@ -157,13 +158,13 @@ fn apply_redirect(
     None
 }
 
-fn apply_rewrite(cfg: &AppConfig, path: &str) -> String {
+fn apply_rewrite<'a>(cfg: &AppConfig, path: &'a str) -> Cow<'a, str> {
     for r in &cfg.rewrites {
         if let Some(caps) = r.pattern.match_path(path) {
-            return expand_template(&r.to, &caps);
+            return Cow::Owned(expand_template(&r.to, &caps));
         }
     }
-    path.to_string()
+    Cow::Borrowed(path)
 }
 
 fn finalize(mut resp: GwResponse, cfg: &AppConfig, original_path: &str) -> GwResponse {
