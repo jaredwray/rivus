@@ -1,0 +1,32 @@
+[package]
+name = "rivus-gateway"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Rivus application gateway: serves static sites from object storage with primary/secondary failover"
+repository = "https://github.com/jaredwray/rivus"
+publish = false
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+bytes = "1"
+futures = "0.3"
+http = "1"
+idna = "1"
+moka = { version = "0.12", features = ["future"] }
+opendal = { version = "0.51", default-features = false, features = ["services-fs", "services-memory", "services-s3", "services-gcs", "services-azblob"] }
+pingora = "0.8"
+pingora-proxy = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["sync", "time", "macros", "rt-multi-thread"] }
+tracing = "0.1"
+tracing-log = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
