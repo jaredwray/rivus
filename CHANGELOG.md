@@ -17,5 +17,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `@rivus/docs` — Docula documentation site (docs, changelog, and API reference).
 - `@rivus/app` — Expo (iOS, Android, Web) client application.
 - Toolchain: pnpm, Vitest (+ v8 coverage), Biome, tsdown, `@faker-js/faker`.
-- Supply-chain hardening, CodeQL, dependency review, and SHA-pinned CI workflows.
+- Supply-chain hardening, CodeQL, and SHA-pinned CI workflows.
 - `docker-compose` for local MongoDB.

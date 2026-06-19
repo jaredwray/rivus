@@ -84,7 +84,8 @@ playbooks:
 - Dependency install scripts are denied by default (`onlyBuiltDependencies`).
 - CI installs with `--frozen-lockfile`, defaults to `permissions: contents: read`,
   and pins every GitHub Action to a full commit SHA.
-- CodeQL, dependency review, and a CODEOWNERS-gated review run on every PR.
+- CodeQL and a CODEOWNERS-gated review run on every PR; Socket Security scans
+  dependencies on the repository.
 
 ## Contributing
 

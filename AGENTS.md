@@ -86,4 +86,4 @@ Tests are an inventory of failure modes, not a coverage ritual.
 - Conventional commits (`feat(api): …`, `fix(worker): …`, `chore: …`).
 - GitHub Actions are pinned to full commit SHAs and default to
   `permissions: contents: read`. CI runs lint, type-check, test (with coverage),
-  and build on Node 22 and 24, plus CodeQL and dependency review.
+  and build on Node 22 and 24, plus CodeQL.
