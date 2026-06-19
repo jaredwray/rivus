@@ -33,6 +33,6 @@ describe('worker handler', () => {
 		);
 		await Promise.all(pending);
 
-		expect(fetch).toHaveBeenCalledWith('https://api.test/health');
+		expect(fetch).toHaveBeenCalledWith('https://api.test/health', expect.anything());
 	});
 });

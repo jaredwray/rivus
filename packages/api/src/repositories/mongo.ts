@@ -81,6 +81,9 @@ export class MongoItemRepository implements ItemRepository {
 	}
 
 	async list(options: ListItemsOptions): Promise<{ items: Item[]; total: number }> {
+		if (!Types.ObjectId.isValid(options.ownerId)) {
+			return { items: [], total: 0 };
+		}
 		const { pageSize } = normalizePagination(options.page, options.pageSize);
 		const skip = pageToSkip(options.page, options.pageSize);
 		const filter = { ownerId: new Types.ObjectId(options.ownerId) };
@@ -92,7 +95,7 @@ export class MongoItemRepository implements ItemRepository {
 	}
 
 	async findById(ownerId: UserId, id: ItemId): Promise<Item | null> {
-		if (!Types.ObjectId.isValid(id)) {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(ownerId)) {
 			return null;
 		}
 		const doc = await ItemModel.findOne({
@@ -103,7 +106,7 @@ export class MongoItemRepository implements ItemRepository {
 	}
 
 	async update(ownerId: UserId, id: ItemId, input: UpdateItemInput): Promise<Item | null> {
-		if (!Types.ObjectId.isValid(id)) {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(ownerId)) {
 			return null;
 		}
 		const doc = await ItemModel.findOneAndUpdate(
@@ -115,7 +118,7 @@ export class MongoItemRepository implements ItemRepository {
 	}
 
 	async delete(ownerId: UserId, id: ItemId): Promise<boolean> {
-		if (!Types.ObjectId.isValid(id)) {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(ownerId)) {
 			return false;
 		}
 		const result = await ItemModel.deleteOne({

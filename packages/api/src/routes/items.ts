@@ -8,6 +8,7 @@ import {
 } from '@rivus/core';
 import type { FastifyPluginAsync } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
+import { z } from 'zod';
 import {
 	errorResponseSchema,
 	idParamsSchema,
@@ -116,6 +117,11 @@ export const itemRoutes: FastifyPluginAsync = async (fastify) => {
 				summary: 'Delete one of your items',
 				security: [{ bearerAuth: [] }],
 				params: idParamsSchema,
+				response: {
+					204: z.null(),
+					401: errorResponseSchema,
+					404: errorResponseSchema,
+				},
 			},
 		},
 		async (request, reply) => {
@@ -123,7 +129,7 @@ export const itemRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!deleted) {
 				throw app.httpErrors.notFound('Item not found');
 			}
-			return reply.code(204).send();
+			return reply.code(204).send(null);
 		},
 	);
 };

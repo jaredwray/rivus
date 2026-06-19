@@ -17,7 +17,7 @@ describe('tasks', () => {
 
 		expect(result).toMatchObject({ task: 'healthcheck', ok: true });
 		expect(result.detail).toContain('200');
-		expect(fetch).toHaveBeenCalledWith('https://api.test/health');
+		expect(fetch).toHaveBeenCalledWith('https://api.test/health', expect.anything());
 	});
 
 	it('healthcheck reports not-ok on a 500', async () => {

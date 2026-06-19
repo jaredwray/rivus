@@ -25,7 +25,6 @@
 		"@fastify/swagger": "^9.7.0",
 		"@fastify/swagger-ui": "^6.0.0",
 		"@rivus/core": "workspace:*",
-		"bcryptjs": "^3.0.3",
 		"close-with-grace": "^2.5.0",
 		"fastify": "^5.8.5",
 		"fastify-plugin": "^6.0.0",

@@ -1,9 +1,13 @@
 import type { TaskContext, TaskHandler, TaskResult } from './types';
 
+const HEALTHCHECK_TIMEOUT_MS = 5000;
+
 /** Ping the Rivus API health endpoint and report whether it is reachable. */
 const healthcheck: TaskHandler = async ({ env, fetch }) => {
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), HEALTHCHECK_TIMEOUT_MS);
 	try {
-		const response = await fetch(`${env.API_BASE_URL}/health`);
+		const response = await fetch(`${env.API_BASE_URL}/health`, { signal: controller.signal });
 		return {
 			task: 'healthcheck',
 			ok: response.ok,
@@ -15,6 +19,8 @@ const healthcheck: TaskHandler = async ({ env, fetch }) => {
 			ok: false,
 			detail: error instanceof Error ? error.message : 'request failed',
 		};
+	} finally {
+		clearTimeout(timeout);
 	}
 };
 
