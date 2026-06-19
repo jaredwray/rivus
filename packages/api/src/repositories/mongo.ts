@@ -10,6 +10,7 @@ import {
 import { type HydratedDocument, Types } from 'mongoose';
 import { type ItemDocument, ItemModel } from '../db/models/item.model';
 import { type UserDocument, UserModel } from '../db/models/user.model';
+import { ConflictError } from './errors';
 import type {
 	ItemRepository,
 	ListItemsOptions,
@@ -17,6 +18,11 @@ import type {
 	StoredUser,
 	UserRepository,
 } from './types';
+
+/** MongoServerError code 11000 = duplicate key (unique index violation). */
+function isDuplicateKeyError(error: unknown): boolean {
+	return typeof error === 'object' && error !== null && (error as { code?: number }).code === 11000;
+}
 
 function mapUser(doc: HydratedDocument<UserDocument>): StoredUser {
 	return {
@@ -43,8 +49,15 @@ function mapItem(doc: HydratedDocument<ItemDocument>): Item {
 
 export class MongoUserRepository implements UserRepository {
 	async create(input: NewUser): Promise<StoredUser> {
-		const doc = await UserModel.create(input);
-		return mapUser(doc);
+		try {
+			const doc = await UserModel.create(input);
+			return mapUser(doc);
+		} catch (error) {
+			if (isDuplicateKeyError(error)) {
+				throw new ConflictError('email', 'An account with this email already exists');
+			}
+			throw error;
+		}
 	}
 
 	async findByEmail(email: string): Promise<StoredUser | null> {

@@ -6,6 +6,8 @@
 	"observability": {
 		"enabled": true
 	},
+	// Dev default — override per-environment (e.g. an `env.production` block) or
+	// at deploy time so scheduled tasks target the real API rather than localhost.
 	"vars": {
 		"API_BASE_URL": "http://localhost:4000"
 	},

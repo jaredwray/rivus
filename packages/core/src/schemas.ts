@@ -43,7 +43,7 @@ export const updateItemSchema = z
 		description: z.string().trim().max(2000).optional(),
 		status: itemStatusSchema.optional(),
 	})
-	.refine((value) => Object.keys(value).length > 0, {
+	.refine((value) => Object.values(value).some((field) => field !== undefined), {
 		message: 'At least one field must be provided',
 	});
 export type UpdateItemInput = z.infer<typeof updateItemSchema>;

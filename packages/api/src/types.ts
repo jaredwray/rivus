@@ -7,6 +7,8 @@ export interface AppDeps {
 	config: Config;
 	users: UserRepository;
 	items: ItemRepository;
+	/** Readiness check for downstream dependencies (e.g. the database). */
+	ping: () => Promise<boolean>;
 }
 
 declare module 'fastify' {

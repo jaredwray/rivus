@@ -1,7 +1,7 @@
 import closeWithGrace from 'close-with-grace';
 import { buildApp } from './app';
 import { loadConfig } from './config';
-import { connectMongoose, disconnectMongoose } from './db/mongoose';
+import { connectMongoose, disconnectMongoose, isMongoConnected } from './db/mongoose';
 import { MongoItemRepository, MongoUserRepository } from './repositories/mongo';
 
 /** Connect to Mongo, build the app with Mongo-backed repositories, and listen. */
@@ -13,6 +13,7 @@ export async function start(): Promise<void> {
 		config,
 		users: new MongoUserRepository(),
 		items: new MongoItemRepository(),
+		ping: async () => isMongoConnected(),
 	});
 
 	await app.ready();

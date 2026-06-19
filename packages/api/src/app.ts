@@ -9,6 +9,7 @@ import {
 } from 'fastify-type-provider-zod';
 import authPlugin from './plugins/auth';
 import swaggerPlugin from './plugins/swagger';
+import { ConflictError } from './repositories/errors';
 import { authRoutes } from './routes/auth';
 import { healthRoutes } from './routes/health';
 import { itemRoutes } from './routes/items';
@@ -44,6 +45,14 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 				message: 'Request validation failed',
 				statusCode: 400,
 				details: error.validation,
+			});
+		}
+
+		if (error instanceof ConflictError) {
+			return reply.status(409).send({
+				error: 'Conflict',
+				message: error.message,
+				statusCode: 409,
 			});
 		}
 

@@ -65,3 +65,7 @@ export const healthResponseSchema = z.object({
 	uptime: z.number(),
 	timestamp: z.string(),
 });
+
+export const readyResponseSchema = z.object({
+	status: z.literal('ready'),
+});

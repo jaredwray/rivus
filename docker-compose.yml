@@ -30,7 +30,9 @@ services:
       retries: 12
       start_period: 20s
 
-  # Lightweight web UI for inspecting the database during development.
+  # Lightweight web UI for inspecting the database. Local development only — the
+  # admin/admin basic-auth credentials below must never be used in any exposed
+  # environment.
   mongo-express:
     image: mongo-express:1.0.2
     container_name: rivus-mongo-express

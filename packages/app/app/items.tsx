@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Item } from '@/src/api/client';
@@ -21,26 +21,41 @@ export default function ItemsScreen() {
 	const insets = useSafeAreaInsets();
 	const [state, setState] = useState<LoadState>({ kind: 'loading' });
 	const [refreshing, setRefreshing] = useState(false);
+	// Ignore a late response after unmount or once superseded.
+	const activeRef = useRef(true);
+
+	useEffect(() => {
+		activeRef.current = true;
+		return () => {
+			activeRef.current = false;
+		};
+	}, []);
 
 	const load = useCallback(async () => {
 		const token = getDemoToken();
 		if (token.length === 0) {
-			setState({
-				kind: 'error',
-				message: 'Sign in required. Set EXPO_PUBLIC_DEMO_TOKEN to preview real items.',
-			});
+			if (activeRef.current) {
+				setState({
+					kind: 'error',
+					message: 'Sign in required. Set EXPO_PUBLIC_DEMO_TOKEN to preview real items.',
+				});
+			}
 			return;
 		}
 
 		try {
 			const client = createApiClient(getApiBaseUrl());
 			const { data } = await client.listItems(token);
-			setState({ kind: 'ready', items: data });
+			if (activeRef.current) {
+				setState({ kind: 'ready', items: data });
+			}
 		} catch (error) {
-			setState({
-				kind: 'error',
-				message: error instanceof Error ? error.message : 'Failed to load items.',
-			});
+			if (activeRef.current) {
+				setState({
+					kind: 'error',
+					message: error instanceof Error ? error.message : 'Failed to load items.',
+				});
+			}
 		}
 	}, []);
 
@@ -51,7 +66,9 @@ export default function ItemsScreen() {
 	const onRefresh = useCallback(async () => {
 		setRefreshing(true);
 		await load();
-		setRefreshing(false);
+		if (activeRef.current) {
+			setRefreshing(false);
+		}
 	}, [load]);
 
 	if (state.kind === 'loading') {

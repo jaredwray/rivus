@@ -3,8 +3,9 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
 import { InMemoryItemRepository, InMemoryUserRepository } from '../src/repositories/memory';
+import type { AppDeps } from '../src/types';
 
-export async function buildTestApp(): Promise<FastifyInstance> {
+export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<FastifyInstance> {
 	const config = loadConfig({
 		NODE_ENV: 'test',
 		JWT_SECRET: 'test-secret-value-1234',
@@ -13,6 +14,8 @@ export async function buildTestApp(): Promise<FastifyInstance> {
 		config,
 		users: new InMemoryUserRepository(),
 		items: new InMemoryItemRepository(),
+		ping: async () => true,
+		...overrides,
 	});
 	await app.ready();
 	return app;

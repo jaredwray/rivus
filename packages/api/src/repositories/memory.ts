@@ -8,6 +8,7 @@ import {
 	type UpdateItemInput,
 	type UserId,
 } from '@rivus/core';
+import { ConflictError } from './errors';
 import type {
 	ItemRepository,
 	ListItemsOptions,
@@ -23,10 +24,16 @@ export class InMemoryUserRepository implements UserRepository {
 	private readonly byId = new Map<string, StoredUser>();
 
 	async create(input: NewUser): Promise<StoredUser> {
+		const email = input.email.trim().toLowerCase();
+		for (const existing of this.byId.values()) {
+			if (existing.email === email) {
+				throw new ConflictError('email', 'An account with this email already exists');
+			}
+		}
 		const timestamp = now();
 		const user: StoredUser = {
 			id: randomUUID() as UserId,
-			email: input.email,
+			email,
 			name: input.name,
 			passwordHash: input.passwordHash,
 			createdAt: timestamp,

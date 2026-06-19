@@ -15,6 +15,7 @@ async function main(): Promise<void> {
 		config,
 		users: new InMemoryUserRepository(),
 		items: new InMemoryItemRepository(),
+		ping: async () => true,
 	});
 
 	await app.ready();

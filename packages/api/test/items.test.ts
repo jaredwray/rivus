@@ -162,4 +162,33 @@ describe('items', () => {
 
 		expect(response.statusCode).toBe(404);
 	});
+
+	it('does not let another owner update an item', async () => {
+		const created = await createItem('private');
+		const id = created.json().id;
+		const otherToken = (await registerUser(app)).token;
+
+		const response = await app.inject({
+			method: 'PATCH',
+			url: `/v1/items/${id}`,
+			headers: authHeader(otherToken),
+			payload: { name: 'hijacked' },
+		});
+
+		expect(response.statusCode).toBe(404);
+	});
+
+	it('does not let another owner delete an item', async () => {
+		const created = await createItem('private');
+		const id = created.json().id;
+		const otherToken = (await registerUser(app)).token;
+
+		const response = await app.inject({
+			method: 'DELETE',
+			url: `/v1/items/${id}`,
+			headers: authHeader(otherToken),
+		});
+
+		expect(response.statusCode).toBe(404);
+	});
 });

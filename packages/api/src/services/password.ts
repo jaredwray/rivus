@@ -9,3 +9,14 @@ export function hashPassword(plain: string): Promise<string> {
 export function verifyPassword(plain: string, hash: string): Promise<boolean> {
 	return bcrypt.compare(plain, hash);
 }
+
+let cachedDummyHash: Promise<string> | undefined;
+
+/**
+ * A throwaway hash to compare against when an account is not found, so login
+ * timing does not reveal whether an email exists. Computed once, lazily.
+ */
+export function dummyPasswordHash(): Promise<string> {
+	cachedDummyHash ??= hashPassword('rivus-timing-equalizer');
+	return cachedDummyHash;
+}

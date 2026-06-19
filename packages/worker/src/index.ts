@@ -1,6 +1,6 @@
 import { handleRequest } from './router';
 import { runTask, scheduledTaskNames } from './tasks';
-import type { Env } from './types';
+import type { Env, TaskContext } from './types';
 
 export default {
 	fetch(request: Request, env: Env): Promise<Response> {
@@ -8,7 +8,7 @@ export default {
 	},
 
 	scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): void {
-		const context = { env, fetch };
+		const context: TaskContext = { env, fetch };
 		ctx.waitUntil(Promise.all(scheduledTaskNames.map((name) => runTask(name, context))));
 	},
 } satisfies ExportedHandler<Env>;

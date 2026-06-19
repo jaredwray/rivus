@@ -3,7 +3,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { authResponseSchema, errorResponseSchema, userResponseSchema } from '../http-schemas';
 import { toPublicUser } from '../presenters';
-import { hashPassword, verifyPassword } from '../services/password';
+import { dummyPasswordHash, hashPassword, verifyPassword } from '../services/password';
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
@@ -25,9 +25,8 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 		},
 		async (request, reply) => {
 			const { email, password, name } = request.body;
-			if (await users.findByEmail(email)) {
-				throw app.httpErrors.conflict('An account with this email already exists');
-			}
+			// The repository enforces email uniqueness atomically and throws a
+			// ConflictError (mapped to 409) — no check-then-act race.
 			const passwordHash = await hashPassword(password);
 			const user = await users.create({ email, name, passwordHash });
 			const token = await reply.jwtSign({ sub: user.id, email: user.email });
@@ -48,7 +47,13 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 		async (request, reply) => {
 			const { email, password } = request.body;
 			const user = await users.findByEmail(email);
-			if (!user || !(await verifyPassword(password, user.passwordHash))) {
+			if (!user) {
+				// Compare against a dummy hash so a missing account is not measurably
+				// faster than a wrong password (avoids timing-based user enumeration).
+				await verifyPassword(password, await dummyPasswordHash());
+				throw app.httpErrors.unauthorized('Invalid email or password');
+			}
+			if (!(await verifyPassword(password, user.passwordHash))) {
 				throw app.httpErrors.unauthorized('Invalid email or password');
 			}
 			const token = await reply.jwtSign({ sub: user.id, email: user.email });
