@@ -1,0 +1,4 @@
+# Code owners — required review on every change, including CI workflows,
+# manifests, lockfiles, and release/security policy.
+# See agentic/defense-in-depth-nodejs.md §5.
+*       @jaredwray

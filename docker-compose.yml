@@ -1,0 +1,51 @@
+# Local development services for Rivus.
+#
+#   pnpm services:up      # start MongoDB (+ UI) in the background
+#   pnpm services:down    # stop them
+#
+# MongoDB runs as a single-node replica set so it behaves like MongoDB Atlas
+# (transactions, change streams). The Cloudflare Worker runs locally through
+# `wrangler dev` (workerd) from the @rivus/worker package — see its README.
+services:
+  mongo:
+    image: mongo:7
+    container_name: rivus-mongo
+    restart: unless-stopped
+    command: ['--replSet', 'rs0', '--bind_ip_all']
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # Initialize the replica set on first healthy check; no-op afterwards.
+      test: >
+        mongosh --quiet --eval "
+          try { rs.status().ok }
+          catch (e) {
+            rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] })
+          }
+        "
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  # Lightweight web UI for inspecting the database. Local development only — the
+  # admin/admin basic-auth credentials below must never be used in any exposed
+  # environment.
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: rivus-mongo-express
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - '8081:8081'
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongo:27017/?replicaSet=rs0
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin
+
+volumes:
+  mongo-data:

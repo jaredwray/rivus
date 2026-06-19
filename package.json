@@ -1,0 +1,37 @@
+{
+	"name": "rivus",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"description": "Rivus — a modern product platform monorepo (api, website, worker, docs, app).",
+	"license": "MIT",
+	"author": "Jared Wray (https://jaredwray.com)",
+	"homepage": "https://github.com/jaredwray/rivus",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/jaredwray/rivus.git"
+	},
+	"packageManager": "pnpm@10.33.0",
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"build": "pnpm -r build",
+		"dev": "pnpm -r --parallel dev",
+		"test": "pnpm -r test",
+		"test:coverage": "pnpm -r test:coverage",
+		"type-check": "pnpm -r type-check",
+		"lint": "biome check .",
+		"lint:fix": "biome check --write .",
+		"format": "biome format --write .",
+		"clean": "pnpm -r clean",
+		"services:up": "docker compose up -d",
+		"services:down": "docker compose down",
+		"services:logs": "docker compose logs -f"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "catalog:",
+		"@types/node": "catalog:",
+		"typescript": "catalog:"
+	}
+}

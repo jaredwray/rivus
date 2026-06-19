@@ -1,0 +1,44 @@
+{
+	"name": "@rivus/app",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Rivus mobile + web client — Expo (iOS, Android, Web) with expo-router.",
+	"license": "MIT",
+	"main": "expo-router/entry",
+	"scripts": {
+		"start": "expo start",
+		"android": "expo start --android",
+		"ios": "expo start --ios",
+		"web": "expo start --web",
+		"export:web": "expo export -p web",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"test:coverage": "vitest run --coverage",
+		"type-check": "tsc --noEmit",
+		"clean": "rm -rf .expo dist coverage"
+	},
+	"dependencies": {
+		"@expo/metro-runtime": "~56.0.15",
+		"@rivus/core": "workspace:*",
+		"expo": "~56.0.11",
+		"expo-constants": "~56.0.18",
+		"expo-linking": "~56.0.14",
+		"expo-router": "~56.2.10",
+		"expo-status-bar": "~56.0.4",
+		"expo-system-ui": "~56.0.5",
+		"react": "~19.2.7",
+		"react-dom": "~19.2.7",
+		"react-native": "~0.85.3",
+		"react-native-safe-area-context": "~5.8.0",
+		"react-native-screens": "~4.25.2",
+		"react-native-web": "~0.21.2",
+		"zod": "catalog:"
+	},
+	"devDependencies": {
+		"@faker-js/faker": "catalog:",
+		"@types/react": "~19.2.17",
+		"@vitest/coverage-v8": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	}
+}

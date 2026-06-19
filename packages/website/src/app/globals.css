@@ -1,0 +1,116 @@
+:root {
+	--bg: #0b0d12;
+	--fg: #e7ecf3;
+	--muted: #97a1b0;
+	--accent: #5b8cff;
+	--card: #141821;
+	color-scheme: dark;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	background: var(--bg);
+	color: var(--fg);
+	font-family:
+		system-ui,
+		-apple-system,
+		Segoe UI,
+		Roboto,
+		sans-serif;
+	line-height: 1.6;
+}
+
+.page {
+	max-width: 960px;
+	margin: 0 auto;
+	padding: 4rem 1.5rem;
+}
+
+.hero {
+	text-align: center;
+	padding: 3rem 0;
+}
+
+.eyebrow {
+	text-transform: uppercase;
+	letter-spacing: 0.12em;
+	font-size: 0.8rem;
+	color: var(--accent);
+	margin: 0;
+}
+
+.hero h1 {
+	font-size: clamp(2.5rem, 8vw, 4.5rem);
+	margin: 0.25rem 0;
+}
+
+.tagline {
+	font-size: 1.4rem;
+	color: var(--fg);
+	margin: 0.5rem 0;
+}
+
+.lead {
+	color: var(--muted);
+	max-width: 40rem;
+	margin: 1rem auto;
+}
+
+.cta {
+	display: flex;
+	gap: 1rem;
+	align-items: center;
+	justify-content: center;
+	flex-wrap: wrap;
+	margin-top: 1.5rem;
+}
+
+.button {
+	background: var(--accent);
+	color: #fff;
+	padding: 0.7rem 1.4rem;
+	border-radius: 0.6rem;
+	text-decoration: none;
+	font-weight: 600;
+}
+
+.api-status {
+	font-size: 0.9rem;
+	color: var(--muted);
+}
+
+.features {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: 1.25rem;
+	margin-top: 3rem;
+}
+
+.feature-card {
+	background: var(--card);
+	border: 1px solid #222838;
+	border-radius: 0.9rem;
+	padding: 1.5rem;
+}
+
+.feature-card h3 {
+	margin: 0 0 0.5rem;
+}
+
+.feature-card p {
+	color: var(--muted);
+	margin: 0;
+}
+
+.footer {
+	margin-top: 4rem;
+	text-align: center;
+	color: var(--muted);
+	font-size: 0.85rem;
+}

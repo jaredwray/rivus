@@ -1,0 +1,39 @@
+packages:
+  - packages/*
+
+# ---------------------------------------------------------------------------
+# Catalog — single source of truth for shared dependency versions.
+# Packages reference these with "catalog:" instead of pinning their own range,
+# so every workspace stays on the same toolchain version.
+# ---------------------------------------------------------------------------
+catalog:
+  # Language & types
+  typescript: ^6.0.0
+  '@types/node': ^22.0.0
+  # Test toolchain
+  vitest: ^3.2.0
+  '@vitest/coverage-v8': ^3.2.0
+  '@faker-js/faker': ^10.4.0
+  # Build
+  tsdown: ^0.22.0
+  # Lint / format
+  '@biomejs/biome': ^2.4.0
+  # Validation (shared across api/worker/core)
+  zod: ^4.4.0
+
+# ---------------------------------------------------------------------------
+# Supply-chain hardening (see agentic/defense-in-depth-nodejs.md §4).
+#   - Refuse versions published less than 7 days ago (10080 minutes).
+#   - Fail closed instead of silently falling back to a too-new version.
+#   - Fail closed when a registry omits publish-time metadata.
+# ---------------------------------------------------------------------------
+minimumReleaseAge: 10080
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
+
+# Only these dependencies are permitted to run install lifecycle (build) scripts.
+# Everything else is blocked by default. Add entries deliberately, never wholesale.
+onlyBuiltDependencies:
+  - '@biomejs/biome'
+  - esbuild
+  - workerd

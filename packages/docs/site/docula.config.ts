@@ -1,0 +1,18 @@
+import type { DoculaOptions } from 'docula';
+
+export const options: Partial<DoculaOptions> = {
+	output: './dist',
+	sitePath: './site',
+	// Only enabled when a token is present (e.g. CI), so the build stays green
+	// offline. With a token, Docula pulls contributors and repo metadata.
+	githubPath: process.env.GITHUB_TOKEN ? 'jaredwray/rivus' : undefined,
+	siteTitle: 'Rivus',
+	siteDescription: 'Documentation, changelog, and API reference for Rivus.',
+	siteUrl: 'https://rivus.org',
+	// Rendered as the interactive API reference from the @rivus/api OpenAPI spec.
+	openApiUrl: [{ name: 'Rivus API', url: '/openapi.json' }],
+	// File-based changelog entries live in site/changelog. Flip this on once the
+	// repository publishes GitHub Releases to merge them in automatically.
+	enableReleaseChangelog: false,
+	enableLlmsTxt: true,
+};
