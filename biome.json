@@ -18,6 +18,7 @@
 			"!**/.wrangler",
 			"!**/.docula",
 			"!**/*.gen.ts",
+			"!**/openapi.json",
 			"!**/worker-configuration.d.ts",
 			"!**/expo-env.d.ts",
 			"!**/next-env.d.ts"
@@ -39,7 +40,7 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true
+			"preset": "recommended"
 		}
 	},
 	"javascript": {
