@@ -1,11 +1,46 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Test / coverage
+coverage/
+.vitest/
+
+# Framework caches
+.next/
+.expo/
+.expo-shared/
+web-build/
+.wrangler/
+.docula/
+.turbo/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+.dev.vars
+
 # Editor / OS
 .DS_Store
 .idea/
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 *.swp
 *.swo
 *~
 
-# Direnv / local env
+# Direnv / local
 .envrc
-.env.local
+.envrc.local
