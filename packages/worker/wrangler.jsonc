@@ -1,0 +1,15 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "rivus-worker",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-06-01",
+	"observability": {
+		"enabled": true
+	},
+	"vars": {
+		"API_BASE_URL": "http://localhost:4000"
+	},
+	"triggers": {
+		"crons": ["*/15 * * * *"]
+	}
+}
