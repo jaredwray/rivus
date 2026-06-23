@@ -31,9 +31,10 @@ minimumReleaseAge: 10080
 minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: false
 
-# Only these dependencies are permitted to run install lifecycle (build) scripts.
-# Everything else is blocked by default. Add entries deliberately, never wholesale.
-onlyBuiltDependencies:
-  - '@biomejs/biome'
-  - esbuild
-  - workerd
+# Install (build) scripts are blocked by default. allowBuilds explicitly
+# allows (true) or denies (false) each dependency that ships one. Add entries
+# deliberately, never wholesale. (pnpm 11 replaced onlyBuiltDependencies.)
+allowBuilds:
+  esbuild: true
+  workerd: true
+  sharp: false
