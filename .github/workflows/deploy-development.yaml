@@ -1,11 +1,11 @@
 name: Deploy (development)
 
 # Validate the whole monorepo, then deploy every package to the Cloudflare
-# `development` environment in parallel. Run manually, or on pushes to develop.
+# `development` environment in parallel. Runs on every push to main, or manually.
 on:
   workflow_dispatch:
   push:
-    branches: [develop]
+    branches: [main]
 
 # Read-only by default; the deploy jobs authenticate to Cloudflare with secrets.
 permissions:
