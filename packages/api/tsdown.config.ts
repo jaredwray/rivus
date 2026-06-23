@@ -4,7 +4,7 @@ export default defineConfig({
 	entry: ['src/index.ts'],
 	format: ['esm'],
 	platform: 'node',
-	target: 'node22',
+	target: 'node24',
 	dts: false,
 	clean: true,
 	// Bundle the workspace package (consumed as TypeScript source) into the output.
