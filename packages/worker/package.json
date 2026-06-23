@@ -25,6 +25,6 @@
 		"@vitest/coverage-v8": "catalog:",
 		"typescript": "catalog:",
 		"vitest": "catalog:",
-		"wrangler": "^4.100.0"
+		"wrangler": "^4.101.0"
 	}
 }
