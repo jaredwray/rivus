@@ -19,11 +19,14 @@ export interface Env {
 export class ApiContainer extends Container<Env> {
 	override defaultPort = 4000;
 	override sleepAfter = '10m';
+	// A data property (not a getter): the base Container constructor assigns
+	// `this.envVars`, so a getter-only override would throw. Spread each binding
+	// only when set so an unset secret never reaches the container as "undefined".
 	override envVars = {
 		NODE_ENV: 'production',
-		MONGODB_URI: this.env.MONGODB_URI,
-		JWT_SECRET: this.env.JWT_SECRET,
-		CORS_ORIGIN: this.env.CORS_ORIGIN,
+		...(this.env.MONGODB_URI ? { MONGODB_URI: this.env.MONGODB_URI } : {}),
+		...(this.env.JWT_SECRET ? { JWT_SECRET: this.env.JWT_SECRET } : {}),
+		...(this.env.CORS_ORIGIN ? { CORS_ORIGIN: this.env.CORS_ORIGIN } : {}),
 	};
 }
 
