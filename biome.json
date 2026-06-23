@@ -18,6 +18,7 @@
 			"!**/.wrangler",
 			"!**/.docula",
 			"!**/*.gen.ts",
+			"!**/*.svg",
 			"!**/openapi.json",
 			"!**/worker-configuration.d.ts",
 			"!**/expo-env.d.ts",
