@@ -13,5 +13,16 @@
 	},
 	"triggers": {
 		"crons": ["*/15 * * * *"]
+	},
+	// Named environments. `vars` is non-inheritable, so each environment must
+	// redeclare it; `triggers`, `main`, and `observability` are inherited.
+	// Deploy with `wrangler deploy --env development`.
+	"env": {
+		"development": {
+			"name": "rivus-worker-dev",
+			"vars": {
+				"API_BASE_URL": "https://dev-api.rivus.ai"
+			}
+		}
 	}
 }

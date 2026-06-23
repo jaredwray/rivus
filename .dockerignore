@@ -1,0 +1,18 @@
+# The @rivus/api container build uses the monorepo root as its context; keep it
+# lean and never copy host-built artifacts or secrets into the image.
+.git
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/.next
+**/.open-next
+**/.expo
+**/.wrangler
+**/.turbo
+**/.docula
+*.log
+.env
+.env.*
+!.env.example
+.dev.vars

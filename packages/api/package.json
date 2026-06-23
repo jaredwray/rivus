@@ -10,11 +10,12 @@
 		"dev": "tsx watch src/index.ts",
 		"build": "tsdown",
 		"start": "node dist/index.mjs",
+		"deploy": "wrangler deploy",
 		"openapi": "tsx src/openapi.ts",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
-		"type-check": "tsc --noEmit",
+		"type-check": "tsc --noEmit && tsc -p worker/tsconfig.json",
 		"clean": "rm -rf dist coverage"
 	},
 	"dependencies": {
@@ -33,6 +34,8 @@
 		"zod": "catalog:"
 	},
 	"devDependencies": {
+		"@cloudflare/containers": "^0.3.7",
+		"@cloudflare/workers-types": "catalog:",
 		"@faker-js/faker": "catalog:",
 		"@types/node": "catalog:",
 		"@vitest/coverage-v8": "catalog:",
@@ -40,6 +43,7 @@
 		"tsdown": "catalog:",
 		"tsx": "^4.22.4",
 		"typescript": "catalog:",
-		"vitest": "catalog:"
+		"vitest": "catalog:",
+		"wrangler": "catalog:"
 	}
 }

@@ -12,12 +12,14 @@
 		"dev": "docula dev -s ./site",
 		"start": "docula start -s ./site",
 		"sync-openapi": "node scripts/sync-openapi.mjs",
+		"deploy": "wrangler deploy",
 		"type-check": "tsc --noEmit",
 		"clean": "rm -rf site/dist"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:",
 		"docula": "^2.0.0",
-		"typescript": "catalog:"
+		"typescript": "catalog:",
+		"wrangler": "catalog:"
 	}
 }
