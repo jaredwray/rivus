@@ -1,0 +1,18 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "rivus-app",
+	"compatibility_date": "2026-06-01",
+	// Assets-only Worker serving the Expo web export. `pnpm --filter @rivus/app
+	// export:web` emits a static site (app.json sets web.output: "static") to ./dist.
+	"assets": {
+		"directory": "./dist",
+		"html_handling": "auto-trailing-slash",
+		"not_found_handling": "single-page-application"
+	},
+	"env": {
+		"development": {
+			"name": "rivus-app-dev",
+			"routes": [{ "pattern": "dev-app.rivus.ai", "custom_domain": true }]
+		}
+	}
+}

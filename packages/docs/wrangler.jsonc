@@ -1,0 +1,20 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "rivus-docs",
+	"compatibility_date": "2026-06-01",
+	// Assets-only Worker: no `main`, Cloudflare serves the static Docula build
+	// directly. `pnpm --filter @rivus/docs build` emits the site into ./site/dist.
+	"assets": {
+		"directory": "./site/dist",
+		"html_handling": "auto-trailing-slash",
+		"not_found_handling": "404-page"
+	},
+	// `assets` is inherited; a named environment only needs to override the
+	// Worker name and bind its custom domain. Deploy: `wrangler deploy --env development`.
+	"env": {
+		"development": {
+			"name": "rivus-docs-dev",
+			"routes": [{ "pattern": "dev-docs.rivus.ai", "custom_domain": true }]
+		}
+	}
+}

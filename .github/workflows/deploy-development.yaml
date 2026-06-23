@@ -1,0 +1,112 @@
+name: Deploy (development)
+
+# Validate the whole monorepo, then deploy every package to the Cloudflare
+# `development` environment in parallel. Run manually, or on pushes to develop.
+on:
+  workflow_dispatch:
+  push:
+    branches: [develop]
+
+# Read-only by default; the deploy jobs authenticate to Cloudflare with secrets.
+permissions:
+  contents: read
+
+# One development deploy at a time per ref; cancel superseded runs.
+concurrency:
+  group: deploy-development-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Build, test & lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup
+      - run: pnpm lint
+      - run: pnpm type-check
+      - run: pnpm test:coverage
+      - run: pnpm build
+
+  deploy-worker:
+    name: Deploy worker
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: development
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter @rivus/worker exec wrangler deploy --env development
+
+  deploy-docs:
+    name: Deploy docs
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: development
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter @rivus/docs build
+      - run: pnpm --filter @rivus/docs exec wrangler deploy --env development
+
+  deploy-app:
+    name: Deploy app
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: development
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Baked into the Expo web bundle at export time.
+      EXPO_PUBLIC_API_URL: https://dev-api.rivus.ai
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter @rivus/app export:web
+      - run: pnpm --filter @rivus/app exec wrangler deploy --env development
+
+  deploy-website:
+    name: Deploy website
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: development
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Inlined into the Next client bundle by `next build` (run inside the
+      # OpenNext build).
+      NEXT_PUBLIC_API_URL: https://dev-api.rivus.ai
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter @rivus/website exec opennextjs-cloudflare build
+      - run: pnpm --filter @rivus/website exec opennextjs-cloudflare deploy -- --env development
+
+  deploy-api:
+    name: Deploy api (container)
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: development
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      DEV_MONGODB_URI: ${{ secrets.DEV_MONGODB_URI }}
+      DEV_JWT_SECRET: ${{ secrets.DEV_JWT_SECRET }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup
+      # wrangler builds the Dockerfile (Docker is preinstalled on ubuntu-latest)
+      # and pushes the image to Cloudflare's registry before deploying the Worker.
+      - run: pnpm --filter @rivus/api exec wrangler deploy --env development
+      # Keep the Worker's secrets in sync. Skipped until the GitHub secrets exist.
+      - name: Sync API secrets
+        if: ${{ env.DEV_MONGODB_URI != '' }}
+        run: |
+          printf '%s' "$DEV_MONGODB_URI" | pnpm --filter @rivus/api exec wrangler secret put MONGODB_URI --env development
+          printf '%s' "$DEV_JWT_SECRET" | pnpm --filter @rivus/api exec wrangler secret put JWT_SECRET --env development

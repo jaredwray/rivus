@@ -20,6 +20,9 @@ catalog:
   '@biomejs/biome': ^2.4.0
   # Validation (shared across api/worker/core)
   zod: ^4.4.0
+  # Cloudflare deploy tooling (worker, api, docs, app, website)
+  wrangler: ^4.101.0
+  '@cloudflare/workers-types': ^4.20260616.1
 
 # ---------------------------------------------------------------------------
 # Supply-chain hardening (see agentic/defense-in-depth-nodejs.md §4).

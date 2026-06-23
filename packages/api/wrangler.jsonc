@@ -1,0 +1,54 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "rivus-api",
+	"main": "worker/index.ts",
+	"compatibility_date": "2026-06-01",
+	"observability": {
+		"enabled": true
+	},
+	// The Fastify API can't run on the Workers runtime (it needs Node + the
+	// MongoDB driver), so it ships as a container fronted by `worker/index.ts`.
+	// `wrangler deploy` builds this Dockerfile and pushes the image automatically.
+	"containers": [
+		{
+			"class_name": "ApiContainer",
+			"image": "./Dockerfile",
+			// Build from the monorepo root so the Dockerfile can install the whole
+			// workspace; `image` above stays relative to this config file.
+			"image_build_context": "../../",
+			"max_instances": 3
+		}
+	],
+	// A container class is a (SQLite-backed) Durable Object.
+	"durable_objects": {
+		"bindings": [{ "name": "API_CONTAINER", "class_name": "ApiContainer" }]
+	},
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["ApiContainer"] }],
+	// Non-secret config forwarded into the container. Secrets (MONGODB_URI,
+	// JWT_SECRET) are set with `wrangler secret put` and also arrive on env.
+	"vars": {
+		"CORS_ORIGIN": "*"
+	},
+	// `vars`, `durable_objects`, and `containers` are non-inheritable, so the
+	// development environment redeclares them. Deploy: `wrangler deploy --env development`.
+	"env": {
+		"development": {
+			"name": "rivus-api-dev",
+			"routes": [{ "pattern": "dev-api.rivus.ai", "custom_domain": true }],
+			"vars": {
+				"CORS_ORIGIN": "*"
+			},
+			"containers": [
+				{
+					"class_name": "ApiContainer",
+					"image": "./Dockerfile",
+					"image_build_context": "../../",
+					"max_instances": 2
+				}
+			],
+			"durable_objects": {
+				"bindings": [{ "name": "API_CONTAINER", "class_name": "ApiContainer" }]
+			}
+		}
+	}
+}
