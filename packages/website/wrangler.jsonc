@@ -15,6 +15,10 @@
 		"development": {
 			"name": "rivus-website-dev",
 			"routes": [{ "pattern": "dev-www.rivus.ai", "custom_domain": true }]
+		},
+		"production": {
+			"name": "rivus-website",
+			"routes": [{ "pattern": "www.rivus.ai", "custom_domain": true }]
 		}
 	}
 }

@@ -23,6 +23,12 @@
 			"vars": {
 				"API_BASE_URL": "https://dev-api.rivus.ai"
 			}
+		},
+		"production": {
+			"name": "rivus-worker",
+			"vars": {
+				"API_BASE_URL": "https://api.rivus.ai"
+			}
 		}
 	}
 }

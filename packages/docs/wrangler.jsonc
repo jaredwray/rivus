@@ -15,6 +15,10 @@
 		"development": {
 			"name": "rivus-docs-dev",
 			"routes": [{ "pattern": "dev-docs.rivus.ai", "custom_domain": true }]
+		},
+		"production": {
+			"name": "rivus-docs",
+			"routes": [{ "pattern": "docs.rivus.ai", "custom_domain": true }]
 		}
 	}
 }

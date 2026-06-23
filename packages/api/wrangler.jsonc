@@ -49,6 +49,24 @@
 			"durable_objects": {
 				"bindings": [{ "name": "API_CONTAINER", "class_name": "ApiContainer" }]
 			}
+		},
+		"production": {
+			"name": "rivus-api",
+			"routes": [{ "pattern": "api.rivus.ai", "custom_domain": true }],
+			"vars": {
+				"CORS_ORIGIN": "*"
+			},
+			"containers": [
+				{
+					"class_name": "ApiContainer",
+					"image": "./Dockerfile",
+					"image_build_context": "../../",
+					"max_instances": 3
+				}
+			],
+			"durable_objects": {
+				"bindings": [{ "name": "API_CONTAINER", "class_name": "ApiContainer" }]
+			}
 		}
 	}
 }
