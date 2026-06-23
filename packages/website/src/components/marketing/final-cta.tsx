@@ -1,3 +1,4 @@
+import { appUrl } from '../../lib/site';
 import { BrandImg } from './brand-img';
 import { ArrowRightIcon } from './icons';
 
@@ -24,11 +25,11 @@ export function FinalCta() {
 					card required.
 				</p>
 				<div className="cta__actions">
-					<a className="btn btn--white" href="/signup">
+					<a className="btn btn--white" href={`${appUrl}/signup`}>
 						Get started free
 						<ArrowRightIcon size={19} />
 					</a>
-					<a className="btn btn--ghost-dark" href="/demo">
+					<a className="btn btn--ghost-dark" href={`${appUrl}/demo`}>
 						Book a demo
 					</a>
 				</div>

@@ -1,8 +1,18 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { appUrl } from '../../lib/site';
 import { SiteNav } from './site-nav';
 
 describe('SiteNav', () => {
+	it('sends every "Sign in" link to the product app, not a local route', () => {
+		render(<SiteNav />);
+		const signIns = screen.getAllByRole('link', { name: 'Sign in' });
+		expect(signIns.length).toBeGreaterThan(0);
+		for (const link of signIns) {
+			expect(link.getAttribute('href')).toBe(`${appUrl}/login`);
+		}
+	});
+
 	it('toggles the mobile menu open and closed', () => {
 		const { container } = render(<SiteNav />);
 		const nav = container.querySelector('nav');

@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { footerColumns, siteConfig } from '../../lib/site';
 import { ApiStatus } from '../api-status';
 import { BrandImg } from './brand-img';
@@ -24,9 +25,9 @@ export function SiteFooter() {
 								<div className="footer__col-title">{column.title}</div>
 								<div className="footer__col-links">
 									{column.links.map((link) => (
-										<a key={link.label} href={link.href}>
+										<Link key={link.label} href={link.href}>
 											{link.label}
-										</a>
+										</Link>
 									))}
 								</div>
 							</div>

@@ -338,3 +338,10 @@ export const footerColumns: FooterColumn[] = [
 ];
 
 export const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+
+/**
+ * Base URL of the Rivus product app — where sign-in, signup, and demo booking
+ * live. It's a separate deploy from this marketing site, so links to it are
+ * absolute external URLs (plain anchors, not next/link).
+ */
+export const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.rivus.ai';
