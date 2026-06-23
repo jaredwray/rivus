@@ -20,7 +20,7 @@
 		"zod": "catalog:"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^4.20260611.1",
+		"@cloudflare/workers-types": "^4.20260615.1",
 		"@faker-js/faker": "catalog:",
 		"@vitest/coverage-v8": "catalog:",
 		"typescript": "catalog:",
