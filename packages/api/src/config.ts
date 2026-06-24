@@ -43,3 +43,46 @@ export type Config = z.infer<typeof envSchema>;
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 	return envSchema.parse(env);
 }
+
+/** What `@fastify/cors` accepts for its `origin` option. */
+export type CorsOrigin = boolean | string | RegExp | Array<string | RegExp>;
+
+/**
+ * Translate the `CORS_ORIGIN` env string into a value `@fastify/cors` understands.
+ *
+ * - `*` (the default) allows any origin.
+ * - A comma-separated list yields multiple allowed origins.
+ * - An entry containing `*` is a wildcard — e.g. `*.rivus.ai` matches any single
+ *   subdomain (`app.rivus.ai`, `www.rivus.ai`) over http/https — and becomes an
+ *   anchored RegExp, since `@fastify/cors` only does exact matches on strings.
+ * - Any other entry is matched exactly.
+ */
+export function parseCorsOrigin(value: string): CorsOrigin {
+	const entries = value
+		.split(',')
+		.map((entry) => entry.trim())
+		.filter(Boolean);
+	// A bare `*` (the default) short-circuits to "allow any origin".
+	if (entries.includes('*')) {
+		return '*';
+	}
+	const matchers = entries.map(toOriginMatcher);
+	const [first, ...rest] = matchers;
+	if (first === undefined) {
+		return false;
+	}
+	return rest.length === 0 ? first : matchers;
+}
+
+function toOriginMatcher(entry: string): string | RegExp {
+	if (!entry.includes('*')) {
+		return entry;
+	}
+	// Escape every regex metacharacter (including `*`), then turn the escaped `*`
+	// back into a single-label wildcard so `*.rivus.ai` matches `app.rivus.ai`
+	// but not `a.b.rivus.ai` or the bare `rivus.ai`.
+	const escaped = entry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '[^.]+');
+	// Origin headers always carry a scheme; allow http/https when none is given.
+	const pattern = entry.includes('://') ? escaped : `https?://${escaped}`;
+	return new RegExp(`^${pattern}$`);
+}
