@@ -1,9 +1,9 @@
 import {
+	type AccountId,
 	buildPaginationMeta,
 	createItemSchema,
 	type ItemId,
 	paginationQuerySchema,
-	type UserId,
 	updateItemSchema,
 } from '@rivus/core';
 import type { FastifyPluginAsync } from 'fastify';
@@ -28,16 +28,16 @@ export const itemRoutes: FastifyPluginAsync = async (fastify) => {
 		{
 			schema: {
 				tags: ['items'],
-				summary: 'List your items',
+				summary: "List your account's items",
 				security: [{ bearerAuth: [] }],
 				querystring: paginationQuerySchema,
 				response: { 200: itemListResponseSchema, 401: errorResponseSchema },
 			},
 		},
 		async (request) => {
-			const ownerId = request.user.sub as UserId;
+			const accountId = request.user.accountId as AccountId;
 			const { page, pageSize } = request.query;
-			const { items: data, total } = await items.list({ ownerId, page, pageSize });
+			const { items: data, total } = await items.list({ accountId, page, pageSize });
 			return { data, meta: buildPaginationMeta({ page, pageSize, total }) };
 		},
 	);
@@ -54,7 +54,7 @@ export const itemRoutes: FastifyPluginAsync = async (fastify) => {
 			},
 		},
 		async (request, reply) => {
-			const item = await items.create(request.user.sub as UserId, request.body);
+			const item = await items.create(request.user.accountId as AccountId, request.body);
 			return reply.code(201).send(item);
 		},
 	);
@@ -71,7 +71,10 @@ export const itemRoutes: FastifyPluginAsync = async (fastify) => {
 			},
 		},
 		async (request) => {
-			const item = await items.findById(request.user.sub as UserId, request.params.id as ItemId);
+			const item = await items.findById(
+				request.user.accountId as AccountId,
+				request.params.id as ItemId,
+			);
 			if (!item) {
 				throw app.httpErrors.notFound('Item not found');
 			}
@@ -98,7 +101,7 @@ export const itemRoutes: FastifyPluginAsync = async (fastify) => {
 		},
 		async (request) => {
 			const item = await items.update(
-				request.user.sub as UserId,
+				request.user.accountId as AccountId,
 				request.params.id as ItemId,
 				request.body,
 			);
@@ -125,7 +128,10 @@ export const itemRoutes: FastifyPluginAsync = async (fastify) => {
 			},
 		},
 		async (request, reply) => {
-			const deleted = await items.delete(request.user.sub as UserId, request.params.id as ItemId);
+			const deleted = await items.delete(
+				request.user.accountId as AccountId,
+				request.params.id as ItemId,
+			);
 			if (!deleted) {
 				throw app.httpErrors.notFound('Item not found');
 			}

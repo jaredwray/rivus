@@ -14,6 +14,7 @@ import { ConflictError } from './repositories/errors';
 import { authRoutes } from './routes/auth';
 import { healthRoutes } from './routes/health';
 import { itemRoutes } from './routes/items';
+import { memberRoutes } from './routes/members';
 import type { AppDeps } from './types';
 
 function buildLogger(deps: AppDeps) {
@@ -82,6 +83,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
 	app.register(healthRoutes);
 	app.register(authRoutes, { prefix: '/v1/auth' });
+	app.register(memberRoutes, { prefix: '/v1/members' });
 	app.register(itemRoutes, { prefix: '/v1/items' });
 
 	return app;

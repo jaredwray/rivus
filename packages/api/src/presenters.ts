@@ -1,4 +1,4 @@
-import type { User } from '@rivus/core';
+import type { Account, Invite, Membership, User } from '@rivus/core';
 import type { StoredUser } from './repositories/types';
 
 /** Strip the password hash before a user ever leaves the API. */
@@ -9,5 +9,43 @@ export function toPublicUser(user: StoredUser): User {
 		name: user.name,
 		createdAt: user.createdAt,
 		updatedAt: user.updatedAt,
+	};
+}
+
+/** Accounts carry no secrets; this just pins the serialized shape. */
+export function toPublicAccount(account: Account): Account {
+	return {
+		id: account.id,
+		name: account.name,
+		slug: account.slug,
+		phone: account.phone,
+		address: account.address,
+		website: account.website,
+		timezone: account.timezone,
+		createdAt: account.createdAt,
+		updatedAt: account.updatedAt,
+	};
+}
+
+/** Combine a user with their membership into the member projection. */
+export function toMember(user: StoredUser, membership: Membership) {
+	return {
+		userId: user.id,
+		email: user.email,
+		name: user.name,
+		role: membership.role,
+		joinedAt: membership.createdAt,
+	};
+}
+
+export function toInvite(invite: Invite) {
+	return {
+		id: invite.id,
+		email: invite.email,
+		name: invite.name,
+		role: invite.role,
+		status: invite.status,
+		token: invite.token,
+		createdAt: invite.createdAt,
 	};
 }
