@@ -99,20 +99,25 @@ const memberResponseSchema = z.object({
 });
 export type Member = z.infer<typeof memberResponseSchema>;
 
-const inviteResponseSchema = z.object({
+// Roster view — the bearer token is intentionally absent (the API never leaks it
+// to members who can list the roster).
+const inviteSummarySchema = z.object({
 	id: z.string(),
 	email: z.string(),
 	name: z.string(),
 	role: z.enum(['manager', 'team_member']),
 	status: z.enum(['pending', 'accepted', 'revoked']),
-	token: z.string(),
 	createdAt: z.string(),
 });
+export type InviteSummary = z.infer<typeof inviteSummarySchema>;
+
+// Creator view — includes the shareable token (returned only from inviteMember).
+const inviteResponseSchema = inviteSummarySchema.extend({ token: z.string() });
 export type Invite = z.infer<typeof inviteResponseSchema>;
 
 const memberListResponseSchema = z.object({
 	members: z.array(memberResponseSchema),
-	invites: z.array(inviteResponseSchema),
+	invites: z.array(inviteSummarySchema),
 });
 export type MemberList = z.infer<typeof memberListResponseSchema>;
 

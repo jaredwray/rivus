@@ -1,10 +1,11 @@
 import { z } from 'zod';
 
-/** Trim + lowercase before validating so `  Foo@Bar.com ` is accepted. */
-export const emailSchema = z.preprocess(
-	(value) => (typeof value === 'string' ? value.trim().toLowerCase() : value),
-	z.email().max(254),
-);
+/**
+ * Trim + lowercase before validating so `  Foo@Bar.com ` is accepted. Built from
+ * a plain `z.string()` (not `z.preprocess`) so generated OpenAPI/JSON Schema
+ * still marks the field as required.
+ */
+export const emailSchema = z.string().trim().toLowerCase().pipe(z.email().max(254));
 
 export const passwordSchema = z.string().min(8).max(200);
 

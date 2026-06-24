@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
-import { ApiError, type Invite, type Member, type Role } from '@/src/api/client';
+import {
+	ApiError,
+	type Invite,
+	type InviteSummary,
+	type Member,
+	type Role,
+} from '@/src/api/client';
 import { initialsOf, roleLabel, useAuth } from '@/src/auth/AuthContext';
 import {
 	Avatar,
@@ -40,7 +46,7 @@ export default function TeamScreen() {
 			: [{ label: 'Team Member', value: 'team_member' }];
 
 	const [members, setMembers] = useState<Member[]>([]);
-	const [invites, setInvites] = useState<Invite[]>([]);
+	const [invites, setInvites] = useState<InviteSummary[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 

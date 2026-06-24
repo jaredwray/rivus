@@ -15,7 +15,7 @@ import {
 	memberListResponseSchema,
 	memberResponseSchema,
 } from '../http-schemas';
-import { toInvite, toMember } from '../presenters';
+import { toInvite, toInviteSummary, toMember } from '../presenters';
 import { createInviteToken } from '../services/invites';
 
 const userIdParamsSchema = z.object({ userId: z.string().min(1) });
@@ -48,15 +48,18 @@ export const memberRoutes: FastifyPluginAsync = async (fastify) => {
 		async (request) => {
 			const accountId = request.user.accountId as AccountId;
 			const roster = await memberships.listByAccount(accountId);
+			// Fetch all members' users in one query to avoid an N+1.
+			const userList = await users.findByIds(roster.map((membership) => membership.userId));
+			const userById = new Map(userList.map((user) => [user.id, user]));
 			const members = [];
 			for (const membership of roster) {
-				const user = await users.findById(membership.userId);
+				const user = userById.get(membership.userId);
 				if (user) {
 					members.push(toMember(user, membership));
 				}
 			}
 			const pending = await invites.listPendingByAccount(accountId);
-			return { members, invites: pending.map(toInvite) };
+			return { members, invites: pending.map(toInviteSummary) };
 		},
 	);
 
@@ -118,7 +121,16 @@ export const memberRoutes: FastifyPluginAsync = async (fastify) => {
 		},
 		async (request, reply) => {
 			const accountId = request.user.accountId as AccountId;
-			const revoked = await invites.revoke(accountId, request.params.inviteId as InviteId);
+			const inviteId = request.params.inviteId as InviteId;
+			const invite = await invites.findById(inviteId);
+			if (!invite || invite.accountId !== accountId) {
+				throw app.httpErrors.notFound('Invite not found');
+			}
+			// A Manager manages only Team Members, so can't revoke a Manager invite.
+			if (request.user.role === 'manager' && invite.role !== 'team_member') {
+				throw app.httpErrors.forbidden('Managers can only revoke Team Member invites');
+			}
+			const revoked = await invites.revoke(accountId, inviteId);
 			if (!revoked) {
 				throw app.httpErrors.notFound('Invite not found');
 			}

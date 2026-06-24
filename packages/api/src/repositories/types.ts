@@ -28,6 +28,8 @@ export interface UserRepository {
 	create(input: NewUser): Promise<StoredUser>;
 	findByEmail(email: string): Promise<StoredUser | null>;
 	findById(id: UserId): Promise<StoredUser | null>;
+	/** Fetch many users in one query (the order of the result is not guaranteed). */
+	findByIds(ids: UserId[]): Promise<StoredUser[]>;
 }
 
 export interface NewAccount {
@@ -72,6 +74,7 @@ export interface NewInvite {
 
 export interface InviteRepository {
 	create(input: NewInvite): Promise<Invite>;
+	findById(id: InviteId): Promise<Invite | null>;
 	findByToken(token: string): Promise<Invite | null>;
 	/** Pending invites for an account. */
 	listPendingByAccount(accountId: AccountId): Promise<Invite[]>;
@@ -90,13 +93,28 @@ export interface SignupResult {
 	membership: Membership;
 }
 
+export interface AcceptInviteInput {
+	user: NewUser;
+	accountId: AccountId;
+	role: Exclude<Role, 'owner'>;
+	inviteId: InviteId;
+}
+
+export interface AcceptInviteResult {
+	user: StoredUser;
+	membership: Membership;
+}
+
 /**
- * Creates the user, account, and owner membership as one unit. The Mongo
- * implementation runs this in a transaction (hence the replica set); the
- * in-memory implementation writes to a shared store.
+ * Multi-entity writes that must be atomic. The Mongo implementation runs each in
+ * a transaction (hence the replica set); the in-memory implementation writes to
+ * a shared store.
  */
 export interface OnboardingRepository {
+	/** Create user + account + owner membership. */
 	signup(input: SignupInput): Promise<SignupResult>;
+	/** Create the invitee's user + membership and mark the invite accepted. */
+	acceptInvite(input: AcceptInviteInput): Promise<AcceptInviteResult>;
 }
 
 export interface ListItemsOptions {

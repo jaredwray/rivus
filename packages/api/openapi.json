@@ -112,10 +112,7 @@
                 "type": "object",
                 "properties": {
                   "email": {
-                    "type": "string",
-                    "maxLength": 254,
-                    "format": "email",
-                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                    "type": "string"
                   },
                   "password": {
                     "type": "string",
@@ -162,6 +159,7 @@
                   }
                 },
                 "required": [
+                  "email",
                   "password",
                   "name",
                   "business"
@@ -218,10 +216,7 @@
                 "type": "object",
                 "properties": {
                   "email": {
-                    "type": "string",
-                    "maxLength": 254,
-                    "format": "email",
-                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                    "type": "string"
                   },
                   "password": {
                     "type": "string",
@@ -230,6 +225,7 @@
                   }
                 },
                 "required": [
+                  "email",
                   "password"
                 ]
               }
@@ -419,10 +415,7 @@
                 "type": "object",
                 "properties": {
                   "email": {
-                    "type": "string",
-                    "maxLength": 254,
-                    "format": "email",
-                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                    "type": "string"
                   },
                   "name": {
                     "type": "string",
@@ -438,6 +431,7 @@
                   }
                 },
                 "required": [
+                  "email",
                   "name",
                   "role"
                 ]

@@ -1,6 +1,8 @@
 import type { AccountId, UserId } from '@rivus/core';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ConflictError } from '../src/repositories/errors';
+import { createInMemoryRepositories } from '../src/repositories/memory';
 import { hashPassword } from '../src/services/password';
 import {
 	authHeader,
@@ -128,6 +130,41 @@ describe('signup', () => {
 		});
 
 		expect(response.statusCode).toBe(400);
+	});
+
+	it('retries slug generation when an account slug collides under concurrency', async () => {
+		// Simulate a duplicate-slug race: the first signup attempt loses the unique
+		// index and the route must regenerate the slug and succeed on retry.
+		const repos = createInMemoryRepositories();
+		let calls = 0;
+		const onboarding = {
+			signup: (input: Parameters<typeof repos.onboarding.signup>[0]) => {
+				calls += 1;
+				if (calls === 1) {
+					throw new ConflictError('slug', 'An account with this slug already exists');
+				}
+				return repos.onboarding.signup(input);
+			},
+			acceptInvite: repos.onboarding.acceptInvite.bind(repos.onboarding),
+		};
+		const raced = await buildTestApp({
+			users: repos.users,
+			accounts: repos.accounts,
+			memberships: repos.memberships,
+			invites: repos.invites,
+			onboarding,
+		});
+
+		const response = await raced.inject({
+			method: 'POST',
+			url: '/v1/auth/signup',
+			payload: { ...signupPayload(), business: { businessName: 'Race Co' } },
+		});
+
+		expect(response.statusCode).toBe(201);
+		expect(calls).toBe(2);
+		expect(response.json().account.slug).toBe('race-co');
+		await raced.close();
 	});
 });
 

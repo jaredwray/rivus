@@ -9,8 +9,13 @@ import type { FastifyPluginAsync } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { authResponseSchema, errorResponseSchema, sessionResponseSchema } from '../http-schemas';
 import { toPublicAccount, toPublicUser } from '../presenters';
+import { ConflictError } from '../repositories/errors';
+import type { SignupResult } from '../repositories/types';
 import { generateUniqueSlug } from '../services/accounts';
 import { dummyPasswordHash, hashPassword, verifyPassword } from '../services/password';
+
+/** How many times to regenerate a slug when concurrent signups collide. */
+const SLUG_RETRY_LIMIT = 5;
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
@@ -33,21 +38,40 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 		async (request, reply) => {
 			const { email, password, name, business } = request.body;
 			const passwordHash = await hashPassword(password);
-			const slug = await generateUniqueSlug(accounts, business.businessName);
 			// Creates user + account + owner membership atomically (a Mongo
 			// transaction in production; a shared store in tests). Email uniqueness
 			// is enforced first, so a duplicate never leaves an orphan account.
-			const { user, account, membership } = await onboarding.signup({
-				user: { email, name, passwordHash },
-				account: {
-					name: business.businessName,
-					slug,
-					phone: business.phone,
-					address: business.address,
-					website: business.website,
-					timezone: business.timezone,
-				},
-			});
+			let result: SignupResult | undefined;
+			for (let attempt = 0; attempt < SLUG_RETRY_LIMIT; attempt++) {
+				const slug = await generateUniqueSlug(accounts, business.businessName);
+				try {
+					result = await onboarding.signup({
+						user: { email, name, passwordHash },
+						account: {
+							name: business.businessName,
+							slug,
+							phone: business.phone,
+							address: business.address,
+							website: business.website,
+							timezone: business.timezone,
+						},
+					});
+					break;
+				} catch (error) {
+					// Two same-named signups can race to the same slug; regenerate and
+					// retry. Any other conflict (e.g. duplicate email) propagates as 409.
+					if (
+						error instanceof ConflictError &&
+						error.field === 'slug' &&
+						attempt < SLUG_RETRY_LIMIT - 1
+					) {
+						continue;
+					}
+					throw error;
+				}
+			}
+			// The loop either assigns `result` and breaks, or rethrows.
+			const { user, account, membership } = result as SignupResult;
 			const token = await reply.jwtSign({
 				sub: user.id,
 				email: user.email,
@@ -148,22 +172,25 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 		async (request, reply) => {
 			const { token: inviteToken, password } = request.body;
 			const invite = await invites.findByToken(inviteToken);
-			if (invite?.status !== 'pending') {
+			if (!invite) {
 				throw app.httpErrors.unauthorized('Invalid or expired invitation');
 			}
 			const account = await accounts.findById(invite.accountId);
 			if (!account) {
 				throw app.httpErrors.unauthorized('Invalid or expired invitation');
 			}
+			// `onboarding.acceptInvite` atomically enforces the invite is still
+			// pending (mapping a stale/revoked invite to 401).
 			const passwordHash = await hashPassword(password);
-			// Throws ConflictError (409) if the email was claimed since the invite.
-			const user = await users.create({ email: invite.email, name: invite.name, passwordHash });
-			const membership = await memberships.create({
+			// Creates the user + membership and marks the invite accepted atomically
+			// (a Mongo transaction in production). Throws ConflictError (409) if the
+			// email was claimed since the invite was sent.
+			const { user, membership } = await onboarding.acceptInvite({
+				user: { email: invite.email, name: invite.name, passwordHash },
 				accountId: account.id,
-				userId: user.id,
 				role: invite.role,
+				inviteId: invite.id,
 			});
-			await invites.markAccepted(invite.id);
 			const token = await reply.jwtSign({
 				sub: user.id,
 				email: user.email,

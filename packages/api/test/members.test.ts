@@ -59,6 +59,8 @@ describe('members', () => {
 		const invite = await inviteMember(owner.token, 'manager', 'manager@example.com');
 		expect(invite.statusCode).toBe(201);
 		expect(invite.json()).toMatchObject({ email: 'manager@example.com', role: 'manager' });
+		// The creator gets the shareable token...
+		expect(invite.json().token).toBeTypeOf('string');
 
 		const list = await app.inject({
 			method: 'GET',
@@ -66,6 +68,24 @@ describe('members', () => {
 			headers: authHeader(owner.token),
 		});
 		expect(list.json().invites).toHaveLength(1);
+		// ...but the roster never leaks invite tokens (any member can read it).
+		expect(list.json().invites[0]).not.toHaveProperty('token');
+	});
+
+	it('hides invite tokens from a Team Member listing the roster', async () => {
+		const owner = await signupOwner(app);
+		await inviteMember(owner.token, 'manager', 'manager@example.com');
+		const teamMember = await addMember(owner.token, 'team_member', 'tm@example.com');
+
+		const list = await app.inject({
+			method: 'GET',
+			url: '/v1/members',
+			headers: authHeader(teamMember.token),
+		});
+		expect(list.statusCode).toBe(200);
+		for (const invite of list.json().invites) {
+			expect(invite).not.toHaveProperty('token');
+		}
 	});
 
 	it('lets an owner revoke a pending invite', async () => {
@@ -85,6 +105,44 @@ describe('members', () => {
 			headers: authHeader(owner.token),
 		});
 		expect(list.json().invites).toEqual([]);
+	});
+
+	it('lets a Manager revoke a Team Member invite but not a Manager invite', async () => {
+		const owner = await signupOwner(app);
+		const manager = await addMember(owner.token, 'manager', 'mgr@example.com');
+		const tmInviteId = (await inviteMember(owner.token, 'team_member', 'tm@example.com')).json().id;
+		const mgrInviteId = (await inviteMember(owner.token, 'manager', 'mgr2@example.com')).json().id;
+
+		const revokeManager = await app.inject({
+			method: 'DELETE',
+			url: `/v1/members/invites/${mgrInviteId}`,
+			headers: authHeader(manager.token),
+		});
+		expect(revokeManager.statusCode).toBe(403);
+
+		const revokeTeamMember = await app.inject({
+			method: 'DELETE',
+			url: `/v1/members/invites/${tmInviteId}`,
+			headers: authHeader(manager.token),
+		});
+		expect(revokeTeamMember.statusCode).toBe(204);
+	});
+
+	it('returns 404 revoking an already-revoked invite', async () => {
+		const owner = await signupOwner(app);
+		const inviteId = (await inviteMember(owner.token, 'manager', 'gone@example.com')).json().id;
+		await app.inject({
+			method: 'DELETE',
+			url: `/v1/members/invites/${inviteId}`,
+			headers: authHeader(owner.token),
+		});
+
+		const again = await app.inject({
+			method: 'DELETE',
+			url: `/v1/members/invites/${inviteId}`,
+			headers: authHeader(owner.token),
+		});
+		expect(again.statusCode).toBe(404);
 	});
 
 	it('returns 404 revoking an unknown invite', async () => {

@@ -30,7 +30,7 @@ describe('registerSchema', () => {
 		).toThrow();
 	});
 
-	it('rejects a non-string email (preprocess passthrough)', () => {
+	it('rejects a non-string email', () => {
 		expect(() =>
 			registerSchema.parse({ email: 12345, password: 'supersecret', name: 'A' }),
 		).toThrow();

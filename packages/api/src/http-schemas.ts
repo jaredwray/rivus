@@ -57,23 +57,31 @@ export const memberResponseSchema = z
 	})
 	.meta({ id: 'Member' });
 
-/** A pending or resolved invitation. The token is returned so it can be shared. */
-export const inviteResponseSchema = z
+/**
+ * A pending invitation as shown in the roster. The bearer `token` is deliberately
+ * omitted here — anyone who can list members (including Team Members) would
+ * otherwise be able to claim a pending Manager invite.
+ */
+export const inviteSummarySchema = z
 	.object({
 		id: z.string(),
 		email: z.string(),
 		name: z.string(),
 		role: z.enum(['manager', 'team_member']),
 		status: z.enum(['pending', 'accepted', 'revoked']),
-		token: z.string(),
 		createdAt: z.string(),
 	})
+	.meta({ id: 'InviteSummary' });
+
+/** The invitation as returned to its creator — includes the shareable `token`. */
+export const inviteResponseSchema = inviteSummarySchema
+	.extend({ token: z.string() })
 	.meta({ id: 'Invite' });
 
 export const memberListResponseSchema = z
 	.object({
 		members: z.array(memberResponseSchema),
-		invites: z.array(inviteResponseSchema),
+		invites: z.array(inviteSummarySchema),
 	})
 	.meta({ id: 'MemberList' });
 

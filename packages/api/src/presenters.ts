@@ -38,14 +38,19 @@ export function toMember(user: StoredUser, membership: Membership) {
 	};
 }
 
-export function toInvite(invite: Invite) {
+/** Roster view of an invite — never includes the bearer token. */
+export function toInviteSummary(invite: Invite) {
 	return {
 		id: invite.id,
 		email: invite.email,
 		name: invite.name,
 		role: invite.role,
 		status: invite.status,
-		token: invite.token,
 		createdAt: invite.createdAt,
 	};
+}
+
+/** Creator view of an invite — includes the shareable token. */
+export function toInvite(invite: Invite) {
+	return { ...toInviteSummary(invite), token: invite.token };
 }

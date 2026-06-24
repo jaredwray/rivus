@@ -20,8 +20,10 @@ import { type InviteDocument, InviteModel } from '../db/models/invite.model';
 import { type ItemDocument, ItemModel } from '../db/models/item.model';
 import { type MembershipDocument, MembershipModel } from '../db/models/membership.model';
 import { type UserDocument, UserModel } from '../db/models/user.model';
-import { ConflictError } from './errors';
+import { ConflictError, InviteNotPendingError } from './errors';
 import type {
+	AcceptInviteInput,
+	AcceptInviteResult,
 	AccountRepository,
 	InviteRepository,
 	ItemRepository,
@@ -132,6 +134,17 @@ export class MongoUserRepository implements UserRepository {
 		}
 		const doc = await UserModel.findById(id).exec();
 		return doc ? mapUser(doc) : null;
+	}
+
+	async findByIds(ids: UserId[]): Promise<StoredUser[]> {
+		const objectIds = ids
+			.filter((id) => Types.ObjectId.isValid(id))
+			.map((id) => new Types.ObjectId(id));
+		if (objectIds.length === 0) {
+			return [];
+		}
+		const docs = await UserModel.find({ _id: { $in: objectIds } }).exec();
+		return docs.map(mapUser);
 	}
 }
 
@@ -245,6 +258,14 @@ export class MongoInviteRepository implements InviteRepository {
 		return mapInvite(doc);
 	}
 
+	async findById(id: InviteId): Promise<Invite | null> {
+		if (!Types.ObjectId.isValid(id)) {
+			return null;
+		}
+		const doc = await InviteModel.findById(id).exec();
+		return doc ? mapInvite(doc) : null;
+	}
+
 	async findByToken(token: string): Promise<Invite | null> {
 		const doc = await InviteModel.findOne({ token }).exec();
 		return doc ? mapInvite(doc) : null;
@@ -322,6 +343,45 @@ export class MongoOnboardingRepository implements OnboardingRepository {
 						? 'An account with this slug already exists'
 						: 'An account with this email already exists';
 				throw new ConflictError(field, message);
+			}
+			throw error;
+		} finally {
+			await session.endSession();
+		}
+	}
+
+	async acceptInvite(input: AcceptInviteInput): Promise<AcceptInviteResult> {
+		const session = await mongoose.startSession();
+		try {
+			let result: AcceptInviteResult | undefined;
+			await session.withTransaction(async () => {
+				// Consume the invite first, only if it is still pending; otherwise abort
+				// so a concurrently revoked/accepted invite can't grant membership.
+				const consumed = await InviteModel.updateOne(
+					{ _id: input.inviteId, status: 'pending' },
+					{ $set: { status: 'accepted' } },
+					{ session },
+				);
+				if (consumed.modifiedCount !== 1) {
+					throw new InviteNotPendingError();
+				}
+				const [user] = await UserModel.create([input.user], { session });
+				if (!user) {
+					throw new Error('Accept-invite transaction failed to create the user');
+				}
+				const [membership] = await MembershipModel.create(
+					[{ accountId: new Types.ObjectId(input.accountId), userId: user._id, role: input.role }],
+					{ session },
+				);
+				if (!membership) {
+					throw new Error('Accept-invite transaction failed to create the membership');
+				}
+				result = { user: mapUser(user), membership: mapMembership(membership) };
+			});
+			return result as AcceptInviteResult;
+		} catch (error) {
+			if (isDuplicateKeyError(error)) {
+				throw new ConflictError('email', 'An account with this email already exists');
 			}
 			throw error;
 		} finally {

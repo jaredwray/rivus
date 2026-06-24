@@ -15,8 +15,10 @@ import {
 	type UpdateItemInput,
 	type UserId,
 } from '@rivus/core';
-import { ConflictError } from './errors';
+import { ConflictError, InviteNotPendingError } from './errors';
 import type {
+	AcceptInviteInput,
+	AcceptInviteResult,
 	AccountRepository,
 	InviteRepository,
 	ItemRepository,
@@ -95,6 +97,17 @@ export class InMemoryUserRepository implements UserRepository {
 	async findById(id: UserId): Promise<StoredUser | null> {
 		const user = this.data.users.get(id);
 		return user ? structuredClone(user) : null;
+	}
+
+	async findByIds(ids: UserId[]): Promise<StoredUser[]> {
+		const found: StoredUser[] = [];
+		for (const id of ids) {
+			const user = this.data.users.get(id);
+			if (user) {
+				found.push(structuredClone(user));
+			}
+		}
+		return found;
 	}
 }
 
@@ -231,6 +244,11 @@ export class InMemoryInviteRepository implements InviteRepository {
 		return structuredClone(invite);
 	}
 
+	async findById(id: InviteId): Promise<Invite | null> {
+		const invite = this.data.invites.get(id);
+		return invite ? structuredClone(invite) : null;
+	}
+
 	async findByToken(token: string): Promise<Invite | null> {
 		for (const invite of this.data.invites.values()) {
 			if (invite.token === token) {
@@ -266,12 +284,13 @@ export class InMemoryInviteRepository implements InviteRepository {
 	}
 }
 
-/** Sequential multi-entity signup against the shared in-memory store. */
+/** Sequential multi-entity writes against the shared in-memory store. */
 export class InMemoryOnboardingRepository implements OnboardingRepository {
 	constructor(
 		private readonly users: UserRepository,
 		private readonly accounts: AccountRepository,
 		private readonly memberships: MembershipRepository,
+		private readonly invites: InviteRepository,
 	) {}
 
 	async signup(input: SignupInput): Promise<SignupResult> {
@@ -285,6 +304,24 @@ export class InMemoryOnboardingRepository implements OnboardingRepository {
 			role: 'owner',
 		});
 		return { user, account, membership };
+	}
+
+	async acceptInvite(input: AcceptInviteInput): Promise<AcceptInviteResult> {
+		// Reject an invite that was accepted or revoked since it was looked up.
+		const invite = await this.invites.findById(input.inviteId);
+		if (invite?.status !== 'pending') {
+			throw new InviteNotPendingError();
+		}
+		// Email uniqueness is enforced before the invite is consumed, so a
+		// duplicate leaves the invite pending and re-acceptable.
+		const user = await this.users.create(input.user);
+		const membership = await this.memberships.create({
+			accountId: input.accountId,
+			userId: user.id,
+			role: input.role,
+		});
+		await this.invites.markAccepted(input.inviteId);
+		return { user, membership };
 	}
 }
 
@@ -364,6 +401,6 @@ export function createInMemoryRepositories(
 	const memberships = new InMemoryMembershipRepository(data);
 	const invites = new InMemoryInviteRepository(data);
 	const items = new InMemoryItemRepository(data);
-	const onboarding = new InMemoryOnboardingRepository(users, accounts, memberships);
+	const onboarding = new InMemoryOnboardingRepository(users, accounts, memberships, invites);
 	return { data, users, accounts, memberships, invites, items, onboarding };
 }
