@@ -15,7 +15,7 @@ validate the monorepo, then deploy all five packages in parallel:
 | ---------------- | ------------------------------------------ | --------------------------- | ----------------- |
 | `@rivus/api`     | Worker + **Container** (Fastify on Node)   | `dev-api.rivus.ai`          | `api.rivus.ai`    |
 | `@rivus/app`     | Worker **Static Assets** (Expo web export) | `dev-app.rivus.ai`          | `app.rivus.ai`    |
-| `@rivus/website` | Worker via **OpenNext** (Next.js)          | `dev-www.rivus.ai`          | `www.rivus.ai`    |
+| `@rivus/website` | Worker via **OpenNext** (Next.js)          | `dev.rivus.ai`              | `www.rivus.ai`    |
 | `@rivus/docs`    | Worker **Static Assets** (Docula build)    | `dev-docs.rivus.ai`         | `docs.rivus.ai`   |
 | `@rivus/worker`  | Worker (cron + on-demand tasks)            | cron only (`*.workers.dev`) | cron only         |
 
