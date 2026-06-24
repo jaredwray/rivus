@@ -66,7 +66,8 @@ export interface VerificationCodeRepository {
 	findByEmail(email: string): Promise<StoredVerificationCode | null>;
 	/** Bump the wrong-attempt counter; returns the new count (0 if no code exists). */
 	incrementAttempts(email: string): Promise<number>;
-	delete(email: string): Promise<void>;
+	/** Atomically remove the code; returns whether this call was the one that removed it. */
+	delete(email: string): Promise<boolean>;
 }
 
 export interface NewAccount {

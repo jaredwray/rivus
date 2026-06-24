@@ -11,6 +11,7 @@ import {
 	buildTestAppWithRepos,
 	fakeSignup,
 	latestCodeFor,
+	RecordingMailer,
 	signupOwner,
 } from './helpers';
 
@@ -127,6 +128,18 @@ describe('signup', () => {
 		const { email, name } = signupBody();
 		const response = await requestSignup(app, { email, name });
 		expect(response.statusCode).toBe(400);
+	});
+
+	it('still returns 202 when code delivery fails (delivery is best-effort)', async () => {
+		class FailingCodeMailer extends RecordingMailer {
+			override async sendVerificationCode(): Promise<void> {
+				throw new Error('resend is down');
+			}
+		}
+		const failApp = await buildTestApp({ mailer: new FailingCodeMailer() });
+		const response = await requestSignup(failApp, signupBody({ email: 'nodeliver@example.com' }));
+		expect(response.statusCode).toBe(202);
+		await failApp.close();
 	});
 
 	it('retries slug generation when an account slug collides under concurrency', async () => {
@@ -246,6 +259,16 @@ describe('verify', () => {
 		expect((await verifyCode(app, email, code)).statusCode).toBe(201);
 		// The code was consumed; presenting it again is unauthorized.
 		expect((await verifyCode(app, email, code)).statusCode).toBe(401);
+	});
+
+	it('consumes a single-use code exactly once under concurrent verification', async () => {
+		const email = 'owner@example.com';
+		await requestSignup(app, signupBody({ email }));
+		const code = latestCodeFor(app, email);
+
+		// Two requests race with the same valid code; only one may mint a session.
+		const [a, b] = await Promise.all([verifyCode(app, email, code), verifyCode(app, email, code)]);
+		expect([a.statusCode, b.statusCode].sort()).toEqual([201, 401]);
 	});
 });
 

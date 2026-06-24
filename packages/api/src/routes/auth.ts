@@ -6,7 +6,7 @@ import {
 	type UserId,
 	verifyCodeSchema,
 } from '@rivus/core';
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import {
 	authResponseSchema,
@@ -32,8 +32,25 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
 	const { users, accounts, memberships, invites, onboarding, verificationCodes, mailer } = app.deps;
 
+	/**
+	 * Deliver a code without blocking the response on it. Decoupling delivery keeps
+	 * response latency uniform (so `/login` doesn't leak whether an email exists via
+	 * Resend round-trip time) and means a transient mail failure is logged, not 500.
+	 */
+	function deliverCode(
+		request: FastifyRequest,
+		to: string,
+		code: string,
+		purpose: VerificationPurpose,
+	): void {
+		void mailer
+			.sendVerificationCode({ to, code, purpose })
+			.catch((err) => request.log.error({ err }, 'failed to send verification code'));
+	}
+
 	/** Generate, store, and email a fresh one-time code for an email. */
 	async function issueCode(
+		request: FastifyRequest,
 		email: string,
 		purpose: VerificationPurpose,
 		signup?: PendingSignup,
@@ -41,7 +58,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 		const code = generateVerificationCode();
 		const codeHash = await hashSecret(code);
 		await verificationCodes.upsert({ email, purpose, codeHash, expiresAt: codeExpiry(), signup });
-		await mailer.sendVerificationCode({ to: email, code, purpose });
+		deliverCode(request, email, code, purpose);
 	}
 
 	/** Create the account a verified signup code describes (with slug-collision retry). */
@@ -99,7 +116,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 			if (await users.findByEmail(email)) {
 				throw app.httpErrors.conflict('A user with this email already exists');
 			}
-			await issueCode(email, 'signup', { name, business });
+			await issueCode(request, email, 'signup', { name, business });
 			return reply.code(202).send({ status: 'code_sent', email });
 		},
 	);
@@ -119,7 +136,11 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 			// Only send a code to a registered address, but always respond the same way
 			// so the endpoint never reveals whether an email has an account.
 			if (await users.findByEmail(email)) {
-				await issueCode(email, 'login');
+				await issueCode(request, email, 'login');
+			} else {
+				// Spend the same dominant scrypt cost for unknown emails, so response
+				// latency doesn't betray whether the address is registered.
+				await hashSecret(generateVerificationCode());
 			}
 			return reply.code(202).send({ status: 'code_sent', email });
 		},
@@ -161,8 +182,12 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!(await verifySecret(code, record.codeHash))) {
 				throw app.httpErrors.unauthorized('Invalid or expired code');
 			}
-			// Valid — consume the code immediately so it can't be replayed.
-			await verificationCodes.delete(email);
+			// Atomically claim the code: only the request that actually removes it
+			// proceeds, so a single-use code can't be redeemed twice by concurrent
+			// requests (which would mint two sessions / race account creation).
+			if (!(await verificationCodes.delete(email))) {
+				throw app.httpErrors.unauthorized('Invalid or expired code');
+			}
 
 			if (record.purpose === 'signup') {
 				if (!record.signup) {

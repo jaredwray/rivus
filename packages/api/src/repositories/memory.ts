@@ -326,8 +326,8 @@ export class InMemoryVerificationCodeRepository implements VerificationCodeRepos
 		return updated.attempts;
 	}
 
-	async delete(email: string): Promise<void> {
-		this.data.verificationCodes.delete(email.trim().toLowerCase());
+	async delete(email: string): Promise<boolean> {
+		return this.data.verificationCodes.delete(email.trim().toLowerCase());
 	}
 }
 

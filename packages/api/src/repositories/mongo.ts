@@ -332,17 +332,24 @@ export class MongoInviteRepository implements InviteRepository {
 export class MongoVerificationCodeRepository implements VerificationCodeRepository {
 	async upsert(input: NewVerificationCode): Promise<StoredVerificationCode> {
 		const email = input.email.trim().toLowerCase();
-		// Replace any existing code for this email so only one is ever active, and
-		// the attempt counter resets to its schema default.
-		await VerificationCodeModel.deleteOne({ email }).exec();
-		const doc = await VerificationCodeModel.create({
-			email,
+		// A single atomic upsert (not delete-then-create) so two overlapping code
+		// requests for the same email can't both delete then collide on the unique
+		// index. Resets the attempt counter; clears any stale signup payload.
+		const set = {
 			purpose: input.purpose,
 			codeHash: input.codeHash,
 			expiresAt: new Date(input.expiresAt),
-			signup: input.signup,
-		});
-		return mapVerificationCode(doc);
+			attempts: 0,
+		};
+		const update = input.signup
+			? { $set: { ...set, signup: input.signup } }
+			: { $set: set, $unset: { signup: '' } };
+		const doc = await VerificationCodeModel.findOneAndUpdate({ email }, update, {
+			upsert: true,
+			new: true,
+			setDefaultsOnInsert: true,
+		}).exec();
+		return mapVerificationCode(doc as HydratedDocument<VerificationCodeDocument>);
 	}
 
 	async findByEmail(email: string): Promise<StoredVerificationCode | null> {
@@ -361,8 +368,11 @@ export class MongoVerificationCodeRepository implements VerificationCodeReposito
 		return doc?.attempts ?? 0;
 	}
 
-	async delete(email: string): Promise<void> {
-		await VerificationCodeModel.deleteOne({ email: email.trim().toLowerCase() }).exec();
+	async delete(email: string): Promise<boolean> {
+		const result = await VerificationCodeModel.deleteOne({
+			email: email.trim().toLowerCase(),
+		}).exec();
+		return result.deletedCount === 1;
 	}
 }
 
