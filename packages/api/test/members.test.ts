@@ -314,6 +314,44 @@ describe('members', () => {
 		expect(response.statusCode).toBe(404);
 	});
 
+	it('rejects a removed member’s existing token (membership revalidated per request)', async () => {
+		const owner = await signupOwner(app);
+		const member = await addMember(owner.token, 'team_member', 'removed@example.com');
+		await app.inject({
+			method: 'DELETE',
+			url: `/v1/members/${member.userId}`,
+			headers: authHeader(owner.token),
+		});
+
+		// The member's token is still cryptographically valid, but their membership
+		// is gone — the guard must reject it rather than trust the stale claim.
+		const response = await app.inject({
+			method: 'GET',
+			url: '/v1/auth/me',
+			headers: authHeader(member.token),
+		});
+		expect(response.statusCode).toBe(401);
+	});
+
+	it('reflects a role change on the next request (demoted manager loses invite rights)', async () => {
+		const owner = await signupOwner(app);
+		const manager = await addMember(owner.token, 'manager', 'demote@example.com');
+
+		const before = await inviteMember(manager.token, 'team_member', 'before@example.com');
+		expect(before.statusCode).toBe(201);
+
+		await app.inject({
+			method: 'PATCH',
+			url: `/v1/members/${manager.userId}/role`,
+			headers: authHeader(owner.token),
+			payload: { role: 'team_member' },
+		});
+
+		// Same (now-stale) manager token — the guard refreshes the role from the DB.
+		const after = await inviteMember(manager.token, 'team_member', 'after@example.com');
+		expect(after.statusCode).toBe(403);
+	});
+
 	it('shares items across all members of the same account', async () => {
 		const owner = await signupOwner(app);
 		const created = await app.inject({

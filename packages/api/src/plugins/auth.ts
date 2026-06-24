@@ -17,6 +17,17 @@ export default fp(
 			} catch {
 				throw app.httpErrors.unauthorized('Authentication required');
 			}
+			// The token embeds accountId + role for speed, but membership can change
+			// after issuance. Revalidate against the DB so a removed user loses access
+			// immediately and a role change takes effect without waiting for expiry.
+			const membership = await app.deps.memberships.findByAccountAndUser(
+				request.user.accountId,
+				request.user.sub,
+			);
+			if (!membership) {
+				throw app.httpErrors.unauthorized('Your access to this account has been revoked');
+			}
+			request.user.role = membership.role;
 		});
 
 		// Role check reads `request.user` (populated by `authenticate`), so list it
