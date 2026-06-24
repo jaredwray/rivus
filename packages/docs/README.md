@@ -25,7 +25,6 @@ pnpm --filter @rivus/docs build    # static build into site/dist
 
 Branding lives in `site/logo.svg` (the header/sidebar logo used by the theme),
 `site/favicon.ico`, and `site/logo.png` (a raster fallback). The logo is the
-official Rivus mark; `logo.svg` adapts its wordmark to light/dark mode via a
-`prefers-color-scheme` rule, while the symbol keeps its gradient. Site metadata
-— including `autoReadme: false`, which makes the docs the landing page — lives
-in `site/docula.config.ts`.
+official Rivus symbol (icon only, no wordmark); its gradient reads on both the
+light and dark themes. Site metadata — including `autoReadme: false`, which
+makes the docs the landing page — lives in `site/docula.config.ts`.
