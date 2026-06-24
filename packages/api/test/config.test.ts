@@ -70,6 +70,18 @@ describe('parseCorsOrigin', () => {
 		expect(re.test('https://evil.com')).toBe(false);
 	});
 
+	it('allows the apex alongside a subdomain wildcard (the production value)', () => {
+		const origin = parseCorsOrigin('https://rivus.ai,*.rivus.ai');
+		expect(Array.isArray(origin)).toBe(true);
+		const [apex, wildcard] = origin as Array<string | RegExp>;
+		// The bare apex is covered by the exact entry...
+		expect(apex).toBe('https://rivus.ai');
+		// ...because the wildcard alone matches subdomains but not the apex.
+		expect(wildcard).toBeInstanceOf(RegExp);
+		expect((wildcard as RegExp).test('https://www.rivus.ai')).toBe(true);
+		expect((wildcard as RegExp).test('https://rivus.ai')).toBe(false);
+	});
+
 	it('honours an explicit scheme in a wildcard', () => {
 		const origin = parseCorsOrigin('https://*.rivus.ai');
 		expect(origin).toBeInstanceOf(RegExp);
