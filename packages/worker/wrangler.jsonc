@@ -26,6 +26,9 @@
 		},
 		"production": {
 			"name": "rivus-worker",
+			// Cron-only in production: don't expose the on-demand task routes
+			// (src/router.ts) on a public *.workers.dev hostname.
+			"workers_dev": false,
 			"vars": {
 				"API_BASE_URL": "https://api.rivus.ai"
 			}

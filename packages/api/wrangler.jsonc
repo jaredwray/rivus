@@ -53,8 +53,10 @@
 		"production": {
 			"name": "rivus-api",
 			"routes": [{ "pattern": "api.rivus.ai", "custom_domain": true }],
+			// Restrict cross-origin requests to Rivus subdomains (app/www). The API
+			// parses this (see src/config.ts `parseCorsOrigin`) into a subdomain regex.
 			"vars": {
-				"CORS_ORIGIN": "*"
+				"CORS_ORIGIN": "*.rivus.ai"
 			},
 			"containers": [
 				{

@@ -6,7 +6,8 @@ validate the monorepo, then deploy all five packages in parallel:
 - [`Deploy (development)`](.github/workflows/deploy-development.yaml) → the
   `development` environment, on every push to `main` (or manually).
 - [`Deploy (production)`](.github/workflows/deploy-production.yaml) → the
-  `production` environment, when a GitHub **release is published** (or manually).
+  `production` environment, when a **stable release is published** (pre-releases
+  are skipped) or manually.
 
 ## Topology
 
@@ -78,8 +79,16 @@ environment points `API_BASE_URL` at `https://dev-api.rivus.ai`.
 
 Because GitHub environment secrets are scoped to their environment, the
 production job reads its own `CLOUDFLARE_*` values even though the names match
-development. The API's secrets are synced into the Worker automatically by the
-`deploy-api` job; the step is skipped until the `*_MONGODB_URI` secret is present.
+development, and the API's secrets are synced into the Worker automatically by
+the `deploy-api` job. Unlike development (where the sync is skipped until the
+secret exists), the **production** `deploy-api` job **fails fast** if either
+`PROD_MONGODB_URI` or `PROD_JWT_SECRET` is missing — the container always boots
+with `NODE_ENV=production` and would crash-loop without them.
+
+The production API also restricts CORS to Rivus subdomains: `CORS_ORIGIN` is set
+to `*.rivus.ai`, which the API parses into a subdomain matcher (development stays
+`*`). Adjust the value in `packages/api/wrangler.jsonc` to add other origins
+(comma-separated; exact origins and `*` wildcards are both supported).
 
 ## Deploying by hand
 
