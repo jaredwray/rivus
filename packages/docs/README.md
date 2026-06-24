@@ -23,5 +23,8 @@ pnpm --filter @rivus/docs dev      # watch + serve locally
 pnpm --filter @rivus/docs build    # static build into site/dist
 ```
 
-Branding lives in `site/logo.png` and `site/favicon.ico` — replace the
-placeholders with real Rivus artwork. Site metadata is in `site/docula.config.ts`.
+Branding lives in `site/logo.svg` (the header/sidebar logo used by the theme),
+`site/favicon.ico`, and `site/logo.png` (a raster fallback). The logo is the
+official Rivus symbol (icon only, no wordmark); its gradient reads on both the
+light and dark themes. Site metadata — including `autoReadme: false`, which
+makes the docs the landing page — lives in `site/docula.config.ts`.

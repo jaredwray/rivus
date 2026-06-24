@@ -9,6 +9,9 @@ export const options: Partial<DoculaOptions> = {
 	siteTitle: 'Rivus',
 	siteDescription: 'Documentation, changelog, and API reference for Rivus.',
 	siteUrl: 'https://rivus.org',
+	// Skip the README-driven landing page and make the docs the home page, so
+	// visitors land straight on the documentation (Getting Started) at "/".
+	autoReadme: false,
 	// Rendered as the interactive API reference from the @rivus/api OpenAPI spec.
 	openApiUrl: [{ name: 'Rivus API', url: '/openapi.json' }],
 	// File-based changelog entries live in site/changelog. Flip this on once the
