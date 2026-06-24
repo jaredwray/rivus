@@ -10,6 +10,7 @@ import {
 	MongoOnboardingRepository,
 	MongoUserRepository,
 } from './repositories/mongo';
+import { createMailer } from './services/resend-mailer';
 
 /** Connect to Mongo, build the app with Mongo-backed repositories, and listen. */
 export async function start(): Promise<void> {
@@ -24,8 +25,13 @@ export async function start(): Promise<void> {
 		invites: new MongoInviteRepository(),
 		onboarding: new MongoOnboardingRepository(),
 		items: new MongoItemRepository(),
+		mailer: createMailer(config),
 		ping: async () => isMongoConnected(),
 	});
+
+	if (!config.RESEND_API_KEY) {
+		app.log.warn('RESEND_API_KEY is not set — invitation emails will not be delivered');
+	}
 
 	await app.ready();
 	await app.listen({ host: config.API_HOST, port: config.API_PORT });

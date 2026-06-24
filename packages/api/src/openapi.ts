@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createInMemoryRepositories } from './repositories/memory';
+import { NoopMailer } from './services/email';
 
 /**
  * Boot the app with in-memory repositories (no database needed) purely to read
@@ -20,6 +21,7 @@ async function main(): Promise<void> {
 		invites,
 		onboarding,
 		items,
+		mailer: new NoopMailer(),
 		ping: async () => true,
 	});
 

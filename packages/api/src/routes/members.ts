@@ -16,6 +16,7 @@ import {
 	memberResponseSchema,
 } from '../http-schemas';
 import { toInvite, toInviteSummary, toMember } from '../presenters';
+import { buildInviteAcceptUrl } from '../services/email';
 import { createInviteToken } from '../services/invites';
 
 const userIdParamsSchema = z.object({ userId: z.string().min(1) });
@@ -32,7 +33,7 @@ async function ownerCount(
 
 export const memberRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
-	const { users, memberships, invites } = app.deps;
+	const { users, accounts, memberships, invites, mailer, config } = app.deps;
 
 	app.get(
 		'/',
@@ -98,6 +99,27 @@ export const memberRoutes: FastifyPluginAsync = async (fastify) => {
 				token: createInviteToken(),
 				invitedBy: request.user.sub as UserId,
 			});
+
+			// Deliver the invitation email. The invite is already persisted (and its
+			// token is returned below), so a delivery failure must not fail the
+			// request — log it and let the inviter re-send.
+			try {
+				const [account, inviter] = await Promise.all([
+					accounts.findById(accountId),
+					users.findById(request.user.sub as UserId),
+				]);
+				await mailer.sendInviteEmail({
+					to: invite.email,
+					inviteeName: invite.name,
+					inviterName: inviter?.name ?? 'A teammate',
+					accountName: account?.name ?? 'your team',
+					role: invite.role,
+					acceptUrl: buildInviteAcceptUrl(config.APP_URL, invite.token),
+				});
+			} catch (error) {
+				request.log.error({ err: error, inviteId: invite.id }, 'failed to send invitation email');
+			}
+
 			return reply.code(201).send(toInvite(invite));
 		},
 	);

@@ -4,7 +4,17 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
 import { createInMemoryRepositories, type InMemoryRepositories } from '../src/repositories/memory';
+import { type InviteEmail, type Mailer, NoopMailer } from '../src/services/email';
 import type { AppDeps } from '../src/types';
+
+/** A mailer that records every send so tests can assert on delivered email. */
+export class RecordingMailer implements Mailer {
+	readonly invites: InviteEmail[] = [];
+
+	async sendInviteEmail(email: InviteEmail): Promise<void> {
+		this.invites.push(email);
+	}
+}
 
 export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<FastifyInstance> {
 	const config = loadConfig({
@@ -20,6 +30,7 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		invites,
 		onboarding,
 		items,
+		mailer: new NoopMailer(),
 		ping: async () => true,
 		...overrides,
 	});
@@ -49,6 +60,7 @@ export async function buildTestAppWithRepos(): Promise<{
 		invites,
 		onboarding,
 		items,
+		mailer: new NoopMailer(),
 		ping: async () => true,
 	});
 	await app.ready();

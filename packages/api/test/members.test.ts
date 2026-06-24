@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { authHeader, buildTestApp, signupOwner } from './helpers';
+import type { Mailer } from '../src/services/email';
+import { authHeader, buildTestApp, RecordingMailer, signupOwner } from './helpers';
 
 describe('members', () => {
 	let app: FastifyInstance;
@@ -371,5 +372,59 @@ describe('members', () => {
 
 		expect(response.statusCode).toBe(200);
 		expect(response.json().id).toBe(itemId);
+	});
+});
+
+describe('member invitations send email', () => {
+	it('sends an invitation email with the account, inviter, role and accept link', async () => {
+		const mailer = new RecordingMailer();
+		const app = await buildTestApp({ mailer });
+		try {
+			const owner = await signupOwner(app, { businessName: 'Acme Co', name: 'Olive Owner' });
+			const response = await app.inject({
+				method: 'POST',
+				url: '/v1/members/invites',
+				headers: authHeader(owner.token),
+				payload: { email: 'newhire@example.com', name: 'New Hire', role: 'manager' },
+			});
+			expect(response.statusCode).toBe(201);
+			const token = response.json().token;
+
+			expect(mailer.invites).toHaveLength(1);
+			expect(mailer.invites[0]).toEqual({
+				to: 'newhire@example.com',
+				inviteeName: 'New Hire',
+				inviterName: 'Olive Owner',
+				accountName: 'Acme Co',
+				role: 'manager',
+				acceptUrl: `https://app.rivus.ai/accept-invite?token=${token}`,
+			});
+		} finally {
+			await app.close();
+		}
+	});
+
+	it('still creates the invite when email delivery fails', async () => {
+		const failingMailer: Mailer = {
+			async sendInviteEmail() {
+				throw new Error('resend is down');
+			},
+		};
+		const app = await buildTestApp({ mailer: failingMailer });
+		try {
+			const owner = await signupOwner(app);
+			const response = await app.inject({
+				method: 'POST',
+				url: '/v1/members/invites',
+				headers: authHeader(owner.token),
+				payload: { email: 'newhire@example.com', name: 'New Hire', role: 'team_member' },
+			});
+
+			// Delivery failed, but the invite is persisted and its token returned.
+			expect(response.statusCode).toBe(201);
+			expect(response.json().token).toBeTypeOf('string');
+		} finally {
+			await app.close();
+		}
 	});
 });

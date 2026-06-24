@@ -66,3 +66,16 @@ pnpm --filter @rivus/api openapi  # regenerate openapi.json for the docs site
 
 Start MongoDB locally with `pnpm services:up` from the repo root. Configuration
 comes from environment variables — see `.env.example`.
+
+### Email (Resend)
+
+Invitation emails are delivered through [Resend](https://resend.com). Set:
+
+| Variable         | Default                    | Notes                                                       |
+| ---------------- | -------------------------- | ----------------------------------------------------------- |
+| `RESEND_API_KEY` | _(unset)_                  | When unset, the API runs but invitation emails aren't sent. |
+| `EMAIL_FROM`     | `Rivus <hello@rivus.ai>`   | Sender address; its domain must be verified in Resend.      |
+| `APP_URL`        | `https://app.rivus.ai`     | Base URL used to build the accept-invitation link.          |
+
+The API calls Resend's HTTP API directly (no SDK) so the transport stays small
+and is testable by injecting a fake `fetch`.

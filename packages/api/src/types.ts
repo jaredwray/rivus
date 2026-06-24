@@ -9,6 +9,7 @@ import type {
 	OnboardingRepository,
 	UserRepository,
 } from './repositories/types';
+import type { Mailer } from './services/email';
 
 /** Everything the Fastify app needs injected — swap repositories in tests. */
 export interface AppDeps {
@@ -19,6 +20,8 @@ export interface AppDeps {
 	invites: InviteRepository;
 	onboarding: OnboardingRepository;
 	items: ItemRepository;
+	/** Sends transactional email (invitations). */
+	mailer: Mailer;
 	/** Readiness check for downstream dependencies (e.g. the database). */
 	ping: () => Promise<boolean>;
 }
