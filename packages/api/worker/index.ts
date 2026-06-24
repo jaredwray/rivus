@@ -6,6 +6,9 @@ export interface Env {
 	MONGODB_URI: string;
 	JWT_SECRET: string;
 	CORS_ORIGIN: string;
+	RESEND_API_KEY: string;
+	EMAIL_FROM: string;
+	APP_URL: string;
 }
 
 /**
@@ -27,6 +30,9 @@ export class ApiContainer extends Container<Env> {
 		...(this.env.MONGODB_URI ? { MONGODB_URI: this.env.MONGODB_URI } : {}),
 		...(this.env.JWT_SECRET ? { JWT_SECRET: this.env.JWT_SECRET } : {}),
 		...(this.env.CORS_ORIGIN ? { CORS_ORIGIN: this.env.CORS_ORIGIN } : {}),
+		...(this.env.RESEND_API_KEY ? { RESEND_API_KEY: this.env.RESEND_API_KEY } : {}),
+		...(this.env.EMAIL_FROM ? { EMAIL_FROM: this.env.EMAIL_FROM } : {}),
+		...(this.env.APP_URL ? { APP_URL: this.env.APP_URL } : {}),
 	};
 }
 

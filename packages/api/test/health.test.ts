@@ -27,7 +27,8 @@ describe('health', () => {
 		const spec = app.swagger() as { openapi: string; paths: Record<string, unknown> };
 
 		expect(spec.openapi).toMatch(/^3\./);
-		expect(spec.paths['/v1/auth/register']).toBeDefined();
+		expect(spec.paths['/v1/auth/signup']).toBeDefined();
+		expect(spec.paths['/v1/members/invites']).toBeDefined();
 		expect(Object.keys(spec.paths).some((path) => path.startsWith('/v1/items'))).toBe(true);
 	});
 

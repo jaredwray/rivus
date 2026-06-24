@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { authHeader, buildTestApp, registerUser } from './helpers';
+import { authHeader, buildTestApp, signupOwner } from './helpers';
 
 describe('items', () => {
 	let app: FastifyInstance;
@@ -8,7 +8,7 @@ describe('items', () => {
 
 	beforeEach(async () => {
 		app = await buildTestApp();
-		token = (await registerUser(app)).token;
+		token = (await signupOwner(app)).token;
 	});
 
 	afterEach(async () => {
@@ -153,7 +153,7 @@ describe('items', () => {
 		const created = await createItem('private');
 		const id = created.json().id;
 
-		const otherToken = (await registerUser(app)).token;
+		const otherToken = (await signupOwner(app)).token;
 		const response = await app.inject({
 			method: 'GET',
 			url: `/v1/items/${id}`,
@@ -166,7 +166,7 @@ describe('items', () => {
 	it('does not let another owner update an item', async () => {
 		const created = await createItem('private');
 		const id = created.json().id;
-		const otherToken = (await registerUser(app)).token;
+		const otherToken = (await signupOwner(app)).token;
 
 		const response = await app.inject({
 			method: 'PATCH',
@@ -181,7 +181,7 @@ describe('items', () => {
 	it('does not let another owner delete an item', async () => {
 		const created = await createItem('private');
 		const id = created.json().id;
-		const otherToken = (await registerUser(app)).token;
+		const otherToken = (await signupOwner(app)).token;
 
 		const response = await app.inject({
 			method: 'DELETE',

@@ -18,6 +18,8 @@ import {
 	View,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AuthProvider, initialsOf, roleLabel, useAuth } from '@/src/auth/AuthContext';
+import { AuthScreen } from '@/src/auth/AuthScreen';
 import { RivusWordmark } from '@/src/brand/RivusLogo';
 import { BrandGradient } from '@/src/components/Gradient';
 import { Avatar, Dot, Icon, RivusStatusChip, Txt } from '@/src/components/ui';
@@ -33,6 +35,7 @@ const NAV: NavItem[] = [
 	{ href: '/customers', label: 'Customers', icon: 'users' },
 	{ href: '/marketing', label: 'Marketing', icon: 'trending-up' },
 	{ href: '/knowledge', label: 'Knowledge', icon: 'book' },
+	{ href: '/team', label: 'Team', icon: 'user-check' },
 ];
 
 function isActive(pathname: string, href: string): boolean {
@@ -51,15 +54,26 @@ export default function RootLayout() {
 	return (
 		<SafeAreaProvider>
 			<StatusBar style="light" />
-			{loaded ? (
-				<Shell />
-			) : (
-				<View style={styles.loading}>
-					<ActivityIndicator color={colors.brandPurple} />
-				</View>
-			)}
+			<AuthProvider>
+				{loaded ? (
+					<Gate />
+				) : (
+					<View style={styles.loading}>
+						<ActivityIndicator color={colors.brandPurple} />
+					</View>
+				)}
+			</AuthProvider>
 		</SafeAreaProvider>
 	);
+}
+
+/** Show the auth screens until there's a session, then the dashboard shell. */
+function Gate() {
+	const { session } = useAuth();
+	if (!session) {
+		return <AuthScreen />;
+	}
+	return <Shell />;
 }
 
 function Shell() {
@@ -96,6 +110,9 @@ function Shell() {
 function Sidebar() {
 	const pathname = usePathname();
 	const router = useRouter();
+	const { session, signOut } = useAuth();
+	const userName = session?.user.name ?? '';
+	const role = session ? roleLabel(session.role) : '';
 
 	return (
 		<View style={styles.sidebar}>
@@ -130,13 +147,18 @@ function Sidebar() {
 			</View>
 
 			<View style={styles.sidebarFooter}>
-				<Pressable style={styles.userRow}>
-					<Avatar initials="MT" size={30} background="#2a2a3a" color="#cfd0dc" />
+				<Pressable style={styles.userRow} onPress={signOut}>
+					<Avatar
+						initials={userName ? initialsOf(userName) : '–'}
+						size={30}
+						background="#2a2a3a"
+						color="#cfd0dc"
+					/>
 					<View style={{ flex: 1 }}>
-						<Txt style={styles.userName}>Marcus Thompson</Txt>
-						<Txt style={styles.userRole}>Owner</Txt>
+						<Txt style={styles.userName}>{userName}</Txt>
+						<Txt style={styles.userRole}>{role}</Txt>
 					</View>
-					<Feather name="chevron-down" size={15} color={colors.sidebarDim} />
+					<Feather name="log-out" size={15} color={colors.sidebarDim} />
 				</Pressable>
 			</View>
 		</View>
@@ -144,15 +166,19 @@ function Sidebar() {
 }
 
 function TopBar() {
+	const { session } = useAuth();
+	const accountName = session?.account.name ?? 'Your business';
+	const companySub = session?.account.address || session?.account.timezone || '';
+
 	return (
 		<View style={styles.topbar}>
 			<Pressable style={styles.company}>
 				<View style={styles.companyMark}>
-					<Txt style={styles.companyMarkTxt}>C</Txt>
+					<Txt style={styles.companyMarkTxt}>{accountName.charAt(0).toUpperCase()}</Txt>
 				</View>
 				<View>
-					<Txt style={styles.companyName}>Cascade Plumbing &amp; Heating</Txt>
-					<Txt style={styles.companySub}>Seattle, WA</Txt>
+					<Txt style={styles.companyName}>{accountName}</Txt>
+					{companySub ? <Txt style={styles.companySub}>{companySub}</Txt> : null}
 				</View>
 				<Feather name="chevron-down" size={15} color={colors.textHint} />
 			</Pressable>

@@ -2,7 +2,8 @@ import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './app';
 import { loadConfig } from './config';
-import { InMemoryItemRepository, InMemoryUserRepository } from './repositories/memory';
+import { createInMemoryRepositories } from './repositories/memory';
+import { NoopMailer } from './services/email';
 
 /**
  * Boot the app with in-memory repositories (no database needed) purely to read
@@ -11,10 +12,16 @@ import { InMemoryItemRepository, InMemoryUserRepository } from './repositories/m
  */
 async function main(): Promise<void> {
 	const config = loadConfig({ ...process.env, NODE_ENV: 'test' });
+	const { users, accounts, memberships, invites, onboarding, items } = createInMemoryRepositories();
 	const app = buildApp({
 		config,
-		users: new InMemoryUserRepository(),
-		items: new InMemoryItemRepository(),
+		users,
+		accounts,
+		memberships,
+		invites,
+		onboarding,
+		items,
+		mailer: new NoopMailer(),
 		ping: async () => true,
 	});
 
