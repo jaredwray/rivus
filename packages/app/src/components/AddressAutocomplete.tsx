@@ -39,11 +39,17 @@ export function AddressAutocomplete({
 				apiKey: key,
 				signal: controller.signal,
 			});
-			setSuggestions(results);
-			setOpen(results.length > 0);
+			// Ignore a result that a newer keystroke has already superseded, so the
+			// dropdown doesn't flicker while the user is still typing.
+			if (!controller.signal.aborted) {
+				setSuggestions(results);
+				setOpen(results.length > 0);
+			}
 		} catch {
-			setSuggestions([]);
-			setOpen(false);
+			if (!controller.signal.aborted) {
+				setSuggestions([]);
+				setOpen(false);
+			}
 		}
 	}
 

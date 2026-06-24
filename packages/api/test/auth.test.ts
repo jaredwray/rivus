@@ -202,6 +202,28 @@ describe('verify', () => {
 		expect(locked.statusCode).toBe(429);
 	});
 
+	it('does not let concurrent requests bypass the attempt limit', async () => {
+		const email = 'owner@example.com';
+		await requestSignup(app, signupBody({ email }));
+		const code = latestCodeFor(app, email);
+		const wrong = wrongCode(code);
+
+		// Fire many wrong-code verifications at once. Without reserving each attempt
+		// (an atomic increment) before the slow scrypt compare, they'd all read
+		// attempts=0 and slip past the limit — brute-forcing the code.
+		const responses = await Promise.all(
+			Array.from({ length: 20 }, () => verifyCode(app, email, wrong)),
+		);
+		const statuses = responses.map((response) => response.statusCode);
+		expect(statuses.filter((status) => status === 401).length).toBeLessThanOrEqual(
+			MAX_VERIFICATION_ATTEMPTS,
+		);
+		expect(statuses.filter((status) => status === 429).length).toBeGreaterThan(0);
+
+		// The code is now locked, even for the correct value.
+		expect((await verifyCode(app, email, code)).statusCode).toBe(429);
+	});
+
 	it('rejects an expired code with 401', async () => {
 		const { app: rawApp, repos } = await buildTestAppWithRepos();
 		await repos.verificationCodes.upsert({

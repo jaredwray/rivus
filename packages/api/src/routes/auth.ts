@@ -147,13 +147,18 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!record || new Date(record.expiresAt).getTime() < Date.now()) {
 				throw app.httpErrors.unauthorized('Invalid or expired code');
 			}
-			// Once the attempt budget is spent the code is locked (until it expires),
-			// so a 6-digit code can't be ground down by brute force.
+			// Fast path: a code whose budget is already spent is locked until it expires.
 			if (record.attempts >= MAX_VERIFICATION_ATTEMPTS) {
 				throw app.httpErrors.tooManyRequests('Too many incorrect attempts — request a new code');
 			}
+			// Reserve this attempt with an atomic increment *before* the slow scrypt
+			// compare. Otherwise many concurrent requests would all read the same
+			// `attempts` snapshot, pass the check above, and brute-force the 6-digit
+			// code while their compares run in parallel.
+			if ((await verificationCodes.incrementAttempts(email)) > MAX_VERIFICATION_ATTEMPTS) {
+				throw app.httpErrors.tooManyRequests('Too many incorrect attempts — request a new code');
+			}
 			if (!(await verifySecret(code, record.codeHash))) {
-				await verificationCodes.incrementAttempts(email);
 				throw app.httpErrors.unauthorized('Invalid or expired code');
 			}
 			// Valid — consume the code immediately so it can't be replayed.
