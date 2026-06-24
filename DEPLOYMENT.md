@@ -45,6 +45,30 @@ it ships as a **Cloudflare Container**:
 bundles `src/index.ts` and registers the `*/15 * * * *` cron. The `development`
 environment points `API_BASE_URL` at `https://dev-api.rivus.ai`.
 
+## Search engine crawling
+
+Only **production** is crawlable. Every pre-production deployment — the
+`development` environment (`dev.rivus.ai`, `dev-docs.rivus.ai`,
+`dev-app.rivus.ai`) and local builds — blocks all crawlers so it never lands in
+a search index.
+
+The signal is a single build-time variable, **`RIVUS_ENV`**, set per environment
+in the deploy workflows (`development` vs `production`). Anything other than
+`production` — including unset — is treated as non-production, so the safe
+default is "don't crawl":
+
+| Package          | Crawl rule emitted                                             |
+| ---------------- | ------------------------------------------------------------- |
+| `@rivus/website` | `src/app/robots.ts` builds `/robots.txt`; the root layout also adds a `noindex, nofollow` meta tag outside production. |
+| `@rivus/docs`    | `scripts/write-robots.mjs` writes `site/dist/robots.txt` after the Docula build. |
+| `@rivus/app`     | `scripts/write-robots.mjs` writes `dist/robots.txt` after the Expo web export. |
+
+Production emits an explicit allow-all `robots.txt`; development emits
+`User-agent: * / Disallow: /`. The API (`api.rivus.ai`) serves only JSON with no
+crawlable UI in any environment (its Swagger UI is off under `NODE_ENV=production`,
+which is how the container always runs), and the worker has no public route, so
+neither emits a `robots.txt`.
+
 ## One-time setup
 
 1. **Cloudflare account + zone.** Add the `rivus.ai` zone to the account so the

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Montserrat } from 'next/font/google';
 import type { ReactNode } from 'react';
+import { isProductionEnv } from '../lib/env';
 import { siteConfig } from '../lib/site';
 import './globals.css';
 
@@ -14,6 +15,9 @@ const montserrat = Montserrat({
 export const metadata: Metadata = {
 	title: `${siteConfig.name} — ${siteConfig.tagline}`,
 	description: siteConfig.description,
+	// Keep every pre-production deployment (dev.rivus.ai, local builds) out of
+	// search indexes; production stays fully indexable. Pairs with /robots.txt.
+	robots: isProductionEnv() ? undefined : { index: false, follow: false },
 	openGraph: {
 		title: `${siteConfig.name} — ${siteConfig.tagline}`,
 		description: siteConfig.description,
