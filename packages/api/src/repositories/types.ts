@@ -1,5 +1,6 @@
 import type {
 	Account,
+	AccountBusinessInput,
 	AccountId,
 	CreateItemInput,
 	Invite,
@@ -13,15 +14,15 @@ import type {
 	UserId,
 } from '@rivus/core';
 
-/** A user as persisted, including the password hash (never serialized). */
-export interface StoredUser extends User {
-	passwordHash: string;
-}
+/**
+ * A user as persisted. Auth is passwordless (one-time email codes), so there is
+ * no secret stored on the user record — `StoredUser` is just the public `User`.
+ */
+export type StoredUser = User;
 
 export interface NewUser {
 	email: string;
 	name: string;
-	passwordHash: string;
 }
 
 export interface UserRepository {
@@ -30,6 +31,42 @@ export interface UserRepository {
 	findById(id: UserId): Promise<StoredUser | null>;
 	/** Fetch many users in one query (the order of the result is not guaranteed). */
 	findByIds(ids: UserId[]): Promise<StoredUser[]>;
+}
+
+// --- Passwordless verification codes -----------------------------------------
+
+export type VerificationPurpose = 'login' | 'signup';
+
+/** Account details captured at signup, stashed on the code until it's verified. */
+export interface PendingSignup {
+	name: string;
+	business: AccountBusinessInput;
+}
+
+export interface NewVerificationCode {
+	email: string;
+	purpose: VerificationPurpose;
+	/** Hash of the 6-digit code; the plaintext only ever travels by email. */
+	codeHash: string;
+	/** ISO-8601 instant after which the code is no longer valid. */
+	expiresAt: string;
+	/** Present for `signup` codes; carries the account to create on verification. */
+	signup?: PendingSignup;
+}
+
+export interface StoredVerificationCode extends NewVerificationCode {
+	id: string;
+	attempts: number;
+	createdAt: string;
+}
+
+export interface VerificationCodeRepository {
+	/** Store a code for an email, replacing any existing one (one active per email). */
+	upsert(input: NewVerificationCode): Promise<StoredVerificationCode>;
+	findByEmail(email: string): Promise<StoredVerificationCode | null>;
+	/** Bump the wrong-attempt counter; returns the new count (0 if no code exists). */
+	incrementAttempts(email: string): Promise<number>;
+	delete(email: string): Promise<void>;
 }
 
 export interface NewAccount {

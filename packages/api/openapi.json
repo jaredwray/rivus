@@ -100,7 +100,7 @@
     },
     "/v1/auth/signup": {
       "post": {
-        "summary": "Create a business account and its owner",
+        "summary": "Begin signup — emails a one-time code to confirm the address",
         "tags": [
           "auth"
         ],
@@ -113,11 +113,6 @@
                 "properties": {
                   "email": {
                     "type": "string"
-                  },
-                  "password": {
-                    "type": "string",
-                    "minLength": 8,
-                    "maxLength": 200
                   },
                   "name": {
                     "type": "string",
@@ -160,7 +155,6 @@
                 },
                 "required": [
                   "email",
-                  "password",
                   "name",
                   "business"
                 ]
@@ -169,12 +163,12 @@
           }
         },
         "responses": {
-          "201": {
+          "202": {
             "description": "Default Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AuthResponse"
+                  "$ref": "#/components/schemas/CodeSent"
                 }
               }
             }
@@ -204,7 +198,55 @@
     },
     "/v1/auth/login": {
       "post": {
-        "summary": "Log in and receive a JWT",
+        "summary": "Request a one-time sign-in code",
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeSent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/verify": {
+      "post": {
+        "summary": "Verify a one-time code and receive a session",
         "tags": [
           "auth"
         ],
@@ -218,15 +260,14 @@
                   "email": {
                     "type": "string"
                   },
-                  "password": {
+                  "code": {
                     "type": "string",
-                    "minLength": 8,
-                    "maxLength": 200
+                    "pattern": "^\\d{6}$"
                   }
                 },
                 "required": [
                   "email",
-                  "password"
+                  "code"
                 ]
               }
             }
@@ -243,7 +284,37 @@
               }
             }
           },
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
             "description": "Default Response",
             "content": {
               "application/json": {
@@ -307,16 +378,10 @@
                   "token": {
                     "type": "string",
                     "minLength": 1
-                  },
-                  "password": {
-                    "type": "string",
-                    "minLength": 8,
-                    "maxLength": 200
                   }
                 },
                 "required": [
-                  "token",
-                  "password"
+                  "token"
                 ]
               }
             }

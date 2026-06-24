@@ -1,7 +1,8 @@
-import type { LoginInput } from '@rivus/core';
+import type { LoginInput, VerifyCodeInput } from '@rivus/core';
 import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
 import {
 	type AuthResponse,
+	type CodeSentResponse,
 	createApiClient,
 	type RivusApiClient,
 	type SignupBody,
@@ -13,9 +14,13 @@ export interface AuthContextValue {
 	session: AuthResponse | null;
 	/** Shared API client (screens use `session.token` for authed calls). */
 	client: RivusApiClient;
-	signIn: (input: LoginInput) => Promise<void>;
-	signUp: (input: SignupBody) => Promise<void>;
-	acceptInvite: (token: string, password: string) => Promise<void>;
+	/** Request a sign-in code for an existing account. */
+	signIn: (input: LoginInput) => Promise<CodeSentResponse>;
+	/** Begin signup — emails a confirmation code. */
+	signUp: (input: SignupBody) => Promise<CodeSentResponse>;
+	/** Exchange a one-time code for a session. */
+	verifyCode: (input: VerifyCodeInput) => Promise<void>;
+	acceptInvite: (token: string) => Promise<void>;
 	signOut: () => void;
 }
 
@@ -34,14 +39,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		() => ({
 			session,
 			client,
-			async signIn(input) {
-				setSession(await client.login(input));
+			signIn(input) {
+				return client.login(input);
 			},
-			async signUp(input) {
-				setSession(await client.signup(input));
+			signUp(input) {
+				return client.signup(input);
 			},
-			async acceptInvite(token, password) {
-				setSession(await client.acceptInvite({ token, password }));
+			async verifyCode(input) {
+				setSession(await client.verifyCode(input));
+			},
+			async acceptInvite(token) {
+				setSession(await client.acceptInvite({ token }));
 			},
 			signOut() {
 				setSession(null);

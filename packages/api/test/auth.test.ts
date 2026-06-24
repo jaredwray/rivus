@@ -3,23 +3,37 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ConflictError } from '../src/repositories/errors';
 import { createInMemoryRepositories } from '../src/repositories/memory';
-import { hashPassword } from '../src/services/password';
+import { hashSecret } from '../src/services/hash';
+import { MAX_VERIFICATION_ATTEMPTS } from '../src/services/verification';
 import {
 	authHeader,
 	buildTestApp,
 	buildTestAppWithRepos,
 	fakeSignup,
+	latestCodeFor,
 	signupOwner,
 } from './helpers';
 
-function signupPayload(over: Partial<{ email: string; businessName: string }> = {}) {
+function signupBody(over: Partial<{ email: string; businessName: string }> = {}) {
 	const base = fakeSignup();
 	return {
 		email: over.email ?? base.email,
-		password: base.password,
 		name: base.name,
 		business: { businessName: over.businessName ?? base.businessName },
 	};
+}
+
+function requestSignup(app: FastifyInstance, payload: Record<string, unknown>) {
+	return app.inject({ method: 'POST', url: '/v1/auth/signup', payload });
+}
+
+function verifyCode(app: FastifyInstance, email: string, code: string) {
+	return app.inject({ method: 'POST', url: '/v1/auth/verify', payload: { email, code } });
+}
+
+/** A 6-digit code guaranteed to differ from `code`. */
+function wrongCode(code: string): string {
+	return code === '000000' ? '111111' : '000000';
 }
 
 describe('signup', () => {
@@ -33,15 +47,26 @@ describe('signup', () => {
 		await app.close();
 	});
 
-	it('creates an account, an owner, and returns a session', async () => {
-		const payload = signupPayload({ businessName: 'Cascade Plumbing' });
-		const response = await app.inject({ method: 'POST', url: '/v1/auth/signup', payload });
+	it('emails a one-time code and does not create a session yet', async () => {
+		const payload = signupBody({ email: 'owner@example.com' });
+		const response = await requestSignup(app, payload);
+
+		expect(response.statusCode).toBe(202);
+		expect(response.json()).toEqual({ status: 'code_sent', email: 'owner@example.com' });
+		// A code was emailed, but nothing was created until it's verified.
+		expect(latestCodeFor(app, 'owner@example.com')).toMatch(/^\d{6}$/);
+	});
+
+	it('verifying the code creates the account + owner and returns a session', async () => {
+		const payload = signupBody({ email: 'owner@example.com', businessName: 'Cascade Plumbing' });
+		await requestSignup(app, payload);
+		const response = await verifyCode(app, 'owner@example.com', latestCodeFor(app, payload.email));
 
 		expect(response.statusCode).toBe(201);
 		const body = response.json();
 		expect(body.token).toBeTypeOf('string');
 		expect(body.role).toBe('owner');
-		expect(body.user.email).toBe(payload.email);
+		expect(body.user.email).toBe('owner@example.com');
 		expect(body.user).not.toHaveProperty('passwordHash');
 		expect(body.account).toMatchObject({
 			name: 'Cascade Plumbing',
@@ -51,20 +76,18 @@ describe('signup', () => {
 	});
 
 	it('carries through the optional business fields', async () => {
-		const response = await app.inject({
-			method: 'POST',
-			url: '/v1/auth/signup',
-			payload: {
-				...signupPayload(),
-				business: {
-					businessName: 'Acme',
-					phone: '+1 206 555 0100',
-					address: '1 Main St',
-					website: 'https://acme.example',
-					timezone: 'America/Los_Angeles',
-				},
+		const email = 'biz@example.com';
+		await requestSignup(app, {
+			...signupBody({ email }),
+			business: {
+				businessName: 'Acme',
+				phone: '+1 206 555 0100',
+				address: '1 Main St',
+				website: 'https://acme.example',
+				timezone: 'America/Los_Angeles',
 			},
 		});
+		const response = await verifyCode(app, email, latestCodeFor(app, email));
 
 		expect(response.statusCode).toBe(201);
 		expect(response.json().account).toMatchObject({
@@ -75,16 +98,10 @@ describe('signup', () => {
 		});
 	});
 
-	it('rejects a duplicate email with 409', async () => {
-		const payload = signupPayload();
-		await app.inject({ method: 'POST', url: '/v1/auth/signup', payload });
+	it('rejects a duplicate email with 409 before sending a code', async () => {
+		await signupOwner(app, { email: 'dupe@example.com' });
 
-		const second = await app.inject({
-			method: 'POST',
-			url: '/v1/auth/signup',
-			payload: { ...signupPayload(), email: payload.email },
-		});
-
+		const second = await requestSignup(app, signupBody({ email: 'dupe@example.com' }));
 		expect(second.statusCode).toBe(409);
 	});
 
@@ -102,39 +119,19 @@ describe('signup', () => {
 	});
 
 	it('rejects an invalid email with 400', async () => {
-		const response = await app.inject({
-			method: 'POST',
-			url: '/v1/auth/signup',
-			payload: { ...signupPayload(), email: 'not-an-email' },
-		});
-
-		expect(response.statusCode).toBe(400);
-	});
-
-	it('rejects a short password with 400', async () => {
-		const response = await app.inject({
-			method: 'POST',
-			url: '/v1/auth/signup',
-			payload: { ...signupPayload(), password: 'short' },
-		});
-
+		const response = await requestSignup(app, { ...signupBody(), email: 'not-an-email' });
 		expect(response.statusCode).toBe(400);
 	});
 
 	it('rejects signup without business information with 400', async () => {
-		const { email, password, name } = signupPayload();
-		const response = await app.inject({
-			method: 'POST',
-			url: '/v1/auth/signup',
-			payload: { email, password, name },
-		});
-
+		const { email, name } = signupBody();
+		const response = await requestSignup(app, { email, name });
 		expect(response.statusCode).toBe(400);
 	});
 
 	it('retries slug generation when an account slug collides under concurrency', async () => {
-		// Simulate a duplicate-slug race: the first signup attempt loses the unique
-		// index and the route must regenerate the slug and succeed on retry.
+		// Simulate a duplicate-slug race: the first account-creation attempt loses the
+		// unique index and the verify step must regenerate the slug and succeed.
 		const repos = createInMemoryRepositories();
 		let calls = 0;
 		const onboarding = {
@@ -155,16 +152,78 @@ describe('signup', () => {
 			onboarding,
 		});
 
-		const response = await raced.inject({
-			method: 'POST',
-			url: '/v1/auth/signup',
-			payload: { ...signupPayload(), business: { businessName: 'Race Co' } },
-		});
+		const email = 'race@example.com';
+		await requestSignup(raced, { ...signupBody({ email }), business: { businessName: 'Race Co' } });
+		const response = await verifyCode(raced, email, latestCodeFor(raced, email));
 
 		expect(response.statusCode).toBe(201);
 		expect(calls).toBe(2);
 		expect(response.json().account.slug).toBe('race-co');
 		await raced.close();
+	});
+});
+
+describe('verify', () => {
+	let app: FastifyInstance;
+
+	beforeEach(async () => {
+		app = await buildTestApp();
+	});
+
+	afterEach(async () => {
+		await app.close();
+	});
+
+	it('rejects a code for an email with no outstanding code (401)', async () => {
+		const response = await verifyCode(app, 'ghost@example.com', '123456');
+		expect(response.statusCode).toBe(401);
+	});
+
+	it('rejects a wrong code with 401', async () => {
+		const email = 'owner@example.com';
+		await requestSignup(app, signupBody({ email }));
+		const code = latestCodeFor(app, email);
+
+		const response = await verifyCode(app, email, wrongCode(code));
+		expect(response.statusCode).toBe(401);
+	});
+
+	it('locks the code with 429 after too many wrong attempts', async () => {
+		const email = 'owner@example.com';
+		await requestSignup(app, signupBody({ email }));
+		const code = latestCodeFor(app, email);
+
+		for (let i = 0; i < MAX_VERIFICATION_ATTEMPTS; i++) {
+			const attempt = await verifyCode(app, email, wrongCode(code));
+			expect(attempt.statusCode).toBe(401);
+		}
+		// Budget spent: even the *correct* code is now locked out.
+		const locked = await verifyCode(app, email, code);
+		expect(locked.statusCode).toBe(429);
+	});
+
+	it('rejects an expired code with 401', async () => {
+		const { app: rawApp, repos } = await buildTestAppWithRepos();
+		await repos.verificationCodes.upsert({
+			email: 'stale@example.com',
+			purpose: 'login',
+			codeHash: await hashSecret('123456'),
+			expiresAt: new Date(Date.now() - 1000).toISOString(),
+		});
+
+		const response = await verifyCode(rawApp, 'stale@example.com', '123456');
+		expect(response.statusCode).toBe(401);
+		await rawApp.close();
+	});
+
+	it('cannot replay a code after it succeeds', async () => {
+		const email = 'owner@example.com';
+		await requestSignup(app, signupBody({ email }));
+		const code = latestCodeFor(app, email);
+
+		expect((await verifyCode(app, email, code)).statusCode).toBe(201);
+		// The code was consumed; presenting it again is unauthorized.
+		expect((await verifyCode(app, email, code)).statusCode).toBe(401);
 	});
 });
 
@@ -179,15 +238,21 @@ describe('login', () => {
 		await app.close();
 	});
 
-	it('logs in and returns the account and role', async () => {
+	it('emails a code and verifying it returns the account and role', async () => {
 		const { credentials, account } = await signupOwner(app);
 
-		const response = await app.inject({
+		const requested = await app.inject({
 			method: 'POST',
 			url: '/v1/auth/login',
-			payload: { email: credentials.email, password: credentials.password },
+			payload: { email: credentials.email },
 		});
+		expect(requested.statusCode).toBe(202);
 
+		const response = await verifyCode(
+			app,
+			credentials.email,
+			latestCodeFor(app, credentials.email),
+		);
 		expect(response.statusCode).toBe(200);
 		const body = response.json();
 		expect(body.token).toBeTypeOf('string');
@@ -195,38 +260,31 @@ describe('login', () => {
 		expect(body.account.id).toBe(account.id);
 	});
 
-	it('rejects a wrong password with 401', async () => {
-		const { credentials } = await signupOwner(app);
-
+	it('returns 202 for an unknown email but sends no code (no enumeration)', async () => {
 		const response = await app.inject({
 			method: 'POST',
 			url: '/v1/auth/login',
-			payload: { email: credentials.email, password: 'wrong-password' },
+			payload: { email: 'ghost@example.com' },
 		});
 
-		expect(response.statusCode).toBe(401);
+		expect(response.statusCode).toBe(202);
+		expect(() => latestCodeFor(app, 'ghost@example.com')).toThrow();
 	});
 
-	it('rejects an unknown email with 401', async () => {
-		const response = await app.inject({
-			method: 'POST',
-			url: '/v1/auth/login',
-			payload: { email: 'ghost@example.com', password: 'supersecret123' },
-		});
-
-		expect(response.statusCode).toBe(401);
-	});
-
-	it('rejects a user that has no membership with 401', async () => {
+	it('rejects a user that has no membership with 401 on verify', async () => {
 		const { app: rawApp, repos } = await buildTestAppWithRepos();
-		const passwordHash = await hashPassword('supersecret123');
-		await repos.users.create({ email: 'lonely@example.com', name: 'Lonely', passwordHash });
+		await repos.users.create({ email: 'lonely@example.com', name: 'Lonely' });
 
-		const response = await rawApp.inject({
+		await rawApp.inject({
 			method: 'POST',
 			url: '/v1/auth/login',
-			payload: { email: 'lonely@example.com', password: 'supersecret123' },
+			payload: { email: 'lonely@example.com' },
 		});
+		const response = await verifyCode(
+			rawApp,
+			'lonely@example.com',
+			latestCodeFor(rawApp, 'lonely@example.com'),
+		);
 
 		expect(response.statusCode).toBe(401);
 		await rawApp.close();
@@ -286,7 +344,7 @@ describe('accept-invite', () => {
 		await app.close();
 	});
 
-	async function invite(token: string, role: 'manager' | 'team_member', email: string) {
+	function invite(token: string, role: 'manager' | 'team_member', email: string) {
 		return app.inject({
 			method: 'POST',
 			url: '/v1/members/invites',
@@ -295,15 +353,15 @@ describe('accept-invite', () => {
 		});
 	}
 
-	it('lets an invitee join the account, then log in', async () => {
+	it('lets an invitee join the account, then sign in with a code', async () => {
 		const owner = await signupOwner(app);
-		const inviteRes = await invite(owner.token, 'team_member', 'newhire@example.com');
-		const inviteToken = inviteRes.json().token;
+		const inviteToken = (await invite(owner.token, 'team_member', 'newhire@example.com')).json()
+			.token;
 
 		const accept = await app.inject({
 			method: 'POST',
 			url: '/v1/auth/accept-invite',
-			payload: { token: inviteToken, password: 'brandnewpass1' },
+			payload: { token: inviteToken },
 		});
 
 		expect(accept.statusCode).toBe(201);
@@ -312,11 +370,16 @@ describe('accept-invite', () => {
 		expect(body.account.id).toBe(owner.account.id);
 		expect(body.user.email).toBe('newhire@example.com');
 
-		const login = await app.inject({
+		await app.inject({
 			method: 'POST',
 			url: '/v1/auth/login',
-			payload: { email: 'newhire@example.com', password: 'brandnewpass1' },
+			payload: { email: 'newhire@example.com' },
 		});
+		const login = await verifyCode(
+			app,
+			'newhire@example.com',
+			latestCodeFor(app, 'newhire@example.com'),
+		);
 		expect(login.statusCode).toBe(200);
 		expect(login.json().role).toBe('team_member');
 	});
@@ -325,7 +388,7 @@ describe('accept-invite', () => {
 		const response = await app.inject({
 			method: 'POST',
 			url: '/v1/auth/accept-invite',
-			payload: { token: 'nope', password: 'supersecret123' },
+			payload: { token: 'nope' },
 		});
 		expect(response.statusCode).toBe(401);
 	});
@@ -337,13 +400,13 @@ describe('accept-invite', () => {
 		await app.inject({
 			method: 'POST',
 			url: '/v1/auth/accept-invite',
-			payload: { token: inviteToken, password: 'brandnewpass1' },
+			payload: { token: inviteToken },
 		});
 
 		const second = await app.inject({
 			method: 'POST',
 			url: '/v1/auth/accept-invite',
-			payload: { token: inviteToken, password: 'brandnewpass1' },
+			payload: { token: inviteToken },
 		});
 		expect(second.statusCode).toBe(401);
 	});
@@ -365,7 +428,7 @@ describe('accept-invite', () => {
 		const response = await rawApp.inject({
 			method: 'POST',
 			url: '/v1/auth/accept-invite',
-			payload: { token: 'preseeded-token', password: 'supersecret123' },
+			payload: { token: 'preseeded-token' },
 		});
 
 		expect(response.statusCode).toBe(409);

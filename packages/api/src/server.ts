@@ -9,6 +9,7 @@ import {
 	MongoMembershipRepository,
 	MongoOnboardingRepository,
 	MongoUserRepository,
+	MongoVerificationCodeRepository,
 } from './repositories/mongo';
 import { createMailer } from './services/resend-mailer';
 
@@ -25,6 +26,7 @@ export async function start(): Promise<void> {
 		invites: new MongoInviteRepository(),
 		onboarding: new MongoOnboardingRepository(),
 		items: new MongoItemRepository(),
+		verificationCodes: new MongoVerificationCodeRepository(),
 		mailer: createMailer(config),
 		ping: async () => isMongoConnected(),
 	});

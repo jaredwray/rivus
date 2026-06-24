@@ -44,6 +44,10 @@ function makeAuthResponse(role: 'owner' | 'manager' | 'team_member' = 'owner') {
 	return { token: faker.string.alphanumeric(40), user: makeUser(), account: makeAccount(), role };
 }
 
+function makeCodeSent(email: string) {
+	return { status: 'code_sent' as const, email };
+}
+
 function makeItem() {
 	const now = new Date().toISOString();
 	return {
@@ -97,23 +101,24 @@ describe('createApiClient', () => {
 	});
 
 	describe('signup', () => {
-		it('creates an account + owner and returns the session', async () => {
-			const response = makeAuthResponse('owner');
-			fetchMock.mockResolvedValueOnce(jsonResponse(response, { status: 201 }));
+		it('begins signup and returns the code-sent acknowledgement', async () => {
+			const email = faker.internet.email().toLowerCase();
+			fetchMock.mockResolvedValueOnce(jsonResponse(makeCodeSent(email), { status: 202 }));
 
 			const client = createApiClient(BASE, fetchMock);
 			const result = await client.signup({
-				email: response.user.email,
-				password: 'supersecret123',
-				name: response.user.name,
+				email,
+				name: 'Marcus Thompson',
 				business: { businessName: 'Cascade Plumbing' },
 			});
 
-			expect(result).toEqual(response);
+			expect(result).toEqual({ status: 'code_sent', email });
 			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
 			expect(url).toBe(`${BASE}/v1/auth/signup`);
 			expect(init.method).toBe('POST');
-			expect(JSON.parse(init.body as string).business.businessName).toBe('Cascade Plumbing');
+			const body = JSON.parse(init.body as string);
+			expect(body.business.businessName).toBe('Cascade Plumbing');
+			expect(body).not.toHaveProperty('password');
 		});
 
 		it('rejects locally-invalid signup input before hitting the network', async () => {
@@ -121,7 +126,6 @@ describe('createApiClient', () => {
 			await expect(
 				client.signup({
 					email: 'not-an-email',
-					password: 'short',
 					name: 'X',
 					business: { businessName: '' },
 				}),
@@ -131,48 +135,25 @@ describe('createApiClient', () => {
 	});
 
 	describe('login', () => {
-		it('returns the session on success', async () => {
-			const response = makeAuthResponse('owner');
-			fetchMock.mockResolvedValueOnce(jsonResponse(response));
+		it('requests a code and returns the acknowledgement', async () => {
+			const email = faker.internet.email().toLowerCase();
+			fetchMock.mockResolvedValueOnce(jsonResponse(makeCodeSent(email), { status: 202 }));
 
 			const client = createApiClient(BASE, fetchMock);
-			const result = await client.login({ email: response.user.email, password: 'supersecret' });
+			const result = await client.login({ email });
 
-			expect(result).toEqual(response);
+			expect(result).toEqual({ status: 'code_sent', email });
 			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
 			expect(url).toBe(`${BASE}/v1/auth/login`);
 			expect(init.method).toBe('POST');
-			expect(JSON.parse(init.body as string)).toEqual({
-				email: response.user.email,
-				password: 'supersecret',
-			});
-		});
-
-		it('throws a clear ApiError on invalid credentials (401)', async () => {
-			fetchMock.mockResolvedValueOnce(
-				jsonResponse(
-					{ error: 'Unauthorized', message: 'Invalid email or password', statusCode: 401 },
-					{ status: 401 },
-				),
-			);
-
-			const client = createApiClient(BASE, fetchMock);
-			const error = await client
-				.login({ email: 'a@b.com', password: 'badpassword' })
-				.catch((e) => e);
-
-			expect(error).toBeInstanceOf(ApiError);
-			expect(error.status).toBe(401);
-			expect(error.message).toBe('Invalid email or password');
+			expect(JSON.parse(init.body as string)).toEqual({ email });
 		});
 
 		it('falls back to a generic message when the error body has none', async () => {
 			fetchMock.mockResolvedValueOnce(jsonResponse(undefined, { status: 500 }));
 
 			const client = createApiClient(BASE, fetchMock);
-			const error = await client
-				.login({ email: 'a@b.com', password: 'badpassword' })
-				.catch((e) => e);
+			const error = await client.login({ email: 'a@b.com' }).catch((e) => e);
 
 			expect(error).toBeInstanceOf(ApiError);
 			expect(error.status).toBe(500);
@@ -181,23 +162,65 @@ describe('createApiClient', () => {
 
 		it('rejects locally-invalid input before hitting the network', async () => {
 			const client = createApiClient(BASE, fetchMock);
-			await expect(client.login({ email: 'not-an-email', password: 'short' })).rejects.toThrow();
+			await expect(client.login({ email: 'not-an-email' })).rejects.toThrow();
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('verifyCode', () => {
+		it('exchanges a code for the session', async () => {
+			const response = makeAuthResponse('owner');
+			fetchMock.mockResolvedValueOnce(jsonResponse(response, { status: 200 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.verifyCode({ email: response.user.email, code: '123456' });
+
+			expect(result).toEqual(response);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/auth/verify`);
+			expect(JSON.parse(init.body as string)).toEqual({
+				email: response.user.email,
+				code: '123456',
+			});
+		});
+
+		it('throws a clear ApiError on an invalid code (401)', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse(
+					{ error: 'Unauthorized', message: 'Invalid or expired code', statusCode: 401 },
+					{ status: 401 },
+				),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client.verifyCode({ email: 'a@b.com', code: '000000' }).catch((e) => e);
+
+			expect(error).toBeInstanceOf(ApiError);
+			expect(error.status).toBe(401);
+			expect(error.message).toBe('Invalid or expired code');
+		});
+
+		it('rejects a malformed code before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.verifyCode({ email: 'a@b.com', code: '12' })).rejects.toThrow();
 			expect(fetchMock).not.toHaveBeenCalled();
 		});
 	});
 
 	describe('acceptInvite', () => {
-		it('joins an account and returns the session', async () => {
+		it('joins an account with just the token and returns the session', async () => {
 			const response = makeAuthResponse('team_member');
 			fetchMock.mockResolvedValueOnce(jsonResponse(response, { status: 201 }));
 
 			const client = createApiClient(BASE, fetchMock);
-			const result = await client.acceptInvite({ token: 'invite-tok', password: 'supersecret123' });
+			const result = await client.acceptInvite({ token: 'invite-tok' });
 
 			expect(result).toEqual(response);
 			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
 			expect(url).toBe(`${BASE}/v1/auth/accept-invite`);
-			expect(JSON.parse(init.body as string).token).toBe('invite-tok');
+			const body = JSON.parse(init.body as string);
+			expect(body.token).toBe('invite-tok');
+			expect(body).not.toHaveProperty('password');
 		});
 	});
 

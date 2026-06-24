@@ -1,5 +1,12 @@
 import type { Config } from '../config';
-import { type InviteEmail, type Mailer, NoopMailer, renderInviteEmail } from './email';
+import {
+	type InviteEmail,
+	type Mailer,
+	NoopMailer,
+	renderInviteEmail,
+	renderVerificationEmail,
+	type VerificationEmail,
+} from './email';
 
 /** The subset of the Fetch API the mailer needs (so tests can inject a fake). */
 export type FetchLike = (
@@ -44,6 +51,11 @@ export class ResendMailer implements Mailer {
 
 	async sendInviteEmail(email: InviteEmail): Promise<void> {
 		const { subject, html, text } = renderInviteEmail(email);
+		await this.send({ to: email.to, subject, html, text });
+	}
+
+	async sendVerificationCode(email: VerificationEmail): Promise<void> {
+		const { subject, html, text } = renderVerificationEmail(email);
 		await this.send({ to: email.to, subject, html, text });
 	}
 

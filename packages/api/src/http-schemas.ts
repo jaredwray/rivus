@@ -37,6 +37,17 @@ export const authResponseSchema = z
 	})
 	.meta({ id: 'AuthResponse' });
 
+/**
+ * Acknowledges that a one-time code was emailed. Signup and login return this
+ * (HTTP 202) instead of a session — the session is issued later by `verify`.
+ */
+export const codeSentResponseSchema = z
+	.object({
+		status: z.literal('code_sent'),
+		email: z.string(),
+	})
+	.meta({ id: 'CodeSent' });
+
 /** Current-session view returned from `GET /v1/auth/me`. */
 export const sessionResponseSchema = z
 	.object({

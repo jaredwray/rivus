@@ -18,6 +18,8 @@ import {
 	signupSchema,
 	type User,
 	type UserId,
+	type VerifyCodeInput,
+	verifyCodeSchema,
 } from '@rivus/core';
 import { z } from 'zod';
 
@@ -82,6 +84,14 @@ const authResponseSchema = z.object({
 	role: roleSchema,
 });
 export type AuthResponse = z.infer<typeof authResponseSchema>;
+
+// Signup and login are passwordless: they email a one-time code and return this
+// acknowledgement; `verifyCode` then exchanges the code for an `AuthResponse`.
+const codeSentResponseSchema = z.object({
+	status: z.literal('code_sent'),
+	email: z.string(),
+});
+export type CodeSentResponse = z.infer<typeof codeSentResponseSchema>;
 
 const sessionResponseSchema = z.object({
 	user: userResponseSchema,
@@ -169,8 +179,12 @@ export type FetchLike = typeof globalThis.fetch;
 export interface RivusApiClient {
 	readonly baseUrl: string;
 	health(): Promise<HealthResponse>;
-	signup(input: SignupBody): Promise<AuthResponse>;
-	login(input: LoginInput): Promise<AuthResponse>;
+	/** Begin signup — emails a one-time code to confirm the address. */
+	signup(input: SignupBody): Promise<CodeSentResponse>;
+	/** Request a one-time sign-in code for an existing account. */
+	login(input: LoginInput): Promise<CodeSentResponse>;
+	/** Exchange a one-time code (signup or login) for a session. */
+	verifyCode(input: VerifyCodeInput): Promise<AuthResponse>;
 	acceptInvite(input: AcceptInviteInput): Promise<AuthResponse>;
 	me(token: string): Promise<Session>;
 	listMembers(token: string): Promise<MemberList>;
@@ -227,12 +241,17 @@ export function createApiClient(baseUrl: string, fetchImpl: FetchLike = fetch): 
 		// (the expected async contract) rather than a synchronous throw.
 		async signup(input: SignupBody) {
 			const payload = signupSchema.parse(input);
-			return request('/v1/auth/signup', authResponseSchema, jsonInit('POST', payload));
+			return request('/v1/auth/signup', codeSentResponseSchema, jsonInit('POST', payload));
 		},
 
 		async login(input: LoginInput) {
 			const payload = loginSchema.parse(input);
-			return request('/v1/auth/login', authResponseSchema, jsonInit('POST', payload));
+			return request('/v1/auth/login', codeSentResponseSchema, jsonInit('POST', payload));
+		},
+
+		async verifyCode(input: VerifyCodeInput) {
+			const payload = verifyCodeSchema.parse(input);
+			return request('/v1/auth/verify', authResponseSchema, jsonInit('POST', payload));
 		},
 
 		async acceptInvite(input: AcceptInviteInput) {

@@ -4,86 +4,103 @@ import {
 	loginSchema,
 	signupSchema,
 	type UserId,
+	verifyCodeSchema,
 } from '@rivus/core';
 import type { FastifyPluginAsync } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { authResponseSchema, errorResponseSchema, sessionResponseSchema } from '../http-schemas';
+import {
+	authResponseSchema,
+	codeSentResponseSchema,
+	errorResponseSchema,
+	sessionResponseSchema,
+} from '../http-schemas';
 import { toPublicAccount, toPublicUser } from '../presenters';
 import { ConflictError } from '../repositories/errors';
-import type { SignupResult } from '../repositories/types';
+import type { PendingSignup, SignupResult, VerificationPurpose } from '../repositories/types';
 import { generateUniqueSlug } from '../services/accounts';
-import { dummyPasswordHash, hashPassword, verifyPassword } from '../services/password';
+import { hashSecret, verifySecret } from '../services/hash';
+import {
+	codeExpiry,
+	generateVerificationCode,
+	MAX_VERIFICATION_ATTEMPTS,
+} from '../services/verification';
 
 /** How many times to regenerate a slug when concurrent signups collide. */
 const SLUG_RETRY_LIMIT = 5;
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
-	const { users, accounts, memberships, invites, onboarding } = app.deps;
+	const { users, accounts, memberships, invites, onboarding, verificationCodes, mailer } = app.deps;
+
+	/** Generate, store, and email a fresh one-time code for an email. */
+	async function issueCode(
+		email: string,
+		purpose: VerificationPurpose,
+		signup?: PendingSignup,
+	): Promise<void> {
+		const code = generateVerificationCode();
+		const codeHash = await hashSecret(code);
+		await verificationCodes.upsert({ email, purpose, codeHash, expiresAt: codeExpiry(), signup });
+		await mailer.sendVerificationCode({ to: email, code, purpose });
+	}
+
+	/** Create the account a verified signup code describes (with slug-collision retry). */
+	async function createAccount(email: string, signup: PendingSignup): Promise<SignupResult> {
+		let result: SignupResult | undefined;
+		for (let attempt = 0; attempt < SLUG_RETRY_LIMIT; attempt++) {
+			const slug = await generateUniqueSlug(accounts, signup.business.businessName);
+			try {
+				result = await onboarding.signup({
+					user: { email, name: signup.name },
+					account: {
+						name: signup.business.businessName,
+						slug,
+						phone: signup.business.phone,
+						address: signup.business.address,
+						website: signup.business.website,
+						timezone: signup.business.timezone,
+					},
+				});
+				break;
+			} catch (error) {
+				// Two same-named signups can race to the same slug; regenerate and retry.
+				// Any other conflict (e.g. duplicate email) propagates as 409.
+				if (
+					error instanceof ConflictError &&
+					error.field === 'slug' &&
+					attempt < SLUG_RETRY_LIMIT - 1
+				) {
+					continue;
+				}
+				throw error;
+			}
+		}
+		return result as SignupResult;
+	}
 
 	app.post(
 		'/signup',
 		{
 			schema: {
 				tags: ['auth'],
-				summary: 'Create a business account and its owner',
+				summary: 'Begin signup — emails a one-time code to confirm the address',
 				body: signupSchema,
 				response: {
-					201: authResponseSchema,
+					202: codeSentResponseSchema,
 					400: errorResponseSchema,
 					409: errorResponseSchema,
 				},
 			},
 		},
 		async (request, reply) => {
-			const { email, password, name, business } = request.body;
-			const passwordHash = await hashPassword(password);
-			// Creates user + account + owner membership atomically (a Mongo
-			// transaction in production; a shared store in tests). Email uniqueness
-			// is enforced first, so a duplicate never leaves an orphan account.
-			let result: SignupResult | undefined;
-			for (let attempt = 0; attempt < SLUG_RETRY_LIMIT; attempt++) {
-				const slug = await generateUniqueSlug(accounts, business.businessName);
-				try {
-					result = await onboarding.signup({
-						user: { email, name, passwordHash },
-						account: {
-							name: business.businessName,
-							slug,
-							phone: business.phone,
-							address: business.address,
-							website: business.website,
-							timezone: business.timezone,
-						},
-					});
-					break;
-				} catch (error) {
-					// Two same-named signups can race to the same slug; regenerate and
-					// retry. Any other conflict (e.g. duplicate email) propagates as 409.
-					if (
-						error instanceof ConflictError &&
-						error.field === 'slug' &&
-						attempt < SLUG_RETRY_LIMIT - 1
-					) {
-						continue;
-					}
-					throw error;
-				}
+			const { email, name, business } = request.body;
+			// Reject a duplicate before emailing anything, so we never start a signup
+			// for an address that already has an account.
+			if (await users.findByEmail(email)) {
+				throw app.httpErrors.conflict('A user with this email already exists');
 			}
-			// The loop either assigns `result` and breaks, or rethrows.
-			const { user, account, membership } = result as SignupResult;
-			const token = await reply.jwtSign({
-				sub: user.id,
-				email: user.email,
-				accountId: account.id,
-				role: membership.role,
-			});
-			return reply.code(201).send({
-				token,
-				user: toPublicUser(user),
-				account: toPublicAccount(account),
-				role: membership.role,
-			});
+			await issueCode(email, 'signup', { name, business });
+			return reply.code(202).send({ status: 'code_sent', email });
 		},
 	);
 
@@ -92,27 +109,81 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 		{
 			schema: {
 				tags: ['auth'],
-				summary: 'Log in and receive a JWT',
+				summary: 'Request a one-time sign-in code',
 				body: loginSchema,
-				response: { 200: authResponseSchema, 401: errorResponseSchema },
+				response: { 202: codeSentResponseSchema, 400: errorResponseSchema },
 			},
 		},
 		async (request, reply) => {
-			const { email, password } = request.body;
+			const { email } = request.body;
+			// Only send a code to a registered address, but always respond the same way
+			// so the endpoint never reveals whether an email has an account.
+			if (await users.findByEmail(email)) {
+				await issueCode(email, 'login');
+			}
+			return reply.code(202).send({ status: 'code_sent', email });
+		},
+	);
+
+	app.post(
+		'/verify',
+		{
+			schema: {
+				tags: ['auth'],
+				summary: 'Verify a one-time code and receive a session',
+				body: verifyCodeSchema,
+				response: {
+					200: authResponseSchema,
+					201: authResponseSchema,
+					400: errorResponseSchema,
+					401: errorResponseSchema,
+					429: errorResponseSchema,
+				},
+			},
+		},
+		async (request, reply) => {
+			const { email, code } = request.body;
+			const record = await verificationCodes.findByEmail(email);
+			if (!record || new Date(record.expiresAt).getTime() < Date.now()) {
+				throw app.httpErrors.unauthorized('Invalid or expired code');
+			}
+			// Once the attempt budget is spent the code is locked (until it expires),
+			// so a 6-digit code can't be ground down by brute force.
+			if (record.attempts >= MAX_VERIFICATION_ATTEMPTS) {
+				throw app.httpErrors.tooManyRequests('Too many incorrect attempts — request a new code');
+			}
+			if (!(await verifySecret(code, record.codeHash))) {
+				await verificationCodes.incrementAttempts(email);
+				throw app.httpErrors.unauthorized('Invalid or expired code');
+			}
+			// Valid — consume the code immediately so it can't be replayed.
+			await verificationCodes.delete(email);
+
+			if (record.purpose === 'signup') {
+				if (!record.signup) {
+					throw app.httpErrors.unauthorized('Invalid or expired code');
+				}
+				const { user, account, membership } = await createAccount(email, record.signup);
+				const token = await reply.jwtSign({
+					sub: user.id,
+					email: user.email,
+					accountId: account.id,
+					role: membership.role,
+				});
+				return reply.code(201).send({
+					token,
+					user: toPublicUser(user),
+					account: toPublicAccount(account),
+					role: membership.role,
+				});
+			}
+
+			// Login: resolve the user's account and role.
 			const user = await users.findByEmail(email);
-			if (!user) {
-				// Compare against a dummy hash so a missing account is not measurably
-				// faster than a wrong password (avoids timing-based user enumeration).
-				await verifyPassword(password, await dummyPasswordHash());
-				throw app.httpErrors.unauthorized('Invalid email or password');
-			}
-			if (!(await verifyPassword(password, user.passwordHash))) {
-				throw app.httpErrors.unauthorized('Invalid email or password');
-			}
-			const membership = await memberships.findByUserId(user.id);
+			const membership = user ? await memberships.findByUserId(user.id) : null;
 			const account = membership ? await accounts.findById(membership.accountId) : null;
-			if (!membership || !account) {
-				throw app.httpErrors.unauthorized('Invalid email or password');
+			if (!user || !membership || !account) {
+				throw app.httpErrors.unauthorized('Invalid or expired code');
 			}
 			const token = await reply.jwtSign({
 				sub: user.id,
@@ -170,7 +241,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 			},
 		},
 		async (request, reply) => {
-			const { token: inviteToken, password } = request.body;
+			const { token: inviteToken } = request.body;
 			const invite = await invites.findByToken(inviteToken);
 			if (!invite) {
 				throw app.httpErrors.unauthorized('Invalid or expired invitation');
@@ -179,14 +250,12 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!account) {
 				throw app.httpErrors.unauthorized('Invalid or expired invitation');
 			}
-			// `onboarding.acceptInvite` atomically enforces the invite is still
-			// pending (mapping a stale/revoked invite to 401).
-			const passwordHash = await hashPassword(password);
 			// Creates the user + membership and marks the invite accepted atomically
-			// (a Mongo transaction in production). Throws ConflictError (409) if the
-			// email was claimed since the invite was sent.
+			// (a Mongo transaction in production). `onboarding.acceptInvite` enforces
+			// the invite is still pending (mapping a stale/revoked invite to 401), and
+			// throws ConflictError (409) if the email was claimed since the invite.
 			const { user, membership } = await onboarding.acceptInvite({
-				user: { email: invite.email, name: invite.name, passwordHash },
+				user: { email: invite.email, name: invite.name },
 				accountId: account.id,
 				role: invite.role,
 				inviteId: invite.id,

@@ -28,11 +28,14 @@ import type {
 	NewInvite,
 	NewMembership,
 	NewUser,
+	NewVerificationCode,
 	OnboardingRepository,
 	SignupInput,
 	SignupResult,
 	StoredUser,
+	StoredVerificationCode,
 	UserRepository,
+	VerificationCodeRepository,
 } from './types';
 
 const now = (): string => new Date().toISOString();
@@ -48,6 +51,8 @@ export interface InMemoryData {
 	memberships: Map<string, Membership>;
 	invites: Map<string, Invite>;
 	items: Map<string, Item>;
+	/** Active one-time codes, keyed by normalized email (one per email). */
+	verificationCodes: Map<string, StoredVerificationCode>;
 }
 
 export function createInMemoryData(): InMemoryData {
@@ -57,6 +62,7 @@ export function createInMemoryData(): InMemoryData {
 		memberships: new Map(),
 		invites: new Map(),
 		items: new Map(),
+		verificationCodes: new Map(),
 	};
 }
 
@@ -76,7 +82,6 @@ export class InMemoryUserRepository implements UserRepository {
 			id: randomUUID() as UserId,
 			email,
 			name: input.name,
-			passwordHash: input.passwordHash,
 			createdAt: timestamp,
 			updatedAt: timestamp,
 		};
@@ -284,6 +289,48 @@ export class InMemoryInviteRepository implements InviteRepository {
 	}
 }
 
+/** In-memory one-time-code store, keyed by normalized email. */
+export class InMemoryVerificationCodeRepository implements VerificationCodeRepository {
+	constructor(private readonly data: InMemoryData) {}
+
+	async upsert(input: NewVerificationCode): Promise<StoredVerificationCode> {
+		const email = input.email.trim().toLowerCase();
+		const record: StoredVerificationCode = {
+			id: randomUUID(),
+			email,
+			purpose: input.purpose,
+			codeHash: input.codeHash,
+			expiresAt: input.expiresAt,
+			signup: input.signup,
+			attempts: 0,
+			createdAt: now(),
+		};
+		// One active code per email — a new request replaces the previous one.
+		this.data.verificationCodes.set(email, record);
+		return structuredClone(record);
+	}
+
+	async findByEmail(email: string): Promise<StoredVerificationCode | null> {
+		const record = this.data.verificationCodes.get(email.trim().toLowerCase());
+		return record ? structuredClone(record) : null;
+	}
+
+	async incrementAttempts(email: string): Promise<number> {
+		const key = email.trim().toLowerCase();
+		const record = this.data.verificationCodes.get(key);
+		if (!record) {
+			return 0;
+		}
+		const updated: StoredVerificationCode = { ...record, attempts: record.attempts + 1 };
+		this.data.verificationCodes.set(key, updated);
+		return updated.attempts;
+	}
+
+	async delete(email: string): Promise<void> {
+		this.data.verificationCodes.delete(email.trim().toLowerCase());
+	}
+}
+
 /** Sequential multi-entity writes against the shared in-memory store. */
 export class InMemoryOnboardingRepository implements OnboardingRepository {
 	constructor(
@@ -389,6 +436,7 @@ export interface InMemoryRepositories {
 	memberships: InMemoryMembershipRepository;
 	invites: InMemoryInviteRepository;
 	items: InMemoryItemRepository;
+	verificationCodes: InMemoryVerificationCodeRepository;
 	onboarding: InMemoryOnboardingRepository;
 }
 
@@ -401,6 +449,7 @@ export function createInMemoryRepositories(
 	const memberships = new InMemoryMembershipRepository(data);
 	const invites = new InMemoryInviteRepository(data);
 	const items = new InMemoryItemRepository(data);
+	const verificationCodes = new InMemoryVerificationCodeRepository(data);
 	const onboarding = new InMemoryOnboardingRepository(users, accounts, memberships, invites);
-	return { data, users, accounts, memberships, invites, items, onboarding };
+	return { data, users, accounts, memberships, invites, items, verificationCodes, onboarding };
 }

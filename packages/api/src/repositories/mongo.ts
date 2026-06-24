@@ -20,6 +20,10 @@ import { type InviteDocument, InviteModel } from '../db/models/invite.model';
 import { type ItemDocument, ItemModel } from '../db/models/item.model';
 import { type MembershipDocument, MembershipModel } from '../db/models/membership.model';
 import { type UserDocument, UserModel } from '../db/models/user.model';
+import {
+	type VerificationCodeDocument,
+	VerificationCodeModel,
+} from '../db/models/verification-code.model';
 import { ConflictError, InviteNotPendingError } from './errors';
 import type {
 	AcceptInviteInput,
@@ -33,11 +37,14 @@ import type {
 	NewInvite,
 	NewMembership,
 	NewUser,
+	NewVerificationCode,
 	OnboardingRepository,
 	SignupInput,
 	SignupResult,
 	StoredUser,
+	StoredVerificationCode,
 	UserRepository,
+	VerificationCodeRepository,
 } from './types';
 
 /** MongoServerError code 11000 = duplicate key (unique index violation). */
@@ -52,9 +59,23 @@ function mapUser(doc: HydratedDocument<UserDocument>): StoredUser {
 		id: doc._id.toString() as UserId,
 		email: doc.email,
 		name: doc.name,
-		passwordHash: doc.passwordHash,
 		createdAt: doc.createdAt.toISOString(),
 		updatedAt: doc.updatedAt.toISOString(),
+	};
+}
+
+function mapVerificationCode(
+	doc: HydratedDocument<VerificationCodeDocument>,
+): StoredVerificationCode {
+	return {
+		id: doc._id.toString(),
+		email: doc.email,
+		purpose: doc.purpose,
+		codeHash: doc.codeHash,
+		expiresAt: doc.expiresAt.toISOString(),
+		attempts: doc.attempts,
+		signup: doc.signup,
+		createdAt: doc.createdAt.toISOString(),
 	};
 }
 
@@ -305,6 +326,43 @@ export class MongoInviteRepository implements InviteRepository {
 			{ $set: { status: 'revoked' } },
 		).exec();
 		return result.modifiedCount === 1;
+	}
+}
+
+export class MongoVerificationCodeRepository implements VerificationCodeRepository {
+	async upsert(input: NewVerificationCode): Promise<StoredVerificationCode> {
+		const email = input.email.trim().toLowerCase();
+		// Replace any existing code for this email so only one is ever active, and
+		// the attempt counter resets to its schema default.
+		await VerificationCodeModel.deleteOne({ email }).exec();
+		const doc = await VerificationCodeModel.create({
+			email,
+			purpose: input.purpose,
+			codeHash: input.codeHash,
+			expiresAt: new Date(input.expiresAt),
+			signup: input.signup,
+		});
+		return mapVerificationCode(doc);
+	}
+
+	async findByEmail(email: string): Promise<StoredVerificationCode | null> {
+		const doc = await VerificationCodeModel.findOne({
+			email: email.trim().toLowerCase(),
+		}).exec();
+		return doc ? mapVerificationCode(doc) : null;
+	}
+
+	async incrementAttempts(email: string): Promise<number> {
+		const doc = await VerificationCodeModel.findOneAndUpdate(
+			{ email: email.trim().toLowerCase() },
+			{ $inc: { attempts: 1 } },
+			{ new: true },
+		).exec();
+		return doc?.attempts ?? 0;
+	}
+
+	async delete(email: string): Promise<void> {
+		await VerificationCodeModel.deleteOne({ email: email.trim().toLowerCase() }).exec();
 	}
 }
 

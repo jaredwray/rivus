@@ -30,8 +30,14 @@ Roles, in ascending privilege:
   The last remaining owner can't be removed or demoted.
 
 Members are added via tokenized invites (`POST /v1/members/invites` →
-`POST /v1/auth/accept-invite`). Email delivery is not wired up yet, so the invite
-token is returned in the response for the inviter to share.
+`POST /v1/auth/accept-invite`); the invite token is emailed to the invitee and
+also returned to the inviter.
+
+Authentication is **passwordless**. Signup and login email a 6-digit one-time
+code (`POST /v1/auth/signup` and `/v1/auth/login` return `202 { status:
+"code_sent" }`); `POST /v1/auth/verify` exchanges the code for a JWT — and, for a
+signup, creates the account on first verification. Codes are single-use, expire
+in 10 minutes, and lock after 5 wrong attempts.
 
 ## Endpoints
 
@@ -40,8 +46,9 @@ token is returned in the response for the inviter to share.
 | GET    | `/health`                       | —              | Liveness probe                      |
 | GET    | `/ready`                        | —              | Readiness probe                     |
 | GET    | `/docs`                         | —              | Swagger UI (non-prod)               |
-| POST   | `/v1/auth/signup`               | —              | Create a business account + owner   |
-| POST   | `/v1/auth/login`                | —              | Exchange creds for a JWT            |
+| POST   | `/v1/auth/signup`               | —              | Begin signup; emails a one-time code |
+| POST   | `/v1/auth/login`                | —              | Request a one-time sign-in code     |
+| POST   | `/v1/auth/verify`               | —              | Exchange a code for a JWT           |
 | POST   | `/v1/auth/accept-invite`        | —              | Accept an invite and join an account |
 | GET    | `/v1/auth/me`                   | JWT            | Current user, account, and role     |
 | GET    | `/v1/members`                   | JWT            | List members + pending invites      |
