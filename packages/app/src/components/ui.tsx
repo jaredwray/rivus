@@ -5,6 +5,8 @@ import {
 	type StyleProp,
 	StyleSheet,
 	Text,
+	TextInput,
+	type TextInputProps,
 	type TextProps,
 	type TextStyle,
 	View,
@@ -158,6 +160,70 @@ export function GradientButton({
 	);
 }
 
+/** A labelled text input. Spreads through any `TextInput` prop. */
+export function TextField({
+	label,
+	hint,
+	style,
+	...rest
+}: { label: string; hint?: string } & TextInputProps) {
+	return (
+		<View style={styles.fieldWrap}>
+			<Txt style={styles.fieldLabel}>{label}</Txt>
+			<TextInput placeholderTextColor={colors.textHint} {...rest} style={[styles.input, style]} />
+			{hint ? <Txt style={styles.fieldHint}>{hint}</Txt> : null}
+		</View>
+	);
+}
+
+/** A segmented single-choice control (e.g. picking a role). */
+export function Segmented<T extends string>({
+	options,
+	value,
+	onChange,
+}: {
+	options: { label: string; value: T }[];
+	value: T;
+	onChange: (value: T) => void;
+}) {
+	return (
+		<View style={styles.segmented}>
+			{options.map((option) => {
+				const active = option.value === value;
+				return (
+					<Pressable
+						key={option.value}
+						onPress={() => onChange(option.value)}
+						style={[styles.segment, active && styles.segmentActive]}
+					>
+						<Txt style={[styles.segmentTxt, active && styles.segmentTxtActive]}>{option.label}</Txt>
+					</Pressable>
+				);
+			})}
+		</View>
+	);
+}
+
+/** Secondary (outline) button for low-emphasis actions. */
+export function OutlineButton({
+	label,
+	onPress,
+	style,
+}: {
+	label: string;
+	onPress?: () => void;
+	style?: StyleProp<ViewStyle>;
+}) {
+	return (
+		<Pressable
+			onPress={onPress}
+			style={({ pressed }) => [styles.outlineBtn, pressed && styles.pressed, style]}
+		>
+			<Txt style={styles.outlineBtnTxt}>{label}</Txt>
+		</Pressable>
+	);
+}
+
 /** The cyan/purple-tinted "Rivus is online" status chip with a live green dot. */
 export function RivusStatusChip({ label }: { label: string }) {
 	return (
@@ -227,6 +293,70 @@ export const styles = StyleSheet.create({
 	},
 	pressed: {
 		opacity: 0.85,
+	},
+	fieldWrap: {
+		gap: 6,
+	},
+	fieldLabel: {
+		fontFamily: font.semibold,
+		fontSize: 12.5,
+		color: colors.textSub,
+	},
+	fieldHint: {
+		fontSize: 11.5,
+		color: colors.textFaint,
+	},
+	input: {
+		fontFamily: font.regular,
+		fontSize: 14,
+		color: colors.text,
+		backgroundColor: colors.field,
+		borderWidth: 1,
+		borderColor: colors.borderField,
+		borderRadius: radii.md,
+		paddingVertical: 11,
+		paddingHorizontal: 13,
+	},
+	segmented: {
+		flexDirection: 'row',
+		gap: 6,
+		backgroundColor: colors.field,
+		borderRadius: radii.md,
+		padding: 4,
+	},
+	segment: {
+		flex: 1,
+		alignItems: 'center',
+		paddingVertical: 9,
+		borderRadius: radii.sm,
+	},
+	segmentActive: {
+		backgroundColor: colors.surface,
+		...shadowCard,
+	},
+	segmentTxt: {
+		fontFamily: font.medium,
+		fontSize: 12.5,
+		color: colors.textMuted,
+	},
+	segmentTxtActive: {
+		color: colors.text,
+		fontFamily: font.semibold,
+	},
+	outlineBtn: {
+		alignItems: 'center',
+		justifyContent: 'center',
+		paddingVertical: 11,
+		paddingHorizontal: 16,
+		borderRadius: radii.lg,
+		borderWidth: 1,
+		borderColor: colors.border,
+		backgroundColor: colors.surface,
+	},
+	outlineBtnTxt: {
+		fontFamily: font.semibold,
+		fontSize: 13.5,
+		color: colors.textSub,
 	},
 	statusChip: {
 		flexDirection: 'row',

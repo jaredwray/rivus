@@ -25,11 +25,30 @@ function makeUser() {
 	};
 }
 
+function makeAccount() {
+	const now = new Date().toISOString();
+	return {
+		id: faker.string.uuid(),
+		name: faker.company.name(),
+		slug: faker.lorem.slug(),
+		phone: '',
+		address: '',
+		website: '',
+		timezone: 'UTC',
+		createdAt: now,
+		updatedAt: now,
+	};
+}
+
+function makeAuthResponse(role: 'owner' | 'manager' | 'team_member' = 'owner') {
+	return { token: faker.string.alphanumeric(40), user: makeUser(), account: makeAccount(), role };
+}
+
 function makeItem() {
 	const now = new Date().toISOString();
 	return {
 		id: faker.string.uuid(),
-		ownerId: faker.string.uuid(),
+		accountId: faker.string.uuid(),
 		name: faker.commerce.productName(),
 		description: faker.commerce.productDescription(),
 		status: 'active' as const,
@@ -77,21 +96,54 @@ describe('createApiClient', () => {
 		});
 	});
 
+	describe('signup', () => {
+		it('creates an account + owner and returns the session', async () => {
+			const response = makeAuthResponse('owner');
+			fetchMock.mockResolvedValueOnce(jsonResponse(response, { status: 201 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.signup({
+				email: response.user.email,
+				password: 'supersecret123',
+				name: response.user.name,
+				business: { businessName: 'Cascade Plumbing' },
+			});
+
+			expect(result).toEqual(response);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/auth/signup`);
+			expect(init.method).toBe('POST');
+			expect(JSON.parse(init.body as string).business.businessName).toBe('Cascade Plumbing');
+		});
+
+		it('rejects locally-invalid signup input before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.signup({
+					email: 'not-an-email',
+					password: 'short',
+					name: 'X',
+					business: { businessName: '' },
+				}),
+			).rejects.toThrow();
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+	});
+
 	describe('login', () => {
-		it('returns the token + user on success', async () => {
-			const user = makeUser();
-			const response = { token: faker.string.alphanumeric(40), user };
+		it('returns the session on success', async () => {
+			const response = makeAuthResponse('owner');
 			fetchMock.mockResolvedValueOnce(jsonResponse(response));
 
 			const client = createApiClient(BASE, fetchMock);
-			const result = await client.login({ email: user.email, password: 'supersecret' });
+			const result = await client.login({ email: response.user.email, password: 'supersecret' });
 
 			expect(result).toEqual(response);
 			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
 			expect(url).toBe(`${BASE}/v1/auth/login`);
 			expect(init.method).toBe('POST');
 			expect(JSON.parse(init.body as string)).toEqual({
-				email: user.email,
+				email: response.user.email,
 				password: 'supersecret',
 			});
 		});
@@ -134,23 +186,100 @@ describe('createApiClient', () => {
 		});
 	});
 
-	describe('register', () => {
-		it('returns the token + user on success', async () => {
-			const user = makeUser();
-			const response = { token: faker.string.alphanumeric(40), user };
+	describe('acceptInvite', () => {
+		it('joins an account and returns the session', async () => {
+			const response = makeAuthResponse('team_member');
 			fetchMock.mockResolvedValueOnce(jsonResponse(response, { status: 201 }));
 
 			const client = createApiClient(BASE, fetchMock);
-			const result = await client.register({
-				email: user.email,
-				password: 'supersecret',
-				name: user.name,
-			});
+			const result = await client.acceptInvite({ token: 'invite-tok', password: 'supersecret123' });
 
 			expect(result).toEqual(response);
 			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-			expect(url).toBe(`${BASE}/v1/auth/register`);
-			expect(init.method).toBe('POST');
+			expect(url).toBe(`${BASE}/v1/auth/accept-invite`);
+			expect(JSON.parse(init.body as string).token).toBe('invite-tok');
+		});
+	});
+
+	describe('me', () => {
+		it('returns the current session and sends the bearer token', async () => {
+			const session = { user: makeUser(), account: makeAccount(), role: 'owner' as const };
+			fetchMock.mockResolvedValueOnce(jsonResponse(session));
+
+			const client = createApiClient(BASE, fetchMock);
+			const token = faker.string.alphanumeric(32);
+			const result = await client.me(token);
+
+			expect(result).toEqual(session);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/auth/me`);
+			expect(init.headers).toMatchObject({ Authorization: `Bearer ${token}` });
+		});
+	});
+
+	describe('listMembers', () => {
+		it('returns members and pending invites with the bearer token', async () => {
+			const now = new Date().toISOString();
+			const payload = {
+				members: [
+					{
+						userId: faker.string.uuid(),
+						email: faker.internet.email().toLowerCase(),
+						name: faker.person.fullName(),
+						role: 'owner' as const,
+						joinedAt: now,
+					},
+				],
+				invites: [],
+			};
+			fetchMock.mockResolvedValueOnce(jsonResponse(payload));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.listMembers('tok');
+
+			expect(result.members).toHaveLength(1);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/members`);
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer tok' });
+		});
+	});
+
+	describe('inviteMember', () => {
+		it('posts an invite with the bearer token', async () => {
+			const now = new Date().toISOString();
+			const invite = {
+				id: faker.string.uuid(),
+				email: 'newhire@example.com',
+				name: 'New Hire',
+				role: 'team_member' as const,
+				status: 'pending' as const,
+				token: 'invite-token',
+				createdAt: now,
+			};
+			fetchMock.mockResolvedValueOnce(jsonResponse(invite, { status: 201 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.inviteMember('owner-token', {
+				email: invite.email,
+				name: invite.name,
+				role: 'team_member',
+			});
+
+			expect(result).toEqual(invite);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/members/invites`);
+			expect(init.headers).toMatchObject({
+				Authorization: 'Bearer owner-token',
+				'Content-Type': 'application/json',
+			});
+		});
+
+		it('rejects an invalid invite before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.inviteMember('tok', { email: 'not-an-email', name: 'X', role: 'team_member' }),
+			).rejects.toThrow();
+			expect(fetchMock).not.toHaveBeenCalled();
 		});
 	});
 

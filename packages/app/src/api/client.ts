@@ -1,23 +1,34 @@
 import {
+	type AcceptInviteInput,
+	type Account,
+	type AccountId,
+	acceptInviteSchema,
+	type InviteMemberInput,
 	type Item,
 	type ItemId,
+	inviteMemberSchema,
 	itemStatusSchema,
 	type LoginInput,
 	loginSchema,
 	type PaginationMeta,
 	type PaginationQuery,
 	paginationQuerySchema,
-	type RegisterInput,
-	registerSchema,
+	type Role,
+	roleSchema,
+	signupSchema,
 	type User,
 	type UserId,
 } from '@rivus/core';
 import { z } from 'zod';
 
-// `@rivus/core` brands its ids (`ItemId`/`UserId`) so a user id can't be passed
-// where an item id is expected. The wire format is a plain string; these helpers
-// validate as strings while preserving the brand in the inferred type.
+/** Signup accepts the schema's *input* (business defaults like timezone optional). */
+export type SignupBody = z.input<typeof signupSchema>;
+
+// `@rivus/core` brands its ids so a user id can't be passed where an item id is
+// expected. The wire format is a plain string; these helpers validate as strings
+// while preserving the brand in the inferred type.
 const itemId = () => z.string().min(1) as unknown as z.ZodType<ItemId>;
+const accountId = () => z.string().min(1) as unknown as z.ZodType<AccountId>;
 const userId = () => z.string().min(1) as unknown as z.ZodType<UserId>;
 
 /**
@@ -52,15 +63,67 @@ const userResponseSchema = z.object({
 	updatedAt: z.string(),
 });
 
+const accountResponseSchema = z.object({
+	id: accountId(),
+	name: z.string(),
+	slug: z.string(),
+	phone: z.string(),
+	address: z.string(),
+	website: z.string(),
+	timezone: z.string(),
+	createdAt: z.string(),
+	updatedAt: z.string(),
+}) satisfies z.ZodType<Account>;
+
 const authResponseSchema = z.object({
 	token: z.string(),
 	user: userResponseSchema,
+	account: accountResponseSchema,
+	role: roleSchema,
 });
 export type AuthResponse = z.infer<typeof authResponseSchema>;
 
+const sessionResponseSchema = z.object({
+	user: userResponseSchema,
+	account: accountResponseSchema,
+	role: roleSchema,
+});
+export type Session = z.infer<typeof sessionResponseSchema>;
+
+const memberResponseSchema = z.object({
+	userId: userId(),
+	email: z.string(),
+	name: z.string(),
+	role: roleSchema,
+	joinedAt: z.string(),
+});
+export type Member = z.infer<typeof memberResponseSchema>;
+
+// Roster view — the bearer token is intentionally absent (the API never leaks it
+// to members who can list the roster).
+const inviteSummarySchema = z.object({
+	id: z.string(),
+	email: z.string(),
+	name: z.string(),
+	role: z.enum(['manager', 'team_member']),
+	status: z.enum(['pending', 'accepted', 'revoked']),
+	createdAt: z.string(),
+});
+export type InviteSummary = z.infer<typeof inviteSummarySchema>;
+
+// Creator view — includes the shareable token (returned only from inviteMember).
+const inviteResponseSchema = inviteSummarySchema.extend({ token: z.string() });
+export type Invite = z.infer<typeof inviteResponseSchema>;
+
+const memberListResponseSchema = z.object({
+	members: z.array(memberResponseSchema),
+	invites: z.array(inviteSummarySchema),
+});
+export type MemberList = z.infer<typeof memberListResponseSchema>;
+
 const itemResponseSchema = z.object({
 	id: itemId(),
-	ownerId: userId(),
+	accountId: accountId(),
 	name: z.string(),
 	description: z.string(),
 	status: itemStatusSchema,
@@ -106,8 +169,12 @@ export type FetchLike = typeof globalThis.fetch;
 export interface RivusApiClient {
 	readonly baseUrl: string;
 	health(): Promise<HealthResponse>;
+	signup(input: SignupBody): Promise<AuthResponse>;
 	login(input: LoginInput): Promise<AuthResponse>;
-	register(input: RegisterInput): Promise<AuthResponse>;
+	acceptInvite(input: AcceptInviteInput): Promise<AuthResponse>;
+	me(token: string): Promise<Session>;
+	listMembers(token: string): Promise<MemberList>;
+	inviteMember(token: string, input: InviteMemberInput): Promise<Invite>;
 	listItems(token: string, query?: Partial<PaginationQuery>): Promise<ItemListResponse>;
 }
 
@@ -137,6 +204,14 @@ export function createApiClient(baseUrl: string, fetchImpl: FetchLike = fetch): 
 		return schema.parse(body);
 	}
 
+	function jsonInit(method: string, payload: unknown, token?: string): RequestInit {
+		const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+		if (token) {
+			headers.Authorization = `Bearer ${token}`;
+		}
+		return { method, headers, body: JSON.stringify(payload) };
+	}
+
 	function authHeaders(token: string): Record<string, string> {
 		return { Authorization: `Bearer ${token}` };
 	}
@@ -150,22 +225,38 @@ export function createApiClient(baseUrl: string, fetchImpl: FetchLike = fetch): 
 
 		// `async` so input-validation errors surface as a rejected promise
 		// (the expected async contract) rather than a synchronous throw.
+		async signup(input: SignupBody) {
+			const payload = signupSchema.parse(input);
+			return request('/v1/auth/signup', authResponseSchema, jsonInit('POST', payload));
+		},
+
 		async login(input: LoginInput) {
 			const payload = loginSchema.parse(input);
-			return request('/v1/auth/login', authResponseSchema, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(payload),
+			return request('/v1/auth/login', authResponseSchema, jsonInit('POST', payload));
+		},
+
+		async acceptInvite(input: AcceptInviteInput) {
+			const payload = acceptInviteSchema.parse(input);
+			return request('/v1/auth/accept-invite', authResponseSchema, jsonInit('POST', payload));
+		},
+
+		me(token: string) {
+			return request('/v1/auth/me', sessionResponseSchema, {
+				method: 'GET',
+				headers: authHeaders(token),
 			});
 		},
 
-		async register(input: RegisterInput) {
-			const payload = registerSchema.parse(input);
-			return request('/v1/auth/register', authResponseSchema, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(payload),
+		listMembers(token: string) {
+			return request('/v1/members', memberListResponseSchema, {
+				method: 'GET',
+				headers: authHeaders(token),
 			});
+		},
+
+		async inviteMember(token: string, input: InviteMemberInput) {
+			const payload = inviteMemberSchema.parse(input);
+			return request('/v1/members/invites', inviteResponseSchema, jsonInit('POST', payload, token));
 		},
 
 		async listItems(token: string, query?: Partial<PaginationQuery>) {
@@ -190,4 +281,4 @@ function safeJsonParse(raw: string): unknown {
 	}
 }
 
-export type { Item, PaginationMeta, User };
+export type { Account, Item, PaginationMeta, Role, User };

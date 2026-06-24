@@ -16,6 +16,15 @@ const envSchema = z
 			.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
 			.default('info'),
 		CORS_ORIGIN: z.string().default('*'),
+		// --- Email (Resend) ---
+		// API key for Resend. When unset, the API still runs but invitation emails
+		// are not delivered (a no-op mailer logs a warning at startup).
+		RESEND_API_KEY: z.string().min(1).optional(),
+		// The `from` address for outbound mail. Resend accepts a bare address or a
+		// `Name <address>` form; the address's domain must be verified in Resend.
+		EMAIL_FROM: z.string().min(3).default('Rivus <hello@rivus.ai>'),
+		// Base URL of the app, used to build the link in invitation emails.
+		APP_URL: z.string().url().default('https://app.rivus.ai'),
 	})
 	.superRefine((env, ctx) => {
 		// In production, refuse to boot with the well-known dev secret or a weak one.

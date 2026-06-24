@@ -12,3 +12,14 @@ export class ConflictError extends Error {
 		this.field = field;
 	}
 }
+
+/**
+ * Thrown when an invite is consumed but is no longer pending (already accepted
+ * or revoked — possibly by a concurrent request). The API maps it to HTTP 401.
+ */
+export class InviteNotPendingError extends Error {
+	constructor(message = 'Invalid or expired invitation') {
+		super(message);
+		this.name = 'InviteNotPendingError';
+	}
+}

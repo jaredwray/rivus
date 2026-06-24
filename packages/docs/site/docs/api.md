@@ -12,23 +12,47 @@ generated directly from the API's Zod route schemas.
 
 ## Authentication
 
-Register or log in to receive a JWT, then send it as a bearer token.
+Sign up to create a business account (or log in) to receive a JWT, then send it
+as a bearer token. The token is scoped to your account and carries your role.
 
 ```bash
-# Register
-curl -s -X POST http://localhost:4000/v1/auth/register \
+# Sign up: creates your user, your business account, and an owner membership
+curl -s -X POST http://localhost:4000/v1/auth/signup \
   -H 'content-type: application/json' \
-  -d '{"email":"ada@example.com","password":"supersecret","name":"Ada"}'
+  -d '{
+    "email": "ada@example.com",
+    "password": "supersecret123",
+    "name": "Ada Lovelace",
+    "business": { "businessName": "Lovelace Analytics", "timezone": "Europe/London" }
+  }'
 
 # Use the returned token
-curl -s http://localhost:4000/v1/items \
+curl -s http://localhost:4000/v1/auth/me \
   -H "authorization: Bearer $TOKEN"
+```
+
+## Accounts & roles
+
+Every user belongs to one **account**, which owns all of its members' data.
+Members hold one of three roles — **Owner**, **Manager**, or **Team Member** —
+and Owners/Managers add teammates via tokenized invites:
+
+```bash
+# Owner or Manager invites a teammate (returns an invite token)
+curl -s -X POST http://localhost:4000/v1/members/invites \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"email":"sam@example.com","name":"Sam","role":"team_member"}'
+
+# The invitee accepts and sets a password to join the account
+curl -s -X POST http://localhost:4000/v1/auth/accept-invite \
+  -H 'content-type: application/json' \
+  -d '{"token":"<invite-token>","password":"brandnewpass1"}'
 ```
 
 ## Items
 
-Items are owner-scoped — you only ever see your own. List endpoints are paginated
-with `?page=` and `?pageSize=` and return a `meta` block:
+Items are account-scoped — every member of your account shares them. List
+endpoints are paginated with `?page=` and `?pageSize=` and return a `meta` block:
 
 ```json
 {
