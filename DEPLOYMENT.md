@@ -85,10 +85,11 @@ secret exists), the **production** `deploy-api` job **fails fast** if either
 `PROD_MONGODB_URI` or `PROD_JWT_SECRET` is missing — the container always boots
 with `NODE_ENV=production` and would crash-loop without them.
 
-The production API also restricts CORS to Rivus subdomains: `CORS_ORIGIN` is set
-to `*.rivus.ai`, which the API parses into a subdomain matcher (development stays
-`*`). Adjust the value in `packages/api/wrangler.jsonc` to add other origins
-(comma-separated; exact origins and `*` wildcards are both supported).
+The production API also restricts CORS to the production frontends: `CORS_ORIGIN`
+is set to `https://app.rivus.ai,https://www.rivus.ai`, which the API parses into
+an exact-origin allowlist (development stays `*`). The value accepts a
+comma-separated list of exact origins and/or `*` wildcards (e.g. `*.rivus.ai`);
+adjust it in `packages/api/wrangler.jsonc`.
 
 ## Deploying by hand
 
