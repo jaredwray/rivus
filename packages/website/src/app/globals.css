@@ -2117,6 +2117,12 @@ svg {
 		grid-template-columns: 1fr;
 		gap: 13px;
 	}
+	.grid-3 {
+		max-width: none;
+	}
+	.quote {
+		padding: 22px;
+	}
 	.feature-grid {
 		gap: 13px;
 		margin-top: 30px;
