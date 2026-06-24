@@ -1,0 +1,124 @@
+name: Deploy (production)
+
+# Validate the whole monorepo, then deploy every package to the Cloudflare
+# `production` environment in parallel. Runs when a stable GitHub release is
+# published, or manually via the Actions tab.
+on:
+  workflow_dispatch:
+  release:
+    # `released` excludes pre-releases (betas/RCs) — they would otherwise ship
+    # to prod via `published`. Switch to `published` if pre-releases should deploy.
+    types: [released]
+
+# Read-only by default; the deploy jobs authenticate to Cloudflare with secrets.
+permissions:
+  contents: read
+
+# One production deploy at a time. Unlike development we do NOT cancel an
+# in-progress run — a half-applied production deploy is worse than a queued one.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Build, test & lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup
+      - run: pnpm lint
+      - run: pnpm type-check
+      - run: pnpm test:coverage
+      - run: pnpm build
+
+  deploy-worker:
+    name: Deploy worker
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter @rivus/worker exec wrangler deploy --env production
+
+  deploy-docs:
+    name: Deploy docs
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter @rivus/docs build
+      - run: pnpm --filter @rivus/docs exec wrangler deploy --env production
+
+  deploy-app:
+    name: Deploy app
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Baked into the Expo web bundle at export time.
+      EXPO_PUBLIC_API_URL: https://api.rivus.ai
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter @rivus/app export:web
+      - run: pnpm --filter @rivus/app exec wrangler deploy --env production
+
+  deploy-website:
+    name: Deploy website
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Inlined into the Next client bundle by `next build` (run inside the
+      # OpenNext build).
+      NEXT_PUBLIC_API_URL: https://api.rivus.ai
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter @rivus/website exec opennextjs-cloudflare build
+      - run: pnpm --filter @rivus/website exec opennextjs-cloudflare deploy -- --env production
+
+  deploy-api:
+    name: Deploy api (container)
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROD_MONGODB_URI: ${{ secrets.PROD_MONGODB_URI }}
+      PROD_JWT_SECRET: ${{ secrets.PROD_JWT_SECRET }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup
+      # The container always runs with NODE_ENV=production, where the API refuses
+      # to boot without a real MONGODB_URI and a strong JWT_SECRET. Fail fast
+      # rather than replace api.rivus.ai with a container that crash-loops.
+      - name: Require API secrets
+        run: |
+          if [ -z "$PROD_MONGODB_URI" ] || [ -z "$PROD_JWT_SECRET" ]; then
+            echo "::error::Set PROD_MONGODB_URI and PROD_JWT_SECRET in the production environment before deploying the API."
+            exit 1
+          fi
+      # wrangler builds the Dockerfile (Docker is preinstalled on ubuntu-latest)
+      # and pushes the image to Cloudflare's registry before deploying the Worker.
+      - run: pnpm --filter @rivus/api exec wrangler deploy --env production
+      # Keep the Worker's secrets in sync (both are guaranteed present above).
+      - name: Sync API secrets
+        run: |
+          printf '%s' "$PROD_MONGODB_URI" | pnpm --filter @rivus/api exec wrangler secret put MONGODB_URI --env production
+          printf '%s' "$PROD_JWT_SECRET" | pnpm --filter @rivus/api exec wrangler secret put JWT_SECRET --env production

@@ -13,6 +13,10 @@
 		"development": {
 			"name": "rivus-app-dev",
 			"routes": [{ "pattern": "dev-app.rivus.ai", "custom_domain": true }]
+		},
+		"production": {
+			"name": "rivus-app",
+			"routes": [{ "pattern": "app.rivus.ai", "custom_domain": true }]
 		}
 	}
 }

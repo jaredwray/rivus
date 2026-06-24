@@ -7,6 +7,7 @@ import {
 	serializerCompiler,
 	validatorCompiler,
 } from 'fastify-type-provider-zod';
+import { parseCorsOrigin } from './config';
 import authPlugin from './plugins/auth';
 import swaggerPlugin from './plugins/swagger';
 import { ConflictError } from './repositories/errors';
@@ -74,7 +75,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 	});
 
 	app.register(sensible);
-	app.register(cors, { origin: deps.config.CORS_ORIGIN });
+	app.register(cors, { origin: parseCorsOrigin(deps.config.CORS_ORIGIN) });
 	app.register(helmet, { contentSecurityPolicy: false });
 	app.register(authPlugin);
 	app.register(swaggerPlugin);
