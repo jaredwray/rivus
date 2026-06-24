@@ -53,6 +53,8 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Crawlable: emits an allow-all robots.txt for the production docs.
+      RIVUS_ENV: production
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup
@@ -67,6 +69,8 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Crawlable: emits an allow-all robots.txt for the production app.
+      RIVUS_ENV: production
       # Baked into the Expo web bundle at export time.
       EXPO_PUBLIC_API_URL: https://api.rivus.ai
     steps:
@@ -83,6 +87,9 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Crawlable: allow-all robots.txt and indexable metadata for the
+      # production site; read at build time by robots.ts and the root layout.
+      RIVUS_ENV: production
       # Inlined into the Next client bundle by `next build` (run inside the
       # OpenNext build).
       NEXT_PUBLIC_API_URL: https://api.rivus.ai

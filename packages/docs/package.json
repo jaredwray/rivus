@@ -7,7 +7,7 @@
 	"license": "MIT",
 	"scripts": {
 		"prebuild": "node scripts/sync-openapi.mjs",
-		"build": "docula build -s ./site -o ./site/dist -c",
+		"build": "docula build -s ./site -o ./site/dist -c && node scripts/write-robots.mjs",
 		"predev": "node scripts/sync-openapi.mjs",
 		"dev": "docula dev -s ./site",
 		"start": "docula start -s ./site",
