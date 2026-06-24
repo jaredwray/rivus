@@ -18,7 +18,12 @@
 		},
 		"production": {
 			"name": "rivus-website",
-			"routes": [{ "pattern": "www.rivus.ai", "custom_domain": true }]
+			// `rivus.ai` is the primary; `www.rivus.ai` is served too (a Cloudflare
+			// redirect rule points www → apex, configured outside this repo).
+			"routes": [
+				{ "pattern": "rivus.ai", "custom_domain": true },
+				{ "pattern": "www.rivus.ai", "custom_domain": true }
+			]
 		}
 	}
 }

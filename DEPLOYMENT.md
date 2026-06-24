@@ -15,7 +15,7 @@ validate the monorepo, then deploy all five packages in parallel:
 | ---------------- | ------------------------------------------ | --------------------------- | ----------------- |
 | `@rivus/api`     | Worker + **Container** (Fastify on Node)   | `dev-api.rivus.ai`          | `api.rivus.ai`    |
 | `@rivus/app`     | Worker **Static Assets** (Expo web export) | `dev-app.rivus.ai`          | `app.rivus.ai`    |
-| `@rivus/website` | Worker via **OpenNext** (Next.js)          | `dev.rivus.ai`              | `www.rivus.ai`    |
+| `@rivus/website` | Worker via **OpenNext** (Next.js)          | `dev.rivus.ai`              | `rivus.ai`        |
 | `@rivus/docs`    | Worker **Static Assets** (Docula build)    | `dev-docs.rivus.ai`         | `docs.rivus.ai`   |
 | `@rivus/worker`  | Worker (cron + on-demand tasks)            | cron only (`*.workers.dev`) | cron only         |
 
@@ -53,8 +53,10 @@ environment points `API_BASE_URL` at `https://dev-api.rivus.ai`.
    `production` environment, each holding the secrets below. Consider adding a
    required-reviewer protection rule to `production`.
 3. **DNS / custom domains.** The first `wrangler deploy --env <name>` per package
-   creates its custom domain on the zone (`dev-*.rivus.ai` for development,
-   `api/app/www/docs.rivus.ai` for production).
+   creates its custom domain on the zone (`dev-*.rivus.ai` for development;
+   `api/app/docs.rivus.ai` plus the apex `rivus.ai` and `www.rivus.ai` for
+   production). The website serves both `rivus.ai` (primary) and
+   `www.rivus.ai`; a Cloudflare redirect rule points www → apex.
 4. **MongoDB Atlas.** Allow Cloudflare egress to each cluster (for a quick start,
    allow `0.0.0.0/0`; tighten later). Use a **separate cluster/database** for
    production.
@@ -85,10 +87,11 @@ secret exists), the **production** `deploy-api` job **fails fast** if either
 `PROD_MONGODB_URI` or `PROD_JWT_SECRET` is missing — the container always boots
 with `NODE_ENV=production` and would crash-loop without them.
 
-The production API also restricts CORS to Rivus subdomains: `CORS_ORIGIN` is set
-to `*.rivus.ai`, which the API parses into a regex matching any `*.rivus.ai`
-origin (development stays `*`). The value accepts a comma-separated list of exact
-origins and/or `*` wildcards; adjust it in `packages/api/wrangler.jsonc`.
+The production API also restricts CORS to Rivus origins: `CORS_ORIGIN` is set to
+`https://rivus.ai,*.rivus.ai`, which the API parses into the exact apex origin
+plus a regex matching any `*.rivus.ai` subdomain (development stays `*`). The
+value accepts a comma-separated list of exact origins and/or `*` wildcards;
+adjust it in `packages/api/wrangler.jsonc`.
 
 ## Deploying by hand
 
