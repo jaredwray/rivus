@@ -1480,6 +1480,7 @@ svg {
 }
 
 .quote {
+	margin: 0;
 	background: #fff;
 	border: 1px solid var(--line);
 	border-radius: 20px;
@@ -2116,6 +2117,12 @@ svg {
 	.grid-4 {
 		grid-template-columns: 1fr;
 		gap: 13px;
+	}
+	.grid-3 {
+		max-width: none;
+	}
+	.quote {
+		padding: 22px;
 	}
 	.feature-grid {
 		gap: 13px;
