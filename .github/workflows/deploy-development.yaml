@@ -107,6 +107,9 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       DEV_MONGODB_URI: ${{ secrets.DEV_MONGODB_URI }}
       DEV_JWT_SECRET: ${{ secrets.DEV_JWT_SECRET }}
+      # Passwordless auth emails the sign-in code, so the container (NODE_ENV=
+      # production) refuses to boot without this.
+      DEV_RESEND_API_KEY: ${{ secrets.DEV_RESEND_API_KEY }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup
@@ -119,3 +122,4 @@ jobs:
         run: |
           printf '%s' "$DEV_MONGODB_URI" | pnpm --filter @rivus/api exec wrangler secret put MONGODB_URI --env development
           printf '%s' "$DEV_JWT_SECRET" | pnpm --filter @rivus/api exec wrangler secret put JWT_SECRET --env development
+          printf '%s' "$DEV_RESEND_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put RESEND_API_KEY --env development

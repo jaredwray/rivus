@@ -44,6 +44,16 @@ const envSchema = z
 				message: 'JWT_SECRET must be at least 32 characters in production',
 			});
 		}
+		// Auth is passwordless: without a real mailer the sign-in code is never
+		// delivered, so refuse to boot rather than silently break login/signup.
+		if (!env.RESEND_API_KEY) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['RESEND_API_KEY'],
+				message:
+					'RESEND_API_KEY must be set in production — passwordless auth emails the one-time sign-in code',
+			});
+		}
 	});
 
 export type Config = z.infer<typeof envSchema>;

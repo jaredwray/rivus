@@ -36,7 +36,9 @@
 			"name": "rivus-api-dev",
 			"routes": [{ "pattern": "dev-api.rivus.ai", "custom_domain": true }],
 			"vars": {
-				"CORS_ORIGIN": "*"
+				"CORS_ORIGIN": "*",
+				// Base URL for the accept-invite / sign-in-code links in emails.
+				"APP_URL": "https://dev-app.rivus.ai"
 			},
 			"containers": [
 				{
@@ -58,7 +60,9 @@
 			// The API parses this (see src/config.ts `parseCorsOrigin`) into an
 			// exact origin and a regex.
 			"vars": {
-				"CORS_ORIGIN": "https://rivus.ai,*.rivus.ai"
+				"CORS_ORIGIN": "https://rivus.ai,*.rivus.ai",
+				// Base URL for the accept-invite / sign-in-code links in emails.
+				"APP_URL": "https://app.rivus.ai"
 			},
 			"containers": [
 				{

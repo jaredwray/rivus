@@ -18,16 +18,31 @@ describe('loadConfig', () => {
 
 	it('rejects a short JWT secret in production', () => {
 		expect(() =>
-			loadConfig({ NODE_ENV: 'production', JWT_SECRET: 'nine-char' } as NodeJS.ProcessEnv),
+			loadConfig({
+				NODE_ENV: 'production',
+				JWT_SECRET: 'nine-char',
+				RESEND_API_KEY: 're_test',
+			} as NodeJS.ProcessEnv),
 		).toThrow();
 	});
 
-	it('accepts a strong JWT secret in production', () => {
+	it('requires RESEND_API_KEY in production (passwordless auth needs delivery)', () => {
+		expect(() =>
+			loadConfig({
+				NODE_ENV: 'production',
+				JWT_SECRET: 'x'.repeat(40),
+			} as NodeJS.ProcessEnv),
+		).toThrow();
+	});
+
+	it('accepts a strong JWT secret and a Resend key in production', () => {
 		const config = loadConfig({
 			NODE_ENV: 'production',
 			JWT_SECRET: 'x'.repeat(40),
+			RESEND_API_KEY: 're_live_xxx',
 		} as NodeJS.ProcessEnv);
 		expect(config.NODE_ENV).toBe('production');
+		expect(config.RESEND_API_KEY).toBe('re_live_xxx');
 	});
 });
 

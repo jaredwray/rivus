@@ -111,23 +111,26 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       PROD_MONGODB_URI: ${{ secrets.PROD_MONGODB_URI }}
       PROD_JWT_SECRET: ${{ secrets.PROD_JWT_SECRET }}
+      PROD_RESEND_API_KEY: ${{ secrets.PROD_RESEND_API_KEY }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup
       # The container always runs with NODE_ENV=production, where the API refuses
-      # to boot without a real MONGODB_URI and a strong JWT_SECRET. Fail fast
-      # rather than replace api.rivus.ai with a container that crash-loops.
+      # to boot without a real MONGODB_URI, a strong JWT_SECRET, and a RESEND_API_KEY
+      # (passwordless auth emails the sign-in code). Fail fast rather than replace
+      # api.rivus.ai with a container that crash-loops.
       - name: Require API secrets
         run: |
-          if [ -z "$PROD_MONGODB_URI" ] || [ -z "$PROD_JWT_SECRET" ]; then
-            echo "::error::Set PROD_MONGODB_URI and PROD_JWT_SECRET in the production environment before deploying the API."
+          if [ -z "$PROD_MONGODB_URI" ] || [ -z "$PROD_JWT_SECRET" ] || [ -z "$PROD_RESEND_API_KEY" ]; then
+            echo "::error::Set PROD_MONGODB_URI, PROD_JWT_SECRET, and PROD_RESEND_API_KEY in the production environment before deploying the API."
             exit 1
           fi
       # wrangler builds the Dockerfile (Docker is preinstalled on ubuntu-latest)
       # and pushes the image to Cloudflare's registry before deploying the Worker.
       - run: pnpm --filter @rivus/api exec wrangler deploy --env production
-      # Keep the Worker's secrets in sync (both are guaranteed present above).
+      # Keep the Worker's secrets in sync (all are guaranteed present above).
       - name: Sync API secrets
         run: |
           printf '%s' "$PROD_MONGODB_URI" | pnpm --filter @rivus/api exec wrangler secret put MONGODB_URI --env production
           printf '%s' "$PROD_JWT_SECRET" | pnpm --filter @rivus/api exec wrangler secret put JWT_SECRET --env production
+          printf '%s' "$PROD_RESEND_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put RESEND_API_KEY --env production
