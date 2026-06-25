@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { ApiError, type SignupBody } from '@/src/api/client';
@@ -39,9 +40,15 @@ function messageFor(error: unknown): string {
 	return 'Something went wrong. Please try again.';
 }
 
-export function AuthScreen() {
+type AuthScreenProps = {
+	/** Which form the screen opens on. Each auth route picks its own. */
+	initialMode?: Mode;
+};
+
+export function AuthScreen({ initialMode = 'signin' }: AuthScreenProps = {}) {
+	const router = useRouter();
 	const { signUp, signIn, verifyCode, acceptInvite } = useAuth();
-	const [mode, setMode] = useState<Mode>('signup');
+	const [mode, setMode] = useState<Mode>(initialMode);
 	const [step, setStep] = useState<Step>('form');
 
 	const [businessName, setBusinessName] = useState('');
@@ -285,13 +292,19 @@ export function AuthScreen() {
 								{mode !== 'signin' ? (
 									<Link
 										label="Already have an account? Sign in"
-										onPress={() => switchMode('signin')}
+										onPress={() => {
+											switchMode('signin');
+											router.replace('/login');
+										}}
 									/>
 								) : null}
 								{mode !== 'signup' ? (
 									<Link
 										label="New here? Create a business account"
-										onPress={() => switchMode('signup')}
+										onPress={() => {
+											switchMode('signup');
+											router.replace('/signup');
+										}}
 									/>
 								) : null}
 								{mode !== 'invite' ? (
