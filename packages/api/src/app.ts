@@ -98,7 +98,16 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 	});
 
 	app.register(sensible);
-	app.register(cors, { origin: parseCorsOrigin(deps.config.CORS_ORIGIN) });
+	const corsOrigin = parseCorsOrigin(deps.config.CORS_ORIGIN);
+	app.register(cors, {
+		// Web clients send the session cookie cross-origin (app.rivus.ai →
+		// api.rivus.ai), which requires credentialed CORS. A credentialed request
+		// can't use a wildcard `Access-Control-Allow-Origin`, so reflect the request
+		// origin when configured wide-open (the dev default) and otherwise echo only
+		// the configured allowlist.
+		origin: corsOrigin === '*' ? true : corsOrigin,
+		credentials: true,
+	});
 	app.register(helmet, { contentSecurityPolicy: false });
 	app.register(authPlugin);
 	app.register(swaggerPlugin);

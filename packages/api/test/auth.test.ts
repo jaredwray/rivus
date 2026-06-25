@@ -1,6 +1,7 @@
 import type { AccountId, UserId } from '@rivus/core';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { SESSION_COOKIE } from '../src/plugins/auth';
 import { ConflictError } from '../src/repositories/errors';
 import { createInMemoryRepositories } from '../src/repositories/memory';
 import { hashSecret } from '../src/services/hash';
@@ -479,5 +480,70 @@ describe('accept-invite', () => {
 
 		expect(response.statusCode).toBe(409);
 		await rawApp.close();
+	});
+});
+
+describe('session cookie', () => {
+	let app: FastifyInstance;
+
+	beforeEach(async () => {
+		app = await buildTestApp();
+	});
+
+	afterEach(async () => {
+		await app.close();
+	});
+
+	type Injected = Awaited<ReturnType<FastifyInstance['inject']>>;
+	const cookieRe = new RegExp(`${SESSION_COOKIE}=([^;]*)`);
+
+	function setCookieHeader(res: Injected): string {
+		const header = res.headers['set-cookie'];
+		return Array.isArray(header) ? header.join('\n') : String(header ?? '');
+	}
+
+	function sessionCookieValue(res: Injected): string {
+		return setCookieHeader(res).match(cookieRe)?.[1] ?? '';
+	}
+
+	it('sets an HttpOnly, SameSite=Lax session cookie carrying the token on verify', async () => {
+		const email = 'cookie@example.com';
+		await requestSignup(app, signupBody({ email }));
+		const res = await verifyCode(app, email, latestCodeFor(app, email));
+
+		expect(res.statusCode).toBe(201);
+		const header = setCookieHeader(res);
+		expect(header).toContain(`${SESSION_COOKIE}=`);
+		expect(header).toContain('HttpOnly');
+		expect(header).toMatch(/SameSite=Lax/i);
+		expect(header).toContain('Path=/');
+		// The cookie carries the same JWT returned in the body (which native clients use).
+		expect(sessionCookieValue(res)).toBe(res.json().token);
+	});
+
+	it('authenticates /me with only the session cookie (no Authorization header)', async () => {
+		const email = 'cookie-me@example.com';
+		await requestSignup(app, signupBody({ email }));
+		const verified = await verifyCode(app, email, latestCodeFor(app, email));
+		const token = sessionCookieValue(verified);
+
+		const res = await app.inject({
+			method: 'GET',
+			url: '/v1/auth/me',
+			cookies: { [SESSION_COOKIE]: token },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(res.json().user.email).toBe(email);
+	});
+
+	it('clears the session cookie on logout', async () => {
+		const res = await app.inject({ method: 'POST', url: '/v1/auth/logout' });
+
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toEqual({ status: 'signed_out' });
+		// Cleared: the cookie is re-sent with an empty value so the browser drops it.
+		expect(setCookieHeader(res)).toContain(`${SESSION_COOKIE}=`);
+		expect(sessionCookieValue(res)).toBe('');
 	});
 });

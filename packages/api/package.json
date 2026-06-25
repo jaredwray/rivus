@@ -20,6 +20,7 @@
 		"clean": "rm -rf dist coverage"
 	},
 	"dependencies": {
+		"@fastify/cookie": "^11.0.2",
 		"@fastify/cors": "^11.2.0",
 		"@fastify/helmet": "^13.0.2",
 		"@fastify/jwt": "^10.1.0",

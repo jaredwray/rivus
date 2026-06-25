@@ -137,6 +137,10 @@ const sessionResponseSchema = z.object({
 });
 export type Session = z.infer<typeof sessionResponseSchema>;
 
+const signedOutResponseSchema = z.object({
+	status: z.literal('signed_out'),
+});
+
 const memberResponseSchema = z.object({
 	userId: userId(),
 	email: z.string(),
@@ -232,7 +236,14 @@ export interface RivusApiClient {
 	/** Exchange a one-time code (signup or login) for a session. */
 	verifyCode(input: VerifyCodeInput): Promise<AuthResponse>;
 	acceptInvite(input: AcceptInviteInput): Promise<AuthResponse>;
-	me(token: string): Promise<Session>;
+	/**
+	 * Return the current session. The token is optional: web clients authenticate
+	 * via the session cookie (sent automatically in credentials mode), so they call
+	 * this with no argument to rehydrate after a reload.
+	 */
+	me(token?: string): Promise<Session>;
+	/** Clear the server-side session cookie (web sign-out). */
+	logout(): Promise<void>;
 	listMembers(token: string): Promise<MemberList>;
 	inviteMember(token: string, input: InviteMemberInput): Promise<Invite>;
 	/** Update the account's business settings (owner only). */
@@ -249,12 +260,33 @@ function normalizeBaseUrl(baseUrl: string): string {
 	return baseUrl.replace(/\/+$/, '');
 }
 
-export function createApiClient(baseUrl: string, fetchImpl: FetchLike = fetch): RivusApiClient {
+/** Optional knobs for {@link createApiClient}. */
+export interface ApiClientOptions {
+	/**
+	 * Send cookies with every request (`credentials: 'include'`). Web clients use
+	 * this so the API's HttpOnly session cookie rides along; the bearer token then
+	 * becomes optional and is omitted when empty. Native clients leave this off and
+	 * authenticate with the bearer header.
+	 */
+	withCredentials?: boolean;
+}
+
+export function createApiClient(
+	baseUrl: string,
+	fetchImpl: FetchLike = fetch,
+	options: ApiClientOptions = {},
+): RivusApiClient {
 	const root = normalizeBaseUrl(baseUrl);
+	const credentials: RequestCredentials | undefined = options.withCredentials
+		? 'include'
+		: undefined;
 
 	/** Perform a request, parse JSON, and turn non-2xx into a typed ApiError. */
 	async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
-		const response = await fetchImpl(`${root}${path}`, init);
+		const response = await fetchImpl(
+			`${root}${path}`,
+			credentials ? { ...init, credentials } : init,
+		);
 		const raw = await response.text();
 		const body = raw.length > 0 ? safeJsonParse(raw) : undefined;
 
@@ -278,8 +310,11 @@ export function createApiClient(baseUrl: string, fetchImpl: FetchLike = fetch): 
 		return { method, headers, body: JSON.stringify(payload) };
 	}
 
-	function authHeaders(token: string): Record<string, string> {
-		return { Authorization: `Bearer ${token}` };
+	// Only attach a bearer header when there's actually a token. In web cookie mode
+	// the token is empty, and sending `Authorization: Bearer ` (malformed) would make
+	// the API reject the request instead of falling back to the session cookie.
+	function authHeaders(token?: string): Record<string, string> {
+		return token ? { Authorization: `Bearer ${token}` } : {};
 	}
 
 	return {
@@ -311,11 +346,15 @@ export function createApiClient(baseUrl: string, fetchImpl: FetchLike = fetch): 
 			return request('/v1/auth/accept-invite', authResponseSchema, jsonInit('POST', payload));
 		},
 
-		me(token: string) {
+		me(token?: string) {
 			return request('/v1/auth/me', sessionResponseSchema, {
 				method: 'GET',
 				headers: authHeaders(token),
 			});
+		},
+
+		async logout() {
+			await request('/v1/auth/logout', signedOutResponseSchema, { method: 'POST' });
 		},
 
 		listMembers(token: string) {

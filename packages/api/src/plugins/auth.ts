@@ -1,14 +1,47 @@
+import fastifyCookie, { type CookieSerializeOptions } from '@fastify/cookie';
 import fastifyJwt from '@fastify/jwt';
 import type { Role } from '@rivus/core';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
+import type { Config } from '../config';
+
+/** Name of the HttpOnly cookie that carries the session JWT for web clients. */
+export const SESSION_COOKIE = 'rivus_session';
+
+/**
+ * Cookie attributes for the session cookie. It's `HttpOnly` so JavaScript can't
+ * read the token (XSS can't exfiltrate it), `SameSite=Lax` because the app and
+ * API are same-site subdomains of `rivus.ai` (so the cookie rides along on the
+ * app's API calls while cross-site requests don't send it), and `Secure` in
+ * production where everything is HTTPS. `maxAge` is passed in to match the JWT's
+ * own expiry so the browser drops the cookie exactly when the token dies.
+ */
+export function sessionCookieOptions(
+	config: Config,
+	maxAgeSeconds?: number,
+): CookieSerializeOptions {
+	return {
+		httpOnly: true,
+		secure: config.NODE_ENV === 'production',
+		sameSite: 'lax',
+		path: '/',
+		...(maxAgeSeconds !== undefined ? { maxAge: maxAgeSeconds } : {}),
+	};
+}
 
 /** Registers JWT signing/verification plus `authenticate` and `requireRole` guards. */
 export default fp(
 	async (app) => {
+		// The cookie parser must be registered before `@fastify/jwt` can read the
+		// token from a cookie, and before any route calls `reply.setCookie`.
+		await app.register(fastifyCookie);
 		await app.register(fastifyJwt, {
 			secret: app.deps.config.JWT_SECRET,
 			sign: { expiresIn: app.deps.config.JWT_EXPIRES_IN },
+			// Web clients authenticate via the HttpOnly cookie; native clients keep
+			// sending the bearer token. `jwtVerify` checks the Authorization header
+			// first and falls back to this cookie.
+			cookie: { cookieName: SESSION_COOKIE, signed: false },
 		});
 
 		app.decorate('authenticate', async (request: FastifyRequest, _reply: FastifyReply) => {

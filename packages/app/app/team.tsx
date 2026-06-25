@@ -32,7 +32,6 @@ function rolePillColors(role: Role): { color: string; background: string } {
 
 export default function TeamScreen() {
 	const { session, client } = useAuth();
-	const token = session?.token;
 	const canInvite = session?.role === 'owner' || session?.role === 'manager';
 	// Owners may grant any role; managers may only add Members.
 	const roleOptions: { label: string; value: Role }[] =
@@ -57,13 +56,13 @@ export default function TeamScreen() {
 	const [sending, setSending] = useState(false);
 
 	const load = useCallback(async () => {
-		if (!token) {
+		if (!session) {
 			return;
 		}
 		setLoading(true);
 		setError(null);
 		try {
-			const data = await client.listMembers(token);
+			const data = await client.listMembers(session.token);
 			setMembers(data.members);
 			setInvites(data.invites);
 		} catch (caught) {
@@ -71,20 +70,20 @@ export default function TeamScreen() {
 		} finally {
 			setLoading(false);
 		}
-	}, [client, token]);
+	}, [client, session]);
 
 	useEffect(() => {
 		load();
 	}, [load]);
 
 	async function onInvite() {
-		if (!token || sending) {
+		if (!session || sending) {
 			return;
 		}
 		setInviteError(null);
 		setSending(true);
 		try {
-			const invite = await client.inviteMember(token, {
+			const invite = await client.inviteMember(session.token, {
 				email: inviteEmail.trim(),
 				name: inviteName.trim(),
 				role: inviteRole,

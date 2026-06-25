@@ -11,7 +11,6 @@ const PLAN_LABELS: Record<Billing['plan'], string> = {
 
 export default function BillingScreen() {
 	const { session, client } = useAuth();
-	const token = session?.token;
 	const isOwner = session?.role === 'owner';
 
 	const [billing, setBilling] = useState<Billing | null>(null);
@@ -19,20 +18,20 @@ export default function BillingScreen() {
 	const [error, setError] = useState<string | null>(null);
 
 	const load = useCallback(async () => {
-		if (!token || !isOwner) {
+		if (!session || !isOwner) {
 			setLoading(false);
 			return;
 		}
 		setLoading(true);
 		setError(null);
 		try {
-			setBilling(await client.getBilling(token));
+			setBilling(await client.getBilling(session.token));
 		} catch (caught) {
 			setError(caught instanceof ApiError ? caught.message : 'Could not load billing.');
 		} finally {
 			setLoading(false);
 		}
-	}, [client, token, isOwner]);
+	}, [client, session, isOwner]);
 
 	useEffect(() => {
 		load();

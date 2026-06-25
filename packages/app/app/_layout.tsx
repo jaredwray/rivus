@@ -91,9 +91,19 @@ export default function RootLayout() {
 
 /** Show the auth screens until there's a session, then the dashboard shell. */
 function Gate() {
-	const { session } = useAuth();
+	const { session, restoring } = useAuth();
 	const pathname = usePathname();
 	const onAuthRoute = isAuthPath(pathname);
+
+	// On web load we check the session cookie first; hold on a spinner so a valid
+	// session doesn't flash the sign-in screen before `me()` resolves.
+	if (restoring) {
+		return (
+			<View style={styles.loading}>
+				<ActivityIndicator color={colors.brandPurple} />
+			</View>
+		);
+	}
 
 	if (!session) {
 		// Signed out: /login, /signup and /accept-invite render their own screen;
