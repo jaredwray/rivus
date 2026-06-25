@@ -90,7 +90,7 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
 			const userId = request.user.sub as UserId;
 			const user = await users.findById(userId);
 			if (!user) {
-				throw app.httpErrors.unauthorized('Account no longer exists');
+				throw app.httpErrors.unauthorized('User no longer exists');
 			}
 			// Preserve a real membership role (e.g. staff switching back to their own
 			// company keeps their actual role); in a company where staff have no

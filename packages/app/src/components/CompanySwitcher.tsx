@@ -109,6 +109,11 @@ export function CompanySwitcher() {
 	}
 
 	async function choose(target: Account) {
+		// Ignore taps while a switch is already in flight, so a double-tap (or
+		// picking another company mid-switch) can't fire overlapping re-issues.
+		if (switchingId) {
+			return;
+		}
 		// Picking the current company is a no-op beyond closing the sheet.
 		if (target.id === account?.id) {
 			close();
