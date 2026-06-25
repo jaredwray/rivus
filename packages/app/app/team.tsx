@@ -8,6 +8,7 @@ import {
 	type Role,
 } from '@/src/api/client';
 import { initialsOf, roleLabel, useAuth } from '@/src/auth/AuthContext';
+import { InviteCreatedModal } from '@/src/components/InviteCreatedModal';
 import {
 	Avatar,
 	Card,
@@ -18,7 +19,7 @@ import {
 	TextField,
 	Txt,
 } from '@/src/components/ui';
-import { colors, font, radii } from '@/src/theme/tokens';
+import { colors, font } from '@/src/theme/tokens';
 
 function rolePillColors(role: Role): { color: string; background: string } {
 	if (role === 'owner') {
@@ -188,19 +189,6 @@ export default function TeamScreen() {
 							icon="user-plus"
 							onPress={onInvite}
 						/>
-
-						{lastInvite ? (
-							<View style={styles.callout}>
-								<Txt style={styles.calloutTitle}>Invitation created for {lastInvite.email}</Txt>
-								<Txt style={styles.calloutBody}>
-									We’ve emailed them a link to join {session.account.name}. If it doesn’t arrive,
-									share this code so they can join:
-								</Txt>
-								<Txt selectable style={styles.code}>
-									{lastInvite.token}
-								</Txt>
-							</View>
-						) : null}
 					</View>
 				</Card>
 			) : (
@@ -210,6 +198,12 @@ export default function TeamScreen() {
 					</Txt>
 				</Card>
 			)}
+
+			<InviteCreatedModal
+				invite={lastInvite}
+				accountName={session.account.name}
+				onClose={() => setLastInvite(null)}
+			/>
 		</ScrollView>
 	);
 }
@@ -273,34 +267,5 @@ const styles = StyleSheet.create({
 		fontFamily: font.medium,
 		fontSize: 12.5,
 		color: colors.redInk,
-	},
-	callout: {
-		backgroundColor: colors.fieldSoft,
-		borderWidth: 1,
-		borderColor: colors.border,
-		borderRadius: radii.md,
-		padding: 14,
-		gap: 6,
-	},
-	calloutTitle: {
-		fontFamily: font.semibold,
-		fontSize: 13,
-		color: colors.text,
-	},
-	calloutBody: {
-		fontFamily: font.regular,
-		fontSize: 12.5,
-		color: colors.textMuted,
-	},
-	code: {
-		fontFamily: font.medium,
-		fontSize: 12.5,
-		color: colors.brandPurpleInk,
-		backgroundColor: colors.surface,
-		borderWidth: 1,
-		borderColor: colors.border,
-		borderRadius: radii.sm,
-		paddingVertical: 8,
-		paddingHorizontal: 10,
 	},
 });

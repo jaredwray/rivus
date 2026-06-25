@@ -9,6 +9,7 @@ import {
 } from '@expo-google-fonts/montserrat';
 import { Redirect, Slot, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import {
 	ActivityIndicator,
 	Pressable,
@@ -24,6 +25,7 @@ import { RivusWordmark } from '@/src/brand/RivusLogo';
 import { CompanySwitcher } from '@/src/components/CompanySwitcher';
 import { BrandGradient } from '@/src/components/Gradient';
 import { Avatar, Dot, Icon, RivusStatusChip, Txt } from '@/src/components/ui';
+import { installFocusRing } from '@/src/theme/focusRing';
 import { colors, font, radii, SIDEBAR_BREAKPOINT, SIDEBAR_WIDTH } from '@/src/theme/tokens';
 
 type FeatherName = React.ComponentProps<typeof Feather>['name'];
@@ -73,6 +75,12 @@ export default function RootLayout() {
 		Montserrat_600SemiBold,
 		Montserrat_700Bold,
 	});
+
+	// Web only: replace the browser's default focus outline with a clean,
+	// keyboard-only brand ring (see installFocusRing). No-op on native.
+	useEffect(() => {
+		installFocusRing();
+	}, []);
 
 	return (
 		<SafeAreaProvider>
