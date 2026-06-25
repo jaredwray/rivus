@@ -79,10 +79,27 @@ export interface NewAccount {
 	timezone: string;
 }
 
+/**
+ * Editable account business fields (owner-only account settings). Mirrors the
+ * stored shape; the route maps the public `businessName` onto `name`. Every
+ * field is optional so a partial update only touches what the caller sent.
+ */
+export interface UpdateAccount {
+	name?: string;
+	phone?: string;
+	address?: string;
+	website?: string;
+	timezone?: string;
+}
+
 export interface AccountRepository {
 	create(input: NewAccount): Promise<Account>;
 	findById(id: AccountId): Promise<Account | null>;
 	findBySlug(slug: string): Promise<Account | null>;
+	/** Apply a partial business-info update; returns the updated account or null. */
+	update(id: AccountId, input: UpdateAccount): Promise<Account | null>;
+	/** Soft-delete: mark the account `canceled` (data retained). Returns it, or null. */
+	cancel(id: AccountId): Promise<Account | null>;
 }
 
 export interface NewMembership {
@@ -105,7 +122,7 @@ export interface NewInvite {
 	accountId: AccountId;
 	email: string;
 	name: string;
-	role: Exclude<Role, 'owner'>;
+	role: Role;
 	token: string;
 	invitedBy: UserId;
 }
@@ -134,7 +151,7 @@ export interface SignupResult {
 export interface AcceptInviteInput {
 	user: NewUser;
 	accountId: AccountId;
-	role: Exclude<Role, 'owner'>;
+	role: Role;
 	inviteId: InviteId;
 }
 

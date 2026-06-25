@@ -53,9 +53,9 @@ describe('renderInviteEmail', () => {
 		}
 	});
 
-	it('labels the team_member role in human-readable form', () => {
-		const { html } = renderInviteEmail({ ...sampleInvite, role: 'team_member' });
-		expect(html).toContain('Team Member');
+	it('labels the member role in human-readable form', () => {
+		const { html } = renderInviteEmail({ ...sampleInvite, role: 'member' });
+		expect(html).toContain('Member');
 	});
 
 	it('escapes HTML in user-controlled names to prevent injection', () => {

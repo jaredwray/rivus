@@ -43,6 +43,7 @@ import type {
 	SignupResult,
 	StoredUser,
 	StoredVerificationCode,
+	UpdateAccount,
 	UserRepository,
 	VerificationCodeRepository,
 } from './types';
@@ -88,6 +89,8 @@ function mapAccount(doc: HydratedDocument<AccountDocument>): Account {
 		address: doc.address,
 		website: doc.website,
 		timezone: doc.timezone,
+		status: doc.status,
+		canceledAt: doc.canceledAt ? doc.canceledAt.toISOString() : null,
 		createdAt: doc.createdAt.toISOString(),
 		updatedAt: doc.updatedAt.toISOString(),
 	};
@@ -192,6 +195,34 @@ export class MongoAccountRepository implements AccountRepository {
 
 	async findBySlug(slug: string): Promise<Account | null> {
 		const doc = await AccountModel.findOne({ slug: slug.trim().toLowerCase() }).exec();
+		return doc ? mapAccount(doc) : null;
+	}
+
+	async update(id: AccountId, input: UpdateAccount): Promise<Account | null> {
+		if (!Types.ObjectId.isValid(id)) {
+			return null;
+		}
+		// `$set` with only the provided keys, so a partial update never blanks a field.
+		const set: UpdateAccount = {};
+		for (const key of ['name', 'phone', 'address', 'website', 'timezone'] as const) {
+			const value = input[key];
+			if (value !== undefined) {
+				set[key] = value;
+			}
+		}
+		const doc = await AccountModel.findByIdAndUpdate(id, { $set: set }, { new: true }).exec();
+		return doc ? mapAccount(doc) : null;
+	}
+
+	async cancel(id: AccountId): Promise<Account | null> {
+		if (!Types.ObjectId.isValid(id)) {
+			return null;
+		}
+		const doc = await AccountModel.findByIdAndUpdate(
+			id,
+			{ $set: { status: 'canceled', canceledAt: new Date() } },
+			{ new: true },
+		).exec();
 		return doc ? mapAccount(doc) : null;
 	}
 }

@@ -1,4 +1,4 @@
-import { itemStatusSchema, roleSchema } from '@rivus/core';
+import { accountStatusSchema, itemStatusSchema, roleSchema } from '@rivus/core';
 import { z } from 'zod';
 
 /** Public user projection — never includes the password hash. */
@@ -22,6 +22,8 @@ export const accountResponseSchema = z
 		address: z.string(),
 		website: z.string(),
 		timezone: z.string(),
+		status: accountStatusSchema,
+		canceledAt: z.string().nullable(),
 		createdAt: z.string(),
 		updatedAt: z.string(),
 	})
@@ -70,15 +72,15 @@ export const memberResponseSchema = z
 
 /**
  * A pending invitation as shown in the roster. The bearer `token` is deliberately
- * omitted here — anyone who can list members (including Team Members) would
- * otherwise be able to claim a pending Manager invite.
+ * omitted here — anyone who can list members (including Members) would otherwise
+ * be able to claim a pending Manager or Owner invite.
  */
 export const inviteSummarySchema = z
 	.object({
 		id: z.string(),
 		email: z.string(),
 		name: z.string(),
-		role: z.enum(['manager', 'team_member']),
+		role: roleSchema,
 		status: z.enum(['pending', 'accepted', 'revoked']),
 		createdAt: z.string(),
 	})
@@ -123,6 +125,19 @@ export const itemListResponseSchema = z
 		meta: paginationMetaSchema,
 	})
 	.meta({ id: 'ItemList' });
+
+/**
+ * Billing summary for the account (owner-only). Rivus has no payment provider
+ * wired up yet, so this is a placeholder: every account is on the free plan and
+ * `seats` reflects the current member count.
+ */
+export const billingResponseSchema = z
+	.object({
+		plan: z.literal('free'),
+		status: accountStatusSchema,
+		seats: z.number().int(),
+	})
+	.meta({ id: 'Billing' });
 
 export const errorResponseSchema = z
 	.object({

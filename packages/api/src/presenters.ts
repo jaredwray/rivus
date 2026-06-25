@@ -22,6 +22,8 @@ export function toPublicAccount(account: Account): Account {
 		address: account.address,
 		website: account.website,
 		timezone: account.timezone,
+		status: account.status,
+		canceledAt: account.canceledAt,
 		createdAt: account.createdAt,
 		updatedAt: account.updatedAt,
 	};

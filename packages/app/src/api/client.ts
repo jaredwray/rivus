@@ -3,6 +3,7 @@ import {
 	type Account,
 	type AccountId,
 	acceptInviteSchema,
+	accountStatusSchema,
 	type InviteMemberInput,
 	type Item,
 	type ItemId,
@@ -16,8 +17,10 @@ import {
 	type Role,
 	roleSchema,
 	signupSchema,
+	type UpdateAccountInput,
 	type User,
 	type UserId,
+	updateAccountSchema,
 	type VerifyCodeInput,
 	verifyCodeSchema,
 } from '@rivus/core';
@@ -105,6 +108,8 @@ const accountResponseSchema = z.object({
 	address: z.string(),
 	website: z.string(),
 	timezone: z.string(),
+	status: accountStatusSchema,
+	canceledAt: z.string().nullable(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
 }) satisfies z.ZodType<Account>;
@@ -147,7 +152,7 @@ const inviteSummarySchema = z.object({
 	id: z.string(),
 	email: z.string(),
 	name: z.string(),
-	role: z.enum(['manager', 'team_member']),
+	role: roleSchema,
 	status: z.enum(['pending', 'accepted', 'revoked']),
 	createdAt: z.string(),
 });
@@ -162,6 +167,15 @@ const memberListResponseSchema = z.object({
 	invites: z.array(inviteSummarySchema),
 });
 export type MemberList = z.infer<typeof memberListResponseSchema>;
+
+// Billing placeholder — no payment provider is wired up yet, so every account is
+// on the free plan and `seats` mirrors the member count.
+const billingResponseSchema = z.object({
+	plan: z.literal('free'),
+	status: accountStatusSchema,
+	seats: z.number().int(),
+});
+export type Billing = z.infer<typeof billingResponseSchema>;
 
 const itemResponseSchema = z.object({
 	id: itemId(),
@@ -221,6 +235,12 @@ export interface RivusApiClient {
 	me(token: string): Promise<Session>;
 	listMembers(token: string): Promise<MemberList>;
 	inviteMember(token: string, input: InviteMemberInput): Promise<Invite>;
+	/** Update the account's business settings (owner only). */
+	updateAccount(token: string, input: UpdateAccountInput): Promise<Account>;
+	/** Cancel (soft-delete) the account (owner only). */
+	cancelAccount(token: string): Promise<Account>;
+	/** Read the account's billing summary (owner only). */
+	getBilling(token: string): Promise<Billing>;
 	listItems(token: string, query?: Partial<PaginationQuery>): Promise<ItemListResponse>;
 }
 
@@ -308,6 +328,25 @@ export function createApiClient(baseUrl: string, fetchImpl: FetchLike = fetch): 
 		async inviteMember(token: string, input: InviteMemberInput) {
 			const payload = parseInput(inviteMemberSchema, input);
 			return request('/v1/members/invites', inviteResponseSchema, jsonInit('POST', payload, token));
+		},
+
+		async updateAccount(token: string, input: UpdateAccountInput) {
+			const payload = parseInput(updateAccountSchema, input);
+			return request('/v1/account', accountResponseSchema, jsonInit('PATCH', payload, token));
+		},
+
+		cancelAccount(token: string) {
+			return request('/v1/account/cancel', accountResponseSchema, {
+				method: 'POST',
+				headers: authHeaders(token),
+			});
+		},
+
+		getBilling(token: string) {
+			return request('/v1/billing', billingResponseSchema, {
+				method: 'GET',
+				headers: authHeaders(token),
+			});
 		},
 
 		async listItems(token: string, query?: Partial<PaginationQuery>) {

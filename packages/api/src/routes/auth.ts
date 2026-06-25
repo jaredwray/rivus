@@ -277,7 +277,9 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 				throw app.httpErrors.unauthorized('Invalid or expired invitation');
 			}
 			const account = await accounts.findById(invite.accountId);
-			if (!account) {
+			// A canceled (soft-deleted) account can't take on new members, even via an
+			// invite issued before it was canceled.
+			if (!account || account.status === 'canceled') {
 				throw app.httpErrors.unauthorized('Invalid or expired invitation');
 			}
 			// Creates the user + membership and marks the invite accepted atomically

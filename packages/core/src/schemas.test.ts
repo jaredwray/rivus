@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import {
 	acceptInviteSchema,
 	accountBusinessSchema,
+	accountStatusSchema,
 	createItemSchema,
 	inviteMemberSchema,
 	loginSchema,
 	paginationQuerySchema,
 	signupSchema,
+	updateAccountSchema,
 	updateItemSchema,
 	updateMemberRoleSchema,
 	verifyCodeSchema,
@@ -131,18 +133,49 @@ describe('signupSchema', () => {
 });
 
 describe('inviteMemberSchema', () => {
-	it('accepts manager and team_member roles', () => {
-		for (const role of ['manager', 'team_member'] as const) {
+	it('accepts every known role (per-inviter limits are enforced server-side)', () => {
+		for (const role of ['owner', 'manager', 'member'] as const) {
 			expect(
 				inviteMemberSchema.parse({ email: faker.internet.email(), name: 'Pat', role }).role,
 			).toBe(role);
 		}
 	});
 
-	it('rejects inviting someone as owner', () => {
+	it('rejects an unknown role', () => {
 		expect(() =>
-			inviteMemberSchema.parse({ email: faker.internet.email(), name: 'Pat', role: 'owner' }),
+			inviteMemberSchema.parse({ email: faker.internet.email(), name: 'Pat', role: 'admin' }),
 		).toThrow();
+	});
+});
+
+describe('accountStatusSchema', () => {
+	it('accepts active and canceled', () => {
+		expect(accountStatusSchema.parse('active')).toBe('active');
+		expect(accountStatusSchema.parse('canceled')).toBe('canceled');
+	});
+
+	it('rejects an unknown status', () => {
+		expect(() => accountStatusSchema.parse('deleted')).toThrow();
+	});
+});
+
+describe('updateAccountSchema', () => {
+	it('accepts a partial update of one field', () => {
+		expect(updateAccountSchema.parse({ phone: '+1 206 555 0100' })).toEqual({
+			phone: '+1 206 555 0100',
+		});
+	});
+
+	it('trims and keeps the business name', () => {
+		expect(updateAccountSchema.parse({ businessName: '  Acme  ' }).businessName).toBe('Acme');
+	});
+
+	it('rejects an empty update', () => {
+		expect(() => updateAccountSchema.parse({})).toThrow();
+	});
+
+	it('rejects a malformed website', () => {
+		expect(() => updateAccountSchema.parse({ website: 'not a url' })).toThrow();
 	});
 });
 

@@ -66,13 +66,13 @@ export type VerifyCodeInput = z.infer<typeof verifyCodeSchema>;
 // `Role` itself is the source-of-truth union in `types.ts` (mirrors the
 // `ItemStatus`/`itemStatusSchema` split); here we only need the runtime schema.
 /** Every role a member can hold. */
-export const roleSchema = z.enum(['owner', 'manager', 'team_member'], {
+export const roleSchema = z.enum(['owner', 'manager', 'member'], {
 	error: 'Choose a valid role.',
 });
 
-/** Roles that can be granted to an invited member (ownership is not invitable). */
-export const assignableRoleSchema = z.enum(['manager', 'team_member'], {
-	error: 'Choose either Manager or Team Member.',
+/** Lifecycle state of an account (`canceled` is a soft delete). */
+export const accountStatusSchema = z.enum(['active', 'canceled'], {
+	error: 'Status must be either active or canceled.',
 });
 
 export const businessNameSchema = requiredText('Business name', 160);
@@ -110,11 +110,15 @@ export const signupSchema = z.object({
 });
 export type SignupInput = z.infer<typeof signupSchema>;
 
-/** Invite a new Manager or Team Member to an existing account. */
+/**
+ * Invite a new member to an existing account with any role. Which roles a given
+ * inviter may actually grant (an owner can grant any; a manager only `member`)
+ * is enforced server-side, not by this shape.
+ */
 export const inviteMemberSchema = z.object({
 	email: emailSchema,
 	name: nameSchema,
-	role: assignableRoleSchema,
+	role: roleSchema,
 });
 export type InviteMemberInput = z.infer<typeof inviteMemberSchema>;
 
@@ -135,6 +139,25 @@ export const updateMemberRoleSchema = z.object({
 	role: roleSchema,
 });
 export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;
+
+/**
+ * Update an account's business information (owner-only account settings). Every
+ * field is optional — like {@link updateItemSchema}, a partial update only
+ * touches what the caller sends — but at least one must be present. The slug is
+ * derived from the name and is not editable here.
+ */
+export const updateAccountSchema = z
+	.object({
+		businessName: businessNameSchema.optional(),
+		phone: phoneSchema.optional(),
+		address: addressSchema.optional(),
+		website: websiteSchema.optional(),
+		timezone: timezoneSchema.optional(),
+	})
+	.refine((value) => Object.values(value).some((field) => field !== undefined), {
+		error: 'Provide at least one field to update.',
+	});
+export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;
 
 export const itemStatusSchema = z.enum(['active', 'archived'], {
 	error: 'Status must be either active or archived.',

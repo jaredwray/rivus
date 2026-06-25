@@ -143,3 +143,26 @@ export async function signupOwner(
 export function authHeader(token: string): { authorization: string } {
 	return { authorization: `Bearer ${token}` };
 }
+
+/** Invite a teammate with the given role and accept it, returning their session. */
+export async function addMember(
+	app: FastifyInstance,
+	ownerToken: string,
+	role: Role,
+	email: string,
+): Promise<{ token: string; userId: string }> {
+	const invite = await app.inject({
+		method: 'POST',
+		url: '/v1/members/invites',
+		headers: authHeader(ownerToken),
+		payload: { email, name: 'Teammate', role },
+	});
+	const inviteToken = invite.json().token as string;
+	const accepted = await app.inject({
+		method: 'POST',
+		url: '/v1/auth/accept-invite',
+		payload: { token: inviteToken },
+	});
+	const body = accepted.json();
+	return { token: body.token as string, userId: body.user.id as string };
+}

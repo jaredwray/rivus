@@ -1,4 +1,4 @@
-import type { LoginInput, VerifyCodeInput } from '@rivus/core';
+import type { LoginInput, UpdateAccountInput, VerifyCodeInput } from '@rivus/core';
 import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
 import {
 	type AuthResponse,
@@ -21,6 +21,10 @@ export interface AuthContextValue {
 	/** Exchange a one-time code for a session. */
 	verifyCode: (input: VerifyCodeInput) => Promise<void>;
 	acceptInvite: (token: string) => Promise<void>;
+	/** Update the account's business settings, keeping the session in sync (owner only). */
+	updateAccount: (input: UpdateAccountInput) => Promise<void>;
+	/** Cancel (soft-delete) the account, then sign out since it's now locked (owner only). */
+	cancelAccount: () => Promise<void>;
 	signOut: () => void;
 }
 
@@ -51,6 +55,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			async acceptInvite(token) {
 				setSession(await client.acceptInvite({ token }));
 			},
+			async updateAccount(input) {
+				if (!session) {
+					return;
+				}
+				const account = await client.updateAccount(session.token, input);
+				setSession({ ...session, account });
+			},
+			async cancelAccount() {
+				if (!session) {
+					return;
+				}
+				await client.cancelAccount(session.token);
+				// The account is now canceled, so every authed call would 401 — drop the session.
+				setSession(null);
+			},
 			signOut() {
 				setSession(null);
 			},
@@ -77,7 +96,7 @@ export function roleLabel(role: AuthResponse['role']): string {
 		case 'manager':
 			return 'Manager';
 		default:
-			return 'Team Member';
+			return 'Member';
 	}
 }
 

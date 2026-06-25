@@ -4,7 +4,7 @@ export interface InviteDocument {
 	accountId: Types.ObjectId;
 	email: string;
 	name: string;
-	role: 'manager' | 'team_member';
+	role: 'owner' | 'manager' | 'member';
 	status: 'pending' | 'accepted' | 'revoked';
 	token: string;
 	invitedBy: Types.ObjectId;
@@ -17,7 +17,7 @@ const inviteSchema = new Schema<InviteDocument>(
 		accountId: { type: Schema.Types.ObjectId, ref: 'Account', required: true, index: true },
 		email: { type: String, required: true, lowercase: true, trim: true, index: true },
 		name: { type: String, required: true, trim: true },
-		role: { type: String, enum: ['manager', 'team_member'], required: true },
+		role: { type: String, enum: ['owner', 'manager', 'member'], required: true },
 		status: {
 			type: String,
 			enum: ['pending', 'accepted', 'revoked'],

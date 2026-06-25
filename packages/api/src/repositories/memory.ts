@@ -34,6 +34,7 @@ import type {
 	SignupResult,
 	StoredUser,
 	StoredVerificationCode,
+	UpdateAccount,
 	UserRepository,
 	VerificationCodeRepository,
 } from './types';
@@ -136,6 +137,8 @@ export class InMemoryAccountRepository implements AccountRepository {
 			address: input.address,
 			website: input.website,
 			timezone: input.timezone,
+			status: 'active',
+			canceledAt: null,
 			createdAt: timestamp,
 			updatedAt: timestamp,
 		};
@@ -156,6 +159,40 @@ export class InMemoryAccountRepository implements AccountRepository {
 			}
 		}
 		return null;
+	}
+
+	async update(id: AccountId, input: UpdateAccount): Promise<Account | null> {
+		const account = this.data.accounts.get(id);
+		if (!account) {
+			return null;
+		}
+		// Only overwrite fields the caller actually sent (undefined means "leave as is").
+		const patch: Partial<Account> = {};
+		for (const key of ['name', 'phone', 'address', 'website', 'timezone'] as const) {
+			const value = input[key];
+			if (value !== undefined) {
+				patch[key] = value;
+			}
+		}
+		const updated: Account = { ...account, ...patch, updatedAt: now() };
+		this.data.accounts.set(id, updated);
+		return structuredClone(updated);
+	}
+
+	async cancel(id: AccountId): Promise<Account | null> {
+		const account = this.data.accounts.get(id);
+		if (!account) {
+			return null;
+		}
+		const timestamp = now();
+		const updated: Account = {
+			...account,
+			status: 'canceled',
+			canceledAt: timestamp,
+			updatedAt: timestamp,
+		};
+		this.data.accounts.set(id, updated);
+		return structuredClone(updated);
 	}
 }
 
