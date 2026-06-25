@@ -129,6 +129,7 @@ function Gate() {
 
 function Shell() {
 	const { width } = useWindowDimensions();
+	const { isStaff } = useAuth();
 	const wide = width >= SIDEBAR_BREAKPOINT;
 
 	if (wide) {
@@ -148,9 +149,12 @@ function Shell() {
 	return (
 		<View style={styles.rootColumn}>
 			<CompactBar />
-			<View style={styles.compactCompany}>
-				<CompanySwitcher />
-			</View>
+			{/* Only staff get the company switcher; non-staff have no company row at all. */}
+			{isStaff ? (
+				<View style={styles.compactCompany}>
+					<CompanySwitcher />
+				</View>
+			) : null}
 			<NavStrip />
 			<View style={styles.content}>
 				<Slot />

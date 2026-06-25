@@ -143,25 +143,15 @@ export function CompanySwitcher() {
 		}
 	}
 
-	if (!account) {
+	// Only Rivus staff get the switcher. A single-tenant customer belongs to one
+	// company, so there's nothing to switch — and nothing to surface here either:
+	// the company name and address are hidden for them entirely.
+	if (!account || !isStaff) {
 		return null;
 	}
 
 	const initial = account.name.charAt(0).toUpperCase();
 	const subtitle = account.address || account.timezone || '';
-
-	// One company per customer: no switcher, just the company label.
-	if (!isStaff) {
-		return (
-			<View style={styles.trigger}>
-				<CompanyMark letter={initial} />
-				<View style={styles.labels}>
-					<Txt style={styles.name}>{account.name}</Txt>
-					{subtitle ? <Txt style={styles.sub}>{subtitle}</Txt> : null}
-				</View>
-			</View>
-		);
-	}
 
 	return (
 		<>
