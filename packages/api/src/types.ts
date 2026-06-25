@@ -12,6 +12,13 @@ import type {
 } from './repositories/types';
 import type { Mailer } from './services/email';
 
+/** Result of a readiness check: whether dependencies are usable, and why not. */
+export interface ReadinessResult {
+	ready: boolean;
+	/** A bounded, probe-safe explanation when `ready` is false (no request internals). */
+	reason?: string;
+}
+
 /** Everything the Fastify app needs injected — swap repositories in tests. */
 export interface AppDeps {
 	config: Config;
@@ -26,7 +33,7 @@ export interface AppDeps {
 	/** Sends transactional email (invitations and sign-in codes). */
 	mailer: Mailer;
 	/** Readiness check for downstream dependencies (e.g. the database). */
-	ping: () => Promise<boolean>;
+	ping: () => Promise<ReadinessResult>;
 }
 
 /** A route guard that rejects requests whose token role is not in `roles`. */

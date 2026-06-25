@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import type { ReadinessResult } from '../types';
 
 /** Open the shared Mongoose connection. */
 export async function connectMongoose(uri: string): Promise<typeof mongoose> {
@@ -23,51 +24,40 @@ export function isMongoConnected(): boolean {
  * on the target database still fails *every* query with "not authorized" — which
  * otherwise surfaces only as an opaque 500 on each request.
  *
- * We probe with the very operation the API relies on — a `find` on an app
+ * We probe with the very operation the API relies on — a `find` on the `users`
  * collection — so the check requires exactly the privilege the service needs and
  * reproduces the original failure (signup's `findByEmail` is a `find` on `users`).
  * A diagnostic command tests the wrong thing: `ping` skips authorization entirely,
  * while `dbStats`/`listCollections` ride separate privileges that a least-privilege
  * CRUD role might not grant. `findOne` is cheap (a single `_id`-only document) and
  * returns null on an empty or not-yet-created collection, so it never false-fails.
- * Returns false (never throws) when the connection is closed or the query fails,
- * which is what a probe wants.
+ *
+ * Returns `{ ready, reason }` rather than throwing, so a caller can both gate
+ * readiness and surface *why* it failed (a startup log, the `/ready` body) without
+ * the container crash-looping out of reach.
  */
-export async function isDatabaseReady(): Promise<boolean> {
+export async function checkDatabaseReady(): Promise<ReadinessResult> {
 	const db = mongoose.connection.db;
 	if (!isMongoConnected() || !db) {
-		return false;
+		return { ready: false, reason: 'database connection is not open' };
 	}
 	try {
 		await db.collection('users').findOne({}, { projection: { _id: 1 } });
-		return true;
-	} catch {
-		return false;
+		return { ready: true };
+	} catch (error) {
+		return { ready: false, reason: summarizeDatabaseError(error) };
 	}
 }
 
 /**
- * Like {@link isDatabaseReady}, but throws a clear, actionable error instead of
- * returning false — so a roles/connection-string misconfiguration fails loudly at
- * startup (with a log that says how to fix it) rather than letting the API boot
- * "healthy" and then return 500 for every authenticated request.
+ * Reduce a driver error to a short, safe one-liner for logs and the public `/ready`
+ * probe: keep the diagnostic (e.g. "not authorized on rivus") but drop Mongo's
+ * verbose command echo — filters, projections, per-request session UUIDs — and cap
+ * the length, so the endpoint never leaks request internals or unbounded text.
  */
-export async function assertDatabaseReady(): Promise<void> {
-	const db = mongoose.connection.db;
-	if (!isMongoConnected() || !db) {
-		throw new Error('MongoDB connection is not open');
-	}
-	try {
-		await db.collection('users').findOne({}, { projection: { _id: 1 } });
-	} catch (error) {
-		const name = mongoose.connection.name ?? '(default)';
-		throw new Error(
-			`Connected to MongoDB but cannot query database "${name}". The database user ` +
-				'authenticated successfully but is not authorized to read/write it, so every request ' +
-				`would fail with an opaque 500. Grant the user readWrite on "${name}" (in Atlas: ` +
-				'Database Access → Edit the user), and confirm MONGODB_URI uses the correct database ' +
-				`name and authSource. Underlying error: ${(error as Error).message}`,
-			{ cause: error },
-		);
-	}
+function summarizeDatabaseError(error: unknown): string {
+	const { codeName, message } = (error ?? {}) as { codeName?: string; message?: string };
+	const full = message ?? String(error);
+	const summary = (full.split(' to execute command')[0] ?? full).trim().slice(0, 200);
+	return codeName ? `${codeName}: ${summary}` : summary;
 }

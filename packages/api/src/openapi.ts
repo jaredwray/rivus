@@ -24,7 +24,7 @@ async function main(): Promise<void> {
 		items,
 		verificationCodes,
 		mailer: new NoopMailer(),
-		ping: async () => true,
+		ping: async () => ({ ready: true }),
 	});
 
 	await app.ready();
