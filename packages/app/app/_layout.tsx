@@ -7,7 +7,7 @@ import {
 	Montserrat_700Bold,
 	useFonts,
 } from '@expo-google-fonts/montserrat';
-import { Slot, usePathname, useRouter } from 'expo-router';
+import { Redirect, Slot, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
 	ActivityIndicator,
@@ -56,6 +56,14 @@ function isActive(pathname: string, href: string): boolean {
 	return href === '/' ? pathname === '/' : pathname.startsWith(href);
 }
 
+/** Paths that render their own auth screen instead of the dashboard shell. */
+const AUTH_PATHS = ['/login', '/signup'];
+
+function isAuthPath(pathname: string): boolean {
+	const normalized = pathname.replace(/\/+$/, '') || '/';
+	return AUTH_PATHS.includes(normalized);
+}
+
 export default function RootLayout() {
 	const [loaded] = useFonts({
 		Montserrat_300Light,
@@ -84,8 +92,18 @@ export default function RootLayout() {
 /** Show the auth screens until there's a session, then the dashboard shell. */
 function Gate() {
 	const { session } = useAuth();
+	const pathname = usePathname();
+	const onAuthRoute = isAuthPath(pathname);
+
 	if (!session) {
-		return <AuthScreen />;
+		// Signed out: /login and /signup render their own screen; every other
+		// path (the root included) falls back to the sign-in screen.
+		return onAuthRoute ? <Slot /> : <AuthScreen initialMode="signin" />;
+	}
+
+	// Signed in: the auth routes aren't meant for an active session.
+	if (onAuthRoute) {
+		return <Redirect href="/" />;
 	}
 	return <Shell />;
 }
