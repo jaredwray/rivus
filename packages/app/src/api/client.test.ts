@@ -492,4 +492,45 @@ describe('createApiClient', () => {
 		const client = createApiClient(BASE);
 		expect(client.baseUrl).toBe(BASE);
 	});
+
+	describe('cookie (credentials) mode', () => {
+		it('sends credentials and omits the bearer header when no token is given', async () => {
+			const session = { user: makeUser(), account: makeAccount(), role: 'owner' as const };
+			fetchMock.mockResolvedValueOnce(jsonResponse(session));
+
+			const client = createApiClient(BASE, fetchMock, { withCredentials: true });
+			const result = await client.me();
+
+			expect(result).toEqual(session);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/auth/me`);
+			expect(init.credentials).toBe('include');
+			// In cookie mode the request authenticates via the cookie, not a header.
+			expect(init.headers).not.toHaveProperty('Authorization');
+		});
+
+		it('posts to the logout endpoint with credentials', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ status: 'signed_out' }));
+
+			const client = createApiClient(BASE, fetchMock, { withCredentials: true });
+			await client.logout();
+
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/auth/logout`);
+			expect(init.method).toBe('POST');
+			expect(init.credentials).toBe('include');
+		});
+
+		it('does not set credentials in the default (native bearer) mode', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse({ status: 'ok', uptime: 1, timestamp: new Date().toISOString() }),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.health();
+
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(init.credentials).toBeUndefined();
+		});
+	});
 });

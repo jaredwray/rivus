@@ -1,5 +1,6 @@
 import type { LoginInput, UpdateAccountInput, VerifyCodeInput } from '@rivus/core';
-import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { Platform } from 'react-native';
 import {
 	type AuthResponse,
 	type CodeSentResponse,
@@ -9,10 +10,23 @@ import {
 } from '@/src/api/client';
 import { getApiBaseUrl } from '@/src/api/config';
 
+/**
+ * Web keeps the session in an HttpOnly cookie the API sets at sign-in, so the
+ * client sends credentials and never holds the token in JS. Native has no cookie
+ * jar, so it keeps using the bearer token returned in the response body.
+ */
+const IS_WEB = Platform.OS === 'web';
+
 export interface AuthContextValue {
 	/** The active session, or `null` when signed out. */
 	session: AuthResponse | null;
-	/** Shared API client (screens use `session.token` for authed calls). */
+	/**
+	 * True while we're restoring a session on startup (web checks the cookie via
+	 * `me()`). The gate shows a spinner until this clears so a valid session never
+	 * flashes the sign-in screen.
+	 */
+	restoring: boolean;
+	/** Shared API client (authed calls pass `session.token`; web ignores it and uses the cookie). */
 	client: RivusApiClient;
 	/** Request a sign-in code for an existing account. */
 	signIn: (input: LoginInput) => Promise<CodeSentResponse>;
@@ -31,17 +45,56 @@ export interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 /**
- * Holds the signed-in session in memory and exposes the auth actions. The
- * session is intentionally not persisted yet — a reload returns to the sign-in
- * screen (wiring SecureStore/AsyncStorage is a follow-up).
+ * Holds the signed-in session and exposes the auth actions.
+ *
+ * On **web** the session survives reloads: the API sets an HttpOnly cookie at
+ * sign-in, and on startup we ask `me()` who we are (the cookie rides along) before
+ * deciding whether to show the dashboard. The token is never kept in JS — the
+ * cookie is the credential. On **native** the session is still in-memory only
+ * (persisting it in SecureStore is a follow-up), so a cold start returns to the
+ * sign-in screen.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
-	const client = useMemo(() => createApiClient(getApiBaseUrl()), []);
+	const client = useMemo(
+		() => createApiClient(getApiBaseUrl(), undefined, { withCredentials: IS_WEB }),
+		[],
+	);
 	const [session, setSession] = useState<AuthResponse | null>(null);
+	// Only web has a cookie to restore; native starts signed out with nothing to check.
+	const [restoring, setRestoring] = useState(IS_WEB);
 
-	const value = useMemo<AuthContextValue>(
-		() => ({
+	useEffect(() => {
+		if (!IS_WEB) {
+			return;
+		}
+		let active = true;
+		client
+			.me()
+			.then((me) => {
+				if (active) {
+					// No token on web — the cookie authenticates subsequent calls.
+					setSession({ token: '', ...me });
+				}
+			})
+			.catch(() => {
+				// No cookie, or it expired / was revoked: stay signed out.
+			})
+			.finally(() => {
+				if (active) {
+					setRestoring(false);
+				}
+			});
+		return () => {
+			active = false;
+		};
+	}, [client]);
+
+	const value = useMemo<AuthContextValue>(() => {
+		// On web the token must never be retained in JS; the cookie is the credential.
+		const adopt = (res: AuthResponse): AuthResponse => (IS_WEB ? { ...res, token: '' } : res);
+		return {
 			session,
+			restoring,
 			client,
 			signIn(input) {
 				return client.login(input);
@@ -50,10 +103,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				return client.signup(input);
 			},
 			async verifyCode(input) {
-				setSession(await client.verifyCode(input));
+				setSession(adopt(await client.verifyCode(input)));
 			},
 			async acceptInvite(token) {
-				setSession(await client.acceptInvite({ token }));
+				setSession(adopt(await client.acceptInvite({ token })));
 			},
 			async updateAccount(input) {
 				if (!session) {
@@ -67,15 +120,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 					return;
 				}
 				await client.cancelAccount(session.token);
-				// The account is now canceled, so every authed call would 401 — drop the session.
+				// The account is now canceled, so the cookie's token will 401 on the next
+				// request and `me()` won't restore it — drop the session, and clear the
+				// (now inert) cookie best-effort.
+				setSession(null);
+				if (IS_WEB) {
+					void client.logout().catch(() => {});
+				}
+			},
+			async signOut() {
+				// On web, only drop the session once the API has actually cleared the
+				// HttpOnly cookie. Otherwise a failed logout would look successful while the
+				// cookie survived, and the next reload's `me()` would sign us back in.
+				if (IS_WEB) {
+					try {
+						await client.logout();
+					} catch {
+						// Couldn't reach the API to clear the cookie — stay signed in rather
+						// than show a false "signed out" that a reload would silently undo.
+						return;
+					}
+				}
 				setSession(null);
 			},
-			signOut() {
-				setSession(null);
-			},
-		}),
-		[client, session],
-	);
+		};
+	}, [client, session, restoring]);
 
 	return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

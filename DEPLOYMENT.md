@@ -113,8 +113,12 @@ with `NODE_ENV=production` and would crash-loop without them.
 
 The production API also restricts CORS to Rivus origins: `CORS_ORIGIN` is set to
 `https://rivus.ai,*.rivus.ai`, which the API parses into the exact apex origin
-plus a regex matching any `*.rivus.ai` subdomain (development stays `*`). The
-value accepts a comma-separated list of exact origins and/or `*` wildcards;
+plus a regex matching any `*.rivus.ai` subdomain. The deployed development
+environment uses `*.rivus.ai` (which covers `dev-app.rivus.ai`) — both containers
+run `NODE_ENV=production`, and the API refuses to boot with a `*` wildcard there
+because credentialed CORS reflects the request origin, so a wildcard would
+authorize every site. Only local development (`NODE_ENV=development`) stays `*`.
+The value accepts a comma-separated list of exact origins and/or `*` wildcards;
 adjust it in `packages/api/wrangler.jsonc`.
 
 ## Deploying by hand

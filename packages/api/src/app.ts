@@ -8,7 +8,7 @@ import {
 	validatorCompiler,
 } from 'fastify-type-provider-zod';
 import { parseCorsOrigin } from './config';
-import authPlugin from './plugins/auth';
+import authPlugin, { SESSION_COOKIE } from './plugins/auth';
 import swaggerPlugin from './plugins/swagger';
 import { ConflictError, InviteNotPendingError, LastOwnerError } from './repositories/errors';
 import { accountRoutes } from './routes/account';
@@ -98,7 +98,51 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 	});
 
 	app.register(sensible);
-	app.register(cors, { origin: parseCorsOrigin(deps.config.CORS_ORIGIN) });
+	const corsOrigin = parseCorsOrigin(deps.config.CORS_ORIGIN);
+	// Credentialed CORS can't safely use a wildcard: reflecting any origin while
+	// `credentials: true` lets any site make authenticated cross-origin requests and
+	// read the response. Require an explicit allowlist in production (the deployed
+	// dev and prod containers both run NODE_ENV=production); only local development
+	// may stay wide-open, where reflecting localhost origins is harmless.
+	if (deps.config.NODE_ENV === 'production' && corsOrigin === '*') {
+		throw new Error(
+			'CORS_ORIGIN must be an explicit origin allowlist in production, not "*": credentialed CORS reflects the request origin, so a wildcard would authorize every site.',
+		);
+	}
+	app.register(cors, {
+		// Web clients send the session cookie cross-origin (app.rivus.ai →
+		// api.rivus.ai), which requires credentialed CORS. A credentialed request
+		// can't use a wildcard `Access-Control-Allow-Origin`, so reflect the request
+		// origin when configured wide-open (local dev only) and otherwise echo only
+		// the configured allowlist.
+		origin: corsOrigin === '*' ? true : corsOrigin,
+		credentials: true,
+	});
+
+	// CSRF defense for cookie-authenticated writes. The session cookie rides along
+	// automatically on same-site requests, so a malicious or compromised same-site
+	// page could trigger a state-changing call with the victim's session. Bearer
+	// (native) and unauthenticated requests aren't CSRF-able, so we guard only the
+	// unsafe methods that actually carry the session cookie, and require the request
+	// to originate from the app itself. Local development (wildcard CORS) stays
+	// permissive; the deployed environments (an explicit allowlist) enforce it.
+	const appOrigin = new URL(deps.config.APP_URL).origin;
+	const enforceCsrf = corsOrigin !== '*';
+	app.addHook('onRequest', async (request) => {
+		if (!enforceCsrf || request.method === 'GET' || request.method === 'HEAD') {
+			return;
+		}
+		const hasSession = request.headers.cookie
+			?.split(';')
+			.some((entry) => entry.trimStart().startsWith(`${SESSION_COOKIE}=`));
+		if (!hasSession) {
+			return;
+		}
+		if (request.headers.origin !== appOrigin) {
+			throw app.httpErrors.forbidden('Cross-origin request blocked');
+		}
+	});
+
 	app.register(helmet, { contentSecurityPolicy: false });
 	app.register(authPlugin);
 	app.register(swaggerPlugin);

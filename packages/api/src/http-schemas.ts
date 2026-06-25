@@ -50,6 +50,13 @@ export const codeSentResponseSchema = z
 	})
 	.meta({ id: 'CodeSent' });
 
+/** Acknowledges that the session cookie was cleared by `POST /v1/auth/logout`. */
+export const signedOutResponseSchema = z
+	.object({
+		status: z.literal('signed_out'),
+	})
+	.meta({ id: 'SignedOut' });
+
 /** Current-session view returned from `GET /v1/auth/me`. */
 export const sessionResponseSchema = z
 	.object({

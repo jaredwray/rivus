@@ -36,7 +36,10 @@
 			"name": "rivus-api-dev",
 			"routes": [{ "pattern": "dev-api.rivus.ai", "custom_domain": true }],
 			"vars": {
-				"CORS_ORIGIN": "*",
+				// The container runs NODE_ENV=production, where credentialed CORS
+				// forbids a `*` wildcard (it would authorize every origin). Restrict to
+				// Rivus subdomains, which covers dev-app.rivus.ai.
+				"CORS_ORIGIN": "*.rivus.ai",
 				// Base URL for the accept-invite / sign-in-code links in emails.
 				"APP_URL": "https://dev-app.rivus.ai"
 			},

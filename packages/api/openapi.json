@@ -431,6 +431,26 @@
         }
       }
     },
+    "/v1/auth/logout": {
+      "post": {
+        "summary": "Sign out — clears the session cookie",
+        "tags": [
+          "auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignedOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/members/": {
       "get": {
         "summary": "List members and pending invites for your account",
