@@ -8,6 +8,13 @@
 export const DEFAULT_API_URL = 'http://localhost:4000';
 
 /**
+ * The base URL of the web app itself, used to build shareable links (e.g. the
+ * accept-invitation link). Falls back to the production app domain so links are
+ * still valid when the app is rendered outside a browser (native builds).
+ */
+export const DEFAULT_APP_URL = 'https://app.rivus.ai';
+
+/**
  * The build-time values of the `EXPO_PUBLIC_*` vars we read.
  *
  * Expo/Metro inlines these only where `process.env.EXPO_PUBLIC_*` appears as a
@@ -27,13 +34,46 @@ function ambientEnv(): Record<string, string | undefined> {
 	}
 	return {
 		EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
+		EXPO_PUBLIC_APP_URL: process.env.EXPO_PUBLIC_APP_URL,
 		EXPO_PUBLIC_GOOGLE_MAPS_API_KEY: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
 	};
+}
+
+/** Drop any trailing slashes so a path can be safely appended. */
+function stripTrailingSlash(value: string): string {
+	return value.replace(/\/+$/, '');
 }
 
 export function getApiBaseUrl(env: Record<string, string | undefined> = ambientEnv()): string {
 	const fromEnv = env.EXPO_PUBLIC_API_URL?.trim();
 	return fromEnv && fromEnv.length > 0 ? fromEnv : DEFAULT_API_URL;
+}
+
+/**
+ * Resolve the base URL of the web app, used to build shareable links.
+ *
+ * Prefers an explicit `EXPO_PUBLIC_APP_URL` (so links always point at the
+ * canonical domain), then the browser's current origin on web, and finally the
+ * production default for native/non-browser renders.
+ */
+export function getAppBaseUrl(env: Record<string, string | undefined> = ambientEnv()): string {
+	const fromEnv = env.EXPO_PUBLIC_APP_URL?.trim();
+	if (fromEnv && fromEnv.length > 0) {
+		return stripTrailingSlash(fromEnv);
+	}
+	if (typeof window !== 'undefined' && window.location?.origin) {
+		return stripTrailingSlash(window.location.origin);
+	}
+	return DEFAULT_APP_URL;
+}
+
+/**
+ * Build the absolute accept-invitation link an invitee opens to join a team:
+ * `<app>/accept-invite?token=<token>`. Mirrors the API's email link so a shared
+ * link and an emailed link resolve to the same screen.
+ */
+export function buildInviteAcceptUrl(token: string, base: string = getAppBaseUrl()): string {
+	return `${stripTrailingSlash(base)}/accept-invite?token=${encodeURIComponent(token)}`;
 }
 
 /**
