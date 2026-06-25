@@ -75,6 +75,19 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup
       - run: pnpm --filter @rivus/app export:web
+      # The signup address field needs the Maps key inlined into the web bundle;
+      # if config.ts ever stops reading it as a literal process.env.* expression
+      # the value silently drops out and autocomplete degrades to a text field.
+      - name: Verify the Maps key inlined into the web bundle
+        run: |
+          if [ -z "$EXPO_PUBLIC_GOOGLE_MAPS_API_KEY" ]; then
+            echo "::warning::EXPO_PUBLIC_GOOGLE_MAPS_API_KEY is unset — signup address autocomplete will be a plain text field"
+          elif grep -rqF "$EXPO_PUBLIC_GOOGLE_MAPS_API_KEY" packages/app/dist/; then
+            echo "Google Maps key inlined into the web bundle ✓"
+          else
+            echo "::error::EXPO_PUBLIC_GOOGLE_MAPS_API_KEY is set but did not inline into the bundle"
+            exit 1
+          fi
       - run: pnpm --filter @rivus/app exec wrangler deploy --env development
 
   deploy-website:
