@@ -26,7 +26,14 @@ import { Avatar, Dot, Icon, RivusStatusChip, Txt } from '@/src/components/ui';
 import { colors, font, radii, SIDEBAR_BREAKPOINT, SIDEBAR_WIDTH } from '@/src/theme/tokens';
 
 type FeatherName = React.ComponentProps<typeof Feather>['name'];
-type NavItem = { href: string; label: string; icon: FeatherName; badge?: string };
+type NavItem = {
+	href: string;
+	label: string;
+	icon: FeatherName;
+	badge?: string;
+	/** When true, only Owners see this destination (billing & account settings). */
+	ownerOnly?: boolean;
+};
 
 const NAV: NavItem[] = [
 	{ href: '/', label: 'Home', icon: 'home' },
@@ -36,7 +43,14 @@ const NAV: NavItem[] = [
 	{ href: '/marketing', label: 'Marketing', icon: 'trending-up' },
 	{ href: '/knowledge', label: 'Knowledge', icon: 'book' },
 	{ href: '/team', label: 'Team', icon: 'user-check' },
+	{ href: '/billing', label: 'Billing', icon: 'credit-card', ownerOnly: true },
+	{ href: '/settings', label: 'Settings', icon: 'settings', ownerOnly: true },
 ];
+
+/** Hide owner-only destinations from managers and members. */
+function navFor(role: string | undefined): NavItem[] {
+	return NAV.filter((item) => !item.ownerOnly || role === 'owner');
+}
 
 function isActive(pathname: string, href: string): boolean {
 	return href === '/' ? pathname === '/' : pathname.startsWith(href);
@@ -139,7 +153,7 @@ function Sidebar() {
 			</View>
 
 			<View style={styles.nav}>
-				{NAV.map((item) => {
+				{navFor(session?.role).map((item) => {
 					const active = isActive(pathname, item.href);
 					return (
 						<Pressable
@@ -245,6 +259,7 @@ function CompactBar() {
 function NavStrip() {
 	const pathname = usePathname();
 	const router = useRouter();
+	const { session } = useAuth();
 	return (
 		<View style={styles.navStripWrap}>
 			<ScrollView
@@ -252,7 +267,7 @@ function NavStrip() {
 				showsHorizontalScrollIndicator={false}
 				contentContainerStyle={styles.navStrip}
 			>
-				{NAV.map((item) => {
+				{navFor(session?.role).map((item) => {
 					const active = isActive(pathname, item.href);
 					const content = (
 						<>

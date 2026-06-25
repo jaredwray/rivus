@@ -2,7 +2,6 @@ import {
 	type AccountId,
 	type InviteId,
 	inviteMemberSchema,
-	type Role,
 	type UserId,
 	updateMemberRoleSchema,
 } from '@rivus/core';
@@ -21,15 +20,6 @@ import { createInviteToken } from '../services/invites';
 
 const userIdParamsSchema = z.object({ userId: z.string().min(1) });
 const inviteIdParamsSchema = z.object({ inviteId: z.string().min(1) });
-
-/** Count the owners of an account (used to guard against orphaning it). */
-async function ownerCount(
-	memberships: { listByAccount(id: AccountId): Promise<{ role: Role }[]> },
-	accountId: AccountId,
-): Promise<number> {
-	const all = await memberships.listByAccount(accountId);
-	return all.filter((m) => m.role === 'owner').length;
-}
 
 export const memberRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
@@ -70,7 +60,7 @@ export const memberRoutes: FastifyPluginAsync = async (fastify) => {
 			onRequest: [fastify.authenticate, fastify.requireRole('owner', 'manager')],
 			schema: {
 				tags: ['members'],
-				summary: 'Invite a Manager or Team Member to your account',
+				summary: 'Invite a teammate (Owner, Manager, or Member) to your account',
 				security: [{ bearerAuth: [] }],
 				body: inviteMemberSchema,
 				response: {
@@ -84,9 +74,10 @@ export const memberRoutes: FastifyPluginAsync = async (fastify) => {
 		async (request, reply) => {
 			const accountId = request.user.accountId as AccountId;
 			const { email, name, role } = request.body;
-			// Managers may only bring in Team Members, never other Managers.
-			if (request.user.role === 'manager' && role !== 'team_member') {
-				throw app.httpErrors.forbidden('Managers can only invite Team Members');
+			// Owners may invite any role; managers may only bring in Members (never
+			// other Managers or Owners — that would be a privilege escalation).
+			if (request.user.role === 'manager' && role !== 'member') {
+				throw app.httpErrors.forbidden('Managers can only invite Members');
 			}
 			if (await users.findByEmail(email)) {
 				throw app.httpErrors.conflict('A user with this email already exists');
@@ -148,9 +139,9 @@ export const memberRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!invite || invite.accountId !== accountId) {
 				throw app.httpErrors.notFound('Invite not found');
 			}
-			// A Manager manages only Team Members, so can't revoke a Manager invite.
-			if (request.user.role === 'manager' && invite.role !== 'team_member') {
-				throw app.httpErrors.forbidden('Managers can only revoke Team Member invites');
+			// A Manager manages only Members, so can't revoke a Manager or Owner invite.
+			if (request.user.role === 'manager' && invite.role !== 'member') {
+				throw app.httpErrors.forbidden('Managers can only revoke Member invites');
 			}
 			const revoked = await invites.revoke(accountId, inviteId);
 			if (!revoked) {
@@ -187,14 +178,8 @@ export const memberRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!target) {
 				throw app.httpErrors.notFound('Member not found');
 			}
-			// Don't let the final owner be demoted out of ownership.
-			if (
-				target.role === 'owner' &&
-				role !== 'owner' &&
-				(await ownerCount(memberships, accountId)) <= 1
-			) {
-				throw app.httpErrors.conflict('Cannot change the role of the last owner');
-			}
+			// `updateRole` atomically refuses to demote the last owner (409 via
+			// LastOwnerError), so the check and the write can't race.
 			const updated = await memberships.updateRole(accountId, targetUserId, role);
 			const user = await users.findById(targetUserId);
 			if (!updated || !user) {
@@ -229,12 +214,11 @@ export const memberRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!target) {
 				throw app.httpErrors.notFound('Member not found');
 			}
-			if (request.user.role === 'manager' && target.role !== 'team_member') {
-				throw app.httpErrors.forbidden('Managers can only remove Team Members');
+			if (request.user.role === 'manager' && target.role !== 'member') {
+				throw app.httpErrors.forbidden('Managers can only remove Members');
 			}
-			if (target.role === 'owner' && (await ownerCount(memberships, accountId)) <= 1) {
-				throw app.httpErrors.conflict('Cannot remove the last owner');
-			}
+			// `delete` atomically refuses to remove the last owner (409 via
+			// LastOwnerError), so the check and the write can't race.
 			await memberships.delete(accountId, targetUserId);
 			return reply.code(204).send(null);
 		},

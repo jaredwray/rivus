@@ -1,3 +1,4 @@
+import type { Role } from '@rivus/core';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { authHeader, buildTestApp, RecordingMailer, signupOwner } from './helpers';
@@ -13,7 +14,7 @@ describe('members', () => {
 		await app.close();
 	});
 
-	function inviteMember(token: string, role: 'manager' | 'team_member', email: string) {
+	function inviteMember(token: string, role: Role, email: string) {
 		return app.inject({
 			method: 'POST',
 			url: '/v1/members/invites',
@@ -23,7 +24,7 @@ describe('members', () => {
 	}
 
 	/** Invite + accept, returning the new member's session token and user id. */
-	async function addMember(ownerToken: string, role: 'manager' | 'team_member', email: string) {
+	async function addMember(ownerToken: string, role: Role, email: string) {
 		const inviteToken = (await inviteMember(ownerToken, role, email)).json().token;
 		const accepted = await app.inject({
 			method: 'POST',
@@ -72,10 +73,10 @@ describe('members', () => {
 		expect(list.json().invites[0]).not.toHaveProperty('token');
 	});
 
-	it('hides invite tokens from a Team Member listing the roster', async () => {
+	it('hides invite tokens from a Member listing the roster', async () => {
 		const owner = await signupOwner(app);
 		await inviteMember(owner.token, 'manager', 'manager@example.com');
-		const teamMember = await addMember(owner.token, 'team_member', 'tm@example.com');
+		const teamMember = await addMember(owner.token, 'member', 'tm@example.com');
 
 		const list = await app.inject({
 			method: 'GET',
@@ -107,10 +108,10 @@ describe('members', () => {
 		expect(list.json().invites).toEqual([]);
 	});
 
-	it('lets a Manager revoke a Team Member invite but not a Manager invite', async () => {
+	it('lets a Manager revoke a Member invite but not a Manager invite', async () => {
 		const owner = await signupOwner(app);
 		const manager = await addMember(owner.token, 'manager', 'mgr@example.com');
-		const tmInviteId = (await inviteMember(owner.token, 'team_member', 'tm@example.com')).json().id;
+		const tmInviteId = (await inviteMember(owner.token, 'member', 'tm@example.com')).json().id;
 		const mgrInviteId = (await inviteMember(owner.token, 'manager', 'mgr2@example.com')).json().id;
 
 		const revokeManager = await app.inject({
@@ -157,34 +158,52 @@ describe('members', () => {
 
 	it('rejects inviting an email that already has a user (409)', async () => {
 		const owner = await signupOwner(app);
-		await addMember(owner.token, 'team_member', 'dupe@example.com');
+		await addMember(owner.token, 'member', 'dupe@example.com');
 
-		const again = await inviteMember(owner.token, 'team_member', 'dupe@example.com');
+		const again = await inviteMember(owner.token, 'member', 'dupe@example.com');
 		expect(again.statusCode).toBe(409);
 	});
 
-	it('lets a manager invite a Team Member but not another Manager', async () => {
+	it('lets a manager invite a Member but not another Manager or an Owner', async () => {
 		const owner = await signupOwner(app);
 		const manager = await addMember(owner.token, 'manager', 'mgr@example.com');
 
-		const teamMember = await inviteMember(manager.token, 'team_member', 'tm@example.com');
-		expect(teamMember.statusCode).toBe(201);
+		const member = await inviteMember(manager.token, 'member', 'tm@example.com');
+		expect(member.statusCode).toBe(201);
 
 		const anotherManager = await inviteMember(manager.token, 'manager', 'mgr2@example.com');
 		expect(anotherManager.statusCode).toBe(403);
+
+		const newOwner = await inviteMember(manager.token, 'owner', 'owner2@example.com');
+		expect(newOwner.statusCode).toBe(403);
 	});
 
-	it('forbids a Team Member from inviting anyone (403)', async () => {
+	it('lets an owner invite another owner, who joins as an owner', async () => {
 		const owner = await signupOwner(app);
-		const teamMember = await addMember(owner.token, 'team_member', 'tm@example.com');
+		const invite = await inviteMember(owner.token, 'owner', 'coowner@example.com');
+		expect(invite.statusCode).toBe(201);
+		expect(invite.json()).toMatchObject({ email: 'coowner@example.com', role: 'owner' });
 
-		const response = await inviteMember(teamMember.token, 'team_member', 'another@example.com');
+		const second = await addMember(owner.token, 'owner', 'coowner2@example.com');
+		const me = await app.inject({
+			method: 'GET',
+			url: '/v1/auth/me',
+			headers: authHeader(second.token),
+		});
+		expect(me.json().role).toBe('owner');
+	});
+
+	it('forbids a Member from inviting anyone (403)', async () => {
+		const owner = await signupOwner(app);
+		const member = await addMember(owner.token, 'member', 'tm@example.com');
+
+		const response = await inviteMember(member.token, 'member', 'another@example.com');
 		expect(response.statusCode).toBe(403);
 	});
 
 	it('lets an owner change a member’s role', async () => {
 		const owner = await signupOwner(app);
-		const member = await addMember(owner.token, 'team_member', 'promote@example.com');
+		const member = await addMember(owner.token, 'member', 'promote@example.com');
 
 		const response = await app.inject({
 			method: 'PATCH',
@@ -200,7 +219,7 @@ describe('members', () => {
 	it('forbids a manager from changing roles (403)', async () => {
 		const owner = await signupOwner(app);
 		const manager = await addMember(owner.token, 'manager', 'mgr@example.com');
-		const teamMember = await addMember(owner.token, 'team_member', 'tm@example.com');
+		const teamMember = await addMember(owner.token, 'member', 'tm@example.com');
 
 		const response = await app.inject({
 			method: 'PATCH',
@@ -228,7 +247,7 @@ describe('members', () => {
 			method: 'PATCH',
 			url: `/v1/members/${owner.user.id}/role`,
 			headers: authHeader(owner.token),
-			payload: { role: 'team_member' },
+			payload: { role: 'member' },
 		});
 		expect(response.statusCode).toBe(409);
 	});
@@ -256,7 +275,7 @@ describe('members', () => {
 
 	it('lets an owner remove a member', async () => {
 		const owner = await signupOwner(app);
-		const member = await addMember(owner.token, 'team_member', 'remove@example.com');
+		const member = await addMember(owner.token, 'member', 'remove@example.com');
 
 		const response = await app.inject({
 			method: 'DELETE',
@@ -273,11 +292,11 @@ describe('members', () => {
 		expect(list.json().members).toHaveLength(1);
 	});
 
-	it('lets a manager remove a Team Member but not a Manager', async () => {
+	it('lets a manager remove a Member but not a Manager', async () => {
 		const owner = await signupOwner(app);
 		const manager = await addMember(owner.token, 'manager', 'mgr@example.com');
 		const otherManager = await addMember(owner.token, 'manager', 'mgr2@example.com');
-		const teamMember = await addMember(owner.token, 'team_member', 'tm@example.com');
+		const teamMember = await addMember(owner.token, 'member', 'tm@example.com');
 
 		const removeManager = await app.inject({
 			method: 'DELETE',
@@ -304,6 +323,18 @@ describe('members', () => {
 		expect(response.statusCode).toBe(409);
 	});
 
+	it('allows removing an owner once a second owner exists', async () => {
+		const owner = await signupOwner(app);
+		const coOwner = await addMember(owner.token, 'owner', 'coowner@example.com');
+
+		const response = await app.inject({
+			method: 'DELETE',
+			url: `/v1/members/${coOwner.userId}`,
+			headers: authHeader(owner.token),
+		});
+		expect(response.statusCode).toBe(204);
+	});
+
 	it('returns 404 removing a non-member', async () => {
 		const owner = await signupOwner(app);
 		const response = await app.inject({
@@ -316,7 +347,7 @@ describe('members', () => {
 
 	it('rejects a removed member’s existing token (membership revalidated per request)', async () => {
 		const owner = await signupOwner(app);
-		const member = await addMember(owner.token, 'team_member', 'removed@example.com');
+		const member = await addMember(owner.token, 'member', 'removed@example.com');
 		await app.inject({
 			method: 'DELETE',
 			url: `/v1/members/${member.userId}`,
@@ -337,18 +368,18 @@ describe('members', () => {
 		const owner = await signupOwner(app);
 		const manager = await addMember(owner.token, 'manager', 'demote@example.com');
 
-		const before = await inviteMember(manager.token, 'team_member', 'before@example.com');
+		const before = await inviteMember(manager.token, 'member', 'before@example.com');
 		expect(before.statusCode).toBe(201);
 
 		await app.inject({
 			method: 'PATCH',
 			url: `/v1/members/${manager.userId}/role`,
 			headers: authHeader(owner.token),
-			payload: { role: 'team_member' },
+			payload: { role: 'member' },
 		});
 
 		// Same (now-stale) manager token — the guard refreshes the role from the DB.
-		const after = await inviteMember(manager.token, 'team_member', 'after@example.com');
+		const after = await inviteMember(manager.token, 'member', 'after@example.com');
 		expect(after.statusCode).toBe(403);
 	});
 
@@ -362,7 +393,7 @@ describe('members', () => {
 		});
 		const itemId = created.json().id;
 
-		const member = await addMember(owner.token, 'team_member', 'teammate@example.com');
+		const member = await addMember(owner.token, 'member', 'teammate@example.com');
 		const response = await app.inject({
 			method: 'GET',
 			url: `/v1/items/${itemId}`,
@@ -418,7 +449,7 @@ describe('member invitations send email', () => {
 				method: 'POST',
 				url: '/v1/members/invites',
 				headers: authHeader(owner.token),
-				payload: { email: 'newhire@example.com', name: 'New Hire', role: 'team_member' },
+				payload: { email: 'newhire@example.com', name: 'New Hire', role: 'member' },
 			});
 
 			// Delivery failed, but the invite is persisted and its token returned.

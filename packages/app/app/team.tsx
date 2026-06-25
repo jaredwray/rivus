@@ -20,8 +20,6 @@ import {
 } from '@/src/components/ui';
 import { colors, font, radii } from '@/src/theme/tokens';
 
-type InvitableRole = Exclude<Role, 'owner'>;
-
 function rolePillColors(role: Role): { color: string; background: string } {
 	if (role === 'owner') {
 		return { color: colors.purpleTintInk, background: colors.purpleTint };
@@ -36,14 +34,15 @@ export default function TeamScreen() {
 	const { session, client } = useAuth();
 	const token = session?.token;
 	const canInvite = session?.role === 'owner' || session?.role === 'manager';
-	// Managers may only add Team Members; owners may add either.
-	const roleOptions: { label: string; value: InvitableRole }[] =
+	// Owners may grant any role; managers may only add Members.
+	const roleOptions: { label: string; value: Role }[] =
 		session?.role === 'owner'
 			? [
+					{ label: 'Owner', value: 'owner' },
 					{ label: 'Manager', value: 'manager' },
-					{ label: 'Team Member', value: 'team_member' },
+					{ label: 'Member', value: 'member' },
 				]
-			: [{ label: 'Team Member', value: 'team_member' }];
+			: [{ label: 'Member', value: 'member' }];
 
 	const [members, setMembers] = useState<Member[]>([]);
 	const [invites, setInvites] = useState<InviteSummary[]>([]);
@@ -52,7 +51,7 @@ export default function TeamScreen() {
 
 	const [inviteName, setInviteName] = useState('');
 	const [inviteEmail, setInviteEmail] = useState('');
-	const [inviteRole, setInviteRole] = useState<InvitableRole>('team_member');
+	const [inviteRole, setInviteRole] = useState<Role>('member');
 	const [inviteError, setInviteError] = useState<string | null>(null);
 	const [lastInvite, setLastInvite] = useState<Invite | null>(null);
 	const [sending, setSending] = useState(false);

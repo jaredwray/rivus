@@ -23,3 +23,16 @@ export class InviteNotPendingError extends Error {
 		this.name = 'InviteNotPendingError';
 	}
 }
+
+/**
+ * Thrown when demoting or removing a membership would leave its account with no
+ * owner. The check and the write are performed atomically in the repository (a
+ * transaction in Mongo) so two concurrent owner-management requests can't both
+ * pass a stale count and orphan the account. The API maps it to HTTP 409.
+ */
+export class LastOwnerError extends Error {
+	constructor(message = 'An account must always have at least one owner') {
+		super(message);
+		this.name = 'LastOwnerError';
+	}
+}

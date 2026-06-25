@@ -17,15 +17,24 @@ export default fp(
 			} catch {
 				throw app.httpErrors.unauthorized('Authentication required');
 			}
-			// The token embeds accountId + role for speed, but membership can change
-			// after issuance. Revalidate against the DB so a removed user loses access
-			// immediately and a role change takes effect without waiting for expiry.
-			const membership = await app.deps.memberships.findByAccountAndUser(
-				request.user.accountId,
-				request.user.sub,
-			);
+			// The token embeds accountId + role for speed, but membership and account
+			// state can change after issuance. Revalidate against the DB so a removed
+			// user loses access immediately, a role change takes effect without waiting
+			// for expiry, and a canceled (soft-deleted) account locks everyone out.
+			const [membership, account] = await Promise.all([
+				app.deps.memberships.findByAccountAndUser(request.user.accountId, request.user.sub),
+				app.deps.accounts.findById(request.user.accountId),
+			]);
 			if (!membership) {
 				throw app.httpErrors.unauthorized('Your access to this account has been revoked');
+			}
+			// A missing account must fail closed: without this an orphaned membership
+			// would authenticate and downstream handlers would assume an account exists.
+			if (!account) {
+				throw app.httpErrors.unauthorized('Account no longer exists');
+			}
+			if (account.status === 'canceled') {
+				throw app.httpErrors.unauthorized('This account has been canceled');
 			}
 			request.user.role = membership.role;
 		});

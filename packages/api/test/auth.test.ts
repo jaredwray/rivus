@@ -392,7 +392,7 @@ describe('accept-invite', () => {
 		await app.close();
 	});
 
-	function invite(token: string, role: 'manager' | 'team_member', email: string) {
+	function invite(token: string, role: 'manager' | 'member', email: string) {
 		return app.inject({
 			method: 'POST',
 			url: '/v1/members/invites',
@@ -403,8 +403,7 @@ describe('accept-invite', () => {
 
 	it('lets an invitee join the account, then sign in with a code', async () => {
 		const owner = await signupOwner(app);
-		const inviteToken = (await invite(owner.token, 'team_member', 'newhire@example.com')).json()
-			.token;
+		const inviteToken = (await invite(owner.token, 'member', 'newhire@example.com')).json().token;
 
 		const accept = await app.inject({
 			method: 'POST',
@@ -414,7 +413,7 @@ describe('accept-invite', () => {
 
 		expect(accept.statusCode).toBe(201);
 		const body = accept.json();
-		expect(body.role).toBe('team_member');
+		expect(body.role).toBe('member');
 		expect(body.account.id).toBe(owner.account.id);
 		expect(body.user.email).toBe('newhire@example.com');
 
@@ -429,7 +428,7 @@ describe('accept-invite', () => {
 			latestCodeFor(app, 'newhire@example.com'),
 		);
 		expect(login.statusCode).toBe(200);
-		expect(login.json().role).toBe('team_member');
+		expect(login.json().role).toBe('member');
 	});
 
 	it('rejects an unknown invite token with 401', async () => {
@@ -443,8 +442,7 @@ describe('accept-invite', () => {
 
 	it('rejects accepting an already-accepted invite with 401', async () => {
 		const owner = await signupOwner(app);
-		const inviteToken = (await invite(owner.token, 'team_member', 'twice@example.com')).json()
-			.token;
+		const inviteToken = (await invite(owner.token, 'member', 'twice@example.com')).json().token;
 		await app.inject({
 			method: 'POST',
 			url: '/v1/auth/accept-invite',
@@ -466,7 +464,7 @@ describe('accept-invite', () => {
 			accountId: owner.account.id as AccountId,
 			email: 'taken@example.com',
 			name: 'Taken',
-			role: 'team_member',
+			role: 'member',
 			token: 'preseeded-token',
 			invitedBy: owner.user.id as UserId,
 		});

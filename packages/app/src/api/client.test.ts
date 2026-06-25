@@ -35,12 +35,14 @@ function makeAccount() {
 		address: '',
 		website: '',
 		timezone: 'UTC',
+		status: 'active' as const,
+		canceledAt: null,
 		createdAt: now,
 		updatedAt: now,
 	};
 }
 
-function makeAuthResponse(role: 'owner' | 'manager' | 'team_member' = 'owner') {
+function makeAuthResponse(role: 'owner' | 'manager' | 'member' = 'owner') {
 	return { token: faker.string.alphanumeric(40), user: makeUser(), account: makeAccount(), role };
 }
 
@@ -228,7 +230,7 @@ describe('createApiClient', () => {
 
 	describe('acceptInvite', () => {
 		it('joins an account with just the token and returns the session', async () => {
-			const response = makeAuthResponse('team_member');
+			const response = makeAuthResponse('member');
 			fetchMock.mockResolvedValueOnce(jsonResponse(response, { status: 201 }));
 
 			const client = createApiClient(BASE, fetchMock);
@@ -293,7 +295,7 @@ describe('createApiClient', () => {
 				id: faker.string.uuid(),
 				email: 'newhire@example.com',
 				name: 'New Hire',
-				role: 'team_member' as const,
+				role: 'member' as const,
 				status: 'pending' as const,
 				token: 'invite-token',
 				createdAt: now,
@@ -304,7 +306,7 @@ describe('createApiClient', () => {
 			const result = await client.inviteMember('owner-token', {
 				email: invite.email,
 				name: invite.name,
-				role: 'team_member',
+				role: 'member',
 			});
 
 			expect(result).toEqual(invite);
@@ -319,9 +321,66 @@ describe('createApiClient', () => {
 		it('rejects an invalid invite before hitting the network', async () => {
 			const client = createApiClient(BASE, fetchMock);
 			await expect(
-				client.inviteMember('tok', { email: 'not-an-email', name: 'X', role: 'team_member' }),
+				client.inviteMember('tok', { email: 'not-an-email', name: 'X', role: 'member' }),
 			).rejects.toThrow();
 			expect(fetchMock).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('updateAccount', () => {
+		it('PATCHes the account with the bearer token and returns it', async () => {
+			const account = makeAccount();
+			fetchMock.mockResolvedValueOnce(jsonResponse({ ...account, name: 'Renamed Co' }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.updateAccount('owner-token', { businessName: 'Renamed Co' });
+
+			expect(result.name).toBe('Renamed Co');
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/account`);
+			expect(init.method).toBe('PATCH');
+			expect(JSON.parse(init.body as string)).toEqual({ businessName: 'Renamed Co' });
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer owner-token' });
+		});
+
+		it('rejects an empty update before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.updateAccount('tok', {})).rejects.toThrow();
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('cancelAccount', () => {
+		it('POSTs to the cancel endpoint and returns the canceled account', async () => {
+			const account = {
+				...makeAccount(),
+				status: 'canceled' as const,
+				canceledAt: new Date().toISOString(),
+			};
+			fetchMock.mockResolvedValueOnce(jsonResponse(account));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.cancelAccount('owner-token');
+
+			expect(result.status).toBe('canceled');
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/account/cancel`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer owner-token' });
+		});
+	});
+
+	describe('getBilling', () => {
+		it('GETs the billing summary with the bearer token', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ plan: 'free', status: 'active', seats: 3 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.getBilling('owner-token');
+
+			expect(result).toEqual({ plan: 'free', status: 'active', seats: 3 });
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/billing`);
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer owner-token' });
 		});
 	});
 

@@ -34,14 +34,16 @@ curl -s http://localhost:4000/v1/auth/me \
 ## Accounts & roles
 
 Every user belongs to one **account**, which owns all of its members' data.
-Members hold one of three roles — **Owner**, **Manager**, or **Team Member** —
-and Owners/Managers add teammates via tokenized invites:
+Members hold one of three roles — **Owner**, **Manager**, or **Member** — and
+Owners/Managers add teammates via tokenized invites. An Owner can invite any role
+(including another Owner); a Manager can only invite Members. Billing and account
+settings are Owner-only.
 
 ```bash
 # Owner or Manager invites a teammate (returns an invite token)
 curl -s -X POST http://localhost:4000/v1/members/invites \
   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
-  -d '{"email":"sam@example.com","name":"Sam","role":"team_member"}'
+  -d '{"email":"sam@example.com","name":"Sam","role":"member"}'
 
 # The invitee accepts and sets a password to join the account
 curl -s -X POST http://localhost:4000/v1/auth/accept-invite \

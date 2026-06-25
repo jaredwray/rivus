@@ -11,7 +11,7 @@ export interface InviteEmail {
 	/** Name of the account the invitee is being asked to join. */
 	accountName: string;
 	/** Role the invitee will hold once they accept. */
-	role: Exclude<Role, 'owner'>;
+	role: Role;
 	/** Absolute URL the invitee opens to accept (carries the invite token). */
 	acceptUrl: string;
 }
@@ -39,10 +39,11 @@ export interface Mailer {
 	sendVerificationCode(email: VerificationEmail): Promise<void>;
 }
 
-/** Human-readable labels for the assignable roles. */
-const ROLE_LABELS: Record<Exclude<Role, 'owner'>, string> = {
+/** Human-readable labels for each role. */
+const ROLE_LABELS: Record<Role, string> = {
+	owner: 'Owner',
 	manager: 'Manager',
-	team_member: 'Team Member',
+	member: 'Member',
 };
 
 /** Escape the five characters that are unsafe to interpolate into HTML. */

@@ -23,11 +23,19 @@ export interface User {
 
 /**
  * A role within a business account, in ascending order of privilege:
- * - `team_member` — works in the account's data, cannot manage members.
- * - `manager` — additionally invites/removes Team Members.
- * - `owner` — full control: billing, deleting the account, and managing roles.
+ * - `member` — works in the account's data; cannot invite or manage members.
+ * - `manager` — everything a member can, plus inviting/removing members and
+ *   managing roles, but not billing or account settings.
+ * - `owner` — full control, including billing, account settings, and canceling
+ *   the account.
  */
-export type Role = 'owner' | 'manager' | 'team_member';
+export type Role = 'owner' | 'manager' | 'member';
+
+/**
+ * Lifecycle of an account. `canceled` is a soft delete: the owner closed the
+ * account but its data is retained (and access is blocked) rather than purged.
+ */
+export type AccountStatus = 'active' | 'canceled';
 
 /** A business account — the tenant that owns all of its members' data. */
 export interface Account {
@@ -41,6 +49,10 @@ export interface Account {
 	website: string;
 	/** IANA time zone, e.g. `America/Los_Angeles`. */
 	timezone: string;
+	/** Lifecycle state; `canceled` accounts are soft-deleted and locked out. */
+	status: AccountStatus;
+	/** When the account was canceled, or `null` while it is active. */
+	canceledAt: IsoDateString | null;
 	createdAt: IsoDateString;
 	updatedAt: IsoDateString;
 }
@@ -64,7 +76,7 @@ export interface Invite {
 	accountId: AccountId;
 	email: string;
 	name: string;
-	role: Exclude<Role, 'owner'>;
+	role: Role;
 	status: InviteStatus;
 	/** Opaque token the invitee presents to accept the invitation. */
 	token: string;

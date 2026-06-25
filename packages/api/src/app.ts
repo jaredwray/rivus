@@ -10,8 +10,10 @@ import {
 import { parseCorsOrigin } from './config';
 import authPlugin from './plugins/auth';
 import swaggerPlugin from './plugins/swagger';
-import { ConflictError, InviteNotPendingError } from './repositories/errors';
+import { ConflictError, InviteNotPendingError, LastOwnerError } from './repositories/errors';
+import { accountRoutes } from './routes/account';
 import { authRoutes } from './routes/auth';
+import { billingRoutes } from './routes/billing';
 import { healthRoutes } from './routes/health';
 import { itemRoutes } from './routes/items';
 import { memberRoutes } from './routes/members';
@@ -70,6 +72,14 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 			});
 		}
 
+		if (error instanceof LastOwnerError) {
+			return reply.status(409).send({
+				error: 'Conflict',
+				message: error.message,
+				statusCode: 409,
+			});
+		}
+
 		const statusCode = error.statusCode ?? 500;
 		if (statusCode >= 500) {
 			request.log.error({ err: error }, 'request failed');
@@ -96,6 +106,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 	app.register(healthRoutes);
 	app.register(authRoutes, { prefix: '/v1/auth' });
 	app.register(memberRoutes, { prefix: '/v1/members' });
+	app.register(accountRoutes, { prefix: '/v1/account' });
+	app.register(billingRoutes, { prefix: '/v1/billing' });
 	app.register(itemRoutes, { prefix: '/v1/items' });
 
 	return app;
