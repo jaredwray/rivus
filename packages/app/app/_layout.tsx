@@ -22,6 +22,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { AuthProvider, initialsOf, roleLabel, useAuth } from '@/src/auth/AuthContext';
 import { AuthScreen } from '@/src/auth/AuthScreen';
 import { RivusWordmark } from '@/src/brand/RivusLogo';
+import { CompanySwitcher } from '@/src/components/CompanySwitcher';
 import { BrandGradient } from '@/src/components/Gradient';
 import { Avatar, Dot, Icon, RivusStatusChip, Txt } from '@/src/components/ui';
 import { installFocusRing } from '@/src/theme/focusRing';
@@ -128,6 +129,7 @@ function Gate() {
 
 function Shell() {
 	const { width } = useWindowDimensions();
+	const { isStaff } = useAuth();
 	const wide = width >= SIDEBAR_BREAKPOINT;
 
 	if (wide) {
@@ -147,6 +149,12 @@ function Shell() {
 	return (
 		<View style={styles.rootColumn}>
 			<CompactBar />
+			{/* Only staff get the company switcher; non-staff have no company row at all. */}
+			{isStaff ? (
+				<View style={styles.compactCompany}>
+					<CompanySwitcher />
+				</View>
+			) : null}
 			<NavStrip />
 			<View style={styles.content}>
 				<Slot />
@@ -216,22 +224,9 @@ function Sidebar() {
 }
 
 function TopBar() {
-	const { session } = useAuth();
-	const accountName = session?.account.name ?? 'Your business';
-	const companySub = session?.account.address || session?.account.timezone || '';
-
 	return (
 		<View style={styles.topbar}>
-			<Pressable style={styles.company}>
-				<View style={styles.companyMark}>
-					<Txt style={styles.companyMarkTxt}>{accountName.charAt(0).toUpperCase()}</Txt>
-				</View>
-				<View>
-					<Txt style={styles.companyName}>{accountName}</Txt>
-					{companySub ? <Txt style={styles.companySub}>{companySub}</Txt> : null}
-				</View>
-				<Feather name="chevron-down" size={15} color={colors.textHint} />
-			</Pressable>
+			<CompanySwitcher />
 
 			<View style={styles.searchWrap}>
 				<View style={styles.search}>
@@ -432,33 +427,6 @@ const styles = StyleSheet.create({
 		borderBottomColor: colors.border,
 		backgroundColor: colors.surface,
 	},
-	company: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: 10,
-	},
-	companyMark: {
-		width: 30,
-		height: 30,
-		borderRadius: radii.sm,
-		backgroundColor: '#0e2a36',
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	companyMarkTxt: {
-		fontFamily: font.bold,
-		fontSize: 13,
-		color: colors.brandCyan,
-	},
-	companyName: {
-		fontFamily: font.semibold,
-		fontSize: 13.5,
-	},
-	companySub: {
-		fontFamily: font.regular,
-		fontSize: 11,
-		color: colors.textMuted,
-	},
 	searchWrap: {
 		flex: 1,
 		alignItems: 'center',
@@ -537,6 +505,13 @@ const styles = StyleSheet.create({
 		height: 34,
 		alignItems: 'center',
 		justifyContent: 'center',
+	},
+	compactCompany: {
+		backgroundColor: colors.surface,
+		borderBottomWidth: 1,
+		borderBottomColor: colors.border,
+		paddingHorizontal: 18,
+		paddingVertical: 10,
 	},
 	navStripWrap: {
 		backgroundColor: colors.surface,
