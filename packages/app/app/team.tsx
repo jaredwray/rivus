@@ -192,10 +192,10 @@ export default function TeamScreen() {
 
 						{lastInvite ? (
 							<View style={styles.callout}>
-								<Txt style={styles.calloutTitle}>Invitation sent to {lastInvite.email}</Txt>
+								<Txt style={styles.calloutTitle}>Invitation created for {lastInvite.email}</Txt>
 								<Txt style={styles.calloutBody}>
-									We’ve emailed them a link to accept and join {session.account.name}. Prefer to
-									share it yourself? They can also join with this code:
+									We’ve emailed them a link to join {session.account.name}. If it doesn’t arrive,
+									share this code so they can join:
 								</Txt>
 								<Txt selectable style={styles.code}>
 									{lastInvite.token}
