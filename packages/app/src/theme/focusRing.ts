@@ -15,9 +15,10 @@ import { colors } from './tokens';
 
 const STYLE_ID = 'rivus-focus-ring';
 
-// Scope to genuinely interactive nodes: every RN Pressable renders with a
-// tabindex, inputs render as <input>/<textarea>, and links as <a>.
-const SELECTOR = ':where(a,input,select,textarea,[tabindex])';
+// Scope to genuinely interactive nodes: Pressables with accessibilityRole="button"
+// render as a native <button>, links as <a>, inputs as <input>/<textarea>, and
+// every other Pressable carries a tabindex.
+const SELECTOR = ':where(button,a,input,select,textarea,[tabindex])';
 
 export function installFocusRing(): void {
 	if (Platform.OS !== 'web' || typeof document === 'undefined') {

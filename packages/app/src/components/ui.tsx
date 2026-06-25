@@ -155,6 +155,7 @@ export function GradientButton({
 	return (
 		<Pressable
 			onPress={onPress}
+			accessibilityRole="button"
 			style={({ pressed }) => [styles.gradientBtnWrap, pressed && styles.pressed, style]}
 		>
 			<BrandGradient style={styles.gradientBtn}>
