@@ -22,9 +22,11 @@ export function isMongoConnected(): boolean {
  * as soon as the user authenticates, but a user that authenticates yet lacks roles
  * on the target database still fails *every* query with "not authorized" — which
  * otherwise surfaces only as an opaque 500 on each request. `{ ping: 1 }` is exempt
- * from authorization and so wouldn't catch that; `dbStats` requires read privileges
- * on the database, so it does. Returns false (never throws) when the connection is
- * closed or the command fails, which is what a readiness probe wants.
+ * from authorization and so wouldn't catch that; `listCollections` requires the
+ * `listCollections` privilege (granted by the read/readWrite roles the app needs),
+ * so it does — and with `nameOnly: true` it only reads the metadata catalog, so it
+ * stays cheap enough to run on every readiness poll. Returns false (never throws)
+ * when the connection is closed or the command fails, which is what a probe wants.
  */
 export async function isDatabaseReady(): Promise<boolean> {
 	const db = mongoose.connection.db;
@@ -32,7 +34,7 @@ export async function isDatabaseReady(): Promise<boolean> {
 		return false;
 	}
 	try {
-		await db.command({ dbStats: 1 });
+		await db.command({ listCollections: 1, nameOnly: true });
 		return true;
 	} catch {
 		return false;
@@ -51,7 +53,7 @@ export async function assertDatabaseReady(): Promise<void> {
 		throw new Error('MongoDB connection is not open');
 	}
 	try {
-		await db.command({ dbStats: 1 });
+		await db.command({ listCollections: 1, nameOnly: true });
 	} catch (error) {
 		const name = mongoose.connection.name ?? '(default)';
 		throw new Error(
