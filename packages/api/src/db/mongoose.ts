@@ -21,12 +21,17 @@ export function isMongoConnected(): boolean {
  * the socket and authentication handshake completed. `mongoose.connect()` resolves
  * as soon as the user authenticates, but a user that authenticates yet lacks roles
  * on the target database still fails *every* query with "not authorized" — which
- * otherwise surfaces only as an opaque 500 on each request. `{ ping: 1 }` is exempt
- * from authorization and so wouldn't catch that; `listCollections` requires the
- * `listCollections` privilege (granted by the read/readWrite roles the app needs),
- * so it does — and with `nameOnly: true` it only reads the metadata catalog, so it
- * stays cheap enough to run on every readiness poll. Returns false (never throws)
- * when the connection is closed or the command fails, which is what a probe wants.
+ * otherwise surfaces only as an opaque 500 on each request.
+ *
+ * We probe with the very operation the API relies on — a `find` on an app
+ * collection — so the check requires exactly the privilege the service needs and
+ * reproduces the original failure (signup's `findByEmail` is a `find` on `users`).
+ * A diagnostic command tests the wrong thing: `ping` skips authorization entirely,
+ * while `dbStats`/`listCollections` ride separate privileges that a least-privilege
+ * CRUD role might not grant. `findOne` is cheap (a single `_id`-only document) and
+ * returns null on an empty or not-yet-created collection, so it never false-fails.
+ * Returns false (never throws) when the connection is closed or the query fails,
+ * which is what a probe wants.
  */
 export async function isDatabaseReady(): Promise<boolean> {
 	const db = mongoose.connection.db;
@@ -34,7 +39,7 @@ export async function isDatabaseReady(): Promise<boolean> {
 		return false;
 	}
 	try {
-		await db.command({ listCollections: 1, nameOnly: true });
+		await db.collection('users').findOne({}, { projection: { _id: 1 } });
 		return true;
 	} catch {
 		return false;
@@ -53,7 +58,7 @@ export async function assertDatabaseReady(): Promise<void> {
 		throw new Error('MongoDB connection is not open');
 	}
 	try {
-		await db.command({ listCollections: 1, nameOnly: true });
+		await db.collection('users').findOne({}, { projection: { _id: 1 } });
 	} catch (error) {
 		const name = mongoose.connection.name ?? '(default)';
 		throw new Error(
