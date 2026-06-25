@@ -8,7 +8,7 @@ import {
 	validatorCompiler,
 } from 'fastify-type-provider-zod';
 import { parseCorsOrigin } from './config';
-import authPlugin from './plugins/auth';
+import authPlugin, { SESSION_COOKIE } from './plugins/auth';
 import swaggerPlugin from './plugins/swagger';
 import { ConflictError, InviteNotPendingError, LastOwnerError } from './repositories/errors';
 import { accountRoutes } from './routes/account';
@@ -118,6 +118,31 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 		origin: corsOrigin === '*' ? true : corsOrigin,
 		credentials: true,
 	});
+
+	// CSRF defense for cookie-authenticated writes. The session cookie rides along
+	// automatically on same-site requests, so a malicious or compromised same-site
+	// page could trigger a state-changing call with the victim's session. Bearer
+	// (native) and unauthenticated requests aren't CSRF-able, so we guard only the
+	// unsafe methods that actually carry the session cookie, and require the request
+	// to originate from the app itself. Local development (wildcard CORS) stays
+	// permissive; the deployed environments (an explicit allowlist) enforce it.
+	const appOrigin = new URL(deps.config.APP_URL).origin;
+	const enforceCsrf = corsOrigin !== '*';
+	app.addHook('onRequest', async (request) => {
+		if (!enforceCsrf || request.method === 'GET' || request.method === 'HEAD') {
+			return;
+		}
+		const hasSession = request.headers.cookie
+			?.split(';')
+			.some((entry) => entry.trimStart().startsWith(`${SESSION_COOKIE}=`));
+		if (!hasSession) {
+			return;
+		}
+		if (request.headers.origin !== appOrigin) {
+			throw app.httpErrors.forbidden('Cross-origin request blocked');
+		}
+	});
+
 	app.register(helmet, { contentSecurityPolicy: false });
 	app.register(authPlugin);
 	app.register(swaggerPlugin);

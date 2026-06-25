@@ -2,8 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
+import { SESSION_COOKIE } from '../src/plugins/auth';
 import { createInMemoryRepositories } from '../src/repositories/memory';
-import { RecordingMailer } from './helpers';
+import { authHeader, RecordingMailer, signupOwner } from './helpers';
 
 /** Build an app with a specific CORS_ORIGIN so we can exercise both origin branches. */
 function buildAppWithCors(corsOrigin: string): FastifyInstance {
@@ -91,5 +92,60 @@ describe('CORS', () => {
 
 		expect(res.headers['access-control-allow-origin']).toBe('https://app.rivus.ai');
 		expect(res.headers['access-control-allow-credentials']).toBe('true');
+	});
+});
+
+describe('CSRF (cookie-authenticated writes)', () => {
+	let app: FastifyInstance | undefined;
+
+	afterEach(async () => {
+		await app?.close();
+		app = undefined;
+	});
+
+	// The default test APP_URL is https://app.rivus.ai, so that's the only origin
+	// allowed to make cookie-authenticated writes. An allowlist CORS value (not `*`)
+	// activates the guard. The session cookie value is the JWT, which `signupOwner`
+	// returns as `token`.
+	it('blocks a cookie-authenticated write from a foreign origin', async () => {
+		app = buildAppWithCors('https://app.rivus.ai,*.rivus.ai');
+		const owner = await signupOwner(app);
+
+		const res = await app.inject({
+			method: 'POST',
+			url: '/v1/account/cancel',
+			cookies: { [SESSION_COOKIE]: owner.token },
+			headers: { origin: 'https://evil.example' },
+		});
+
+		expect(res.statusCode).toBe(403);
+	});
+
+	it('allows a cookie-authenticated write from the app origin', async () => {
+		app = buildAppWithCors('https://app.rivus.ai,*.rivus.ai');
+		const owner = await signupOwner(app);
+
+		const res = await app.inject({
+			method: 'POST',
+			url: '/v1/account/cancel',
+			cookies: { [SESSION_COOKIE]: owner.token },
+			headers: { origin: 'https://app.rivus.ai' },
+		});
+
+		expect(res.statusCode).toBe(200);
+	});
+
+	it('does not guard bearer-authenticated writes (native clients)', async () => {
+		app = buildAppWithCors('https://app.rivus.ai,*.rivus.ai');
+		const owner = await signupOwner(app);
+
+		// No cookie, a bearer header, and no Origin — a native request, not CSRF-able.
+		const res = await app.inject({
+			method: 'POST',
+			url: '/v1/account/cancel',
+			headers: authHeader(owner.token),
+		});
+
+		expect(res.statusCode).toBe(200);
 	});
 });

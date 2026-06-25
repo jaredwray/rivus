@@ -92,12 +92,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const value = useMemo<AuthContextValue>(() => {
 		// On web the token must never be retained in JS; the cookie is the credential.
 		const adopt = (res: AuthResponse): AuthResponse => (IS_WEB ? { ...res, token: '' } : res);
-		// JS can't clear an HttpOnly cookie, so ask the API to expire it on sign-out.
-		const clearCookie = () => {
-			if (IS_WEB) {
-				void client.logout().catch(() => {});
-			}
-		};
 		return {
 			session,
 			restoring,
@@ -126,13 +120,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 					return;
 				}
 				await client.cancelAccount(session.token);
-				// The account is now canceled, so every authed call would 401 — drop the session.
+				// The account is now canceled, so the cookie's token will 401 on the next
+				// request and `me()` won't restore it — drop the session, and clear the
+				// (now inert) cookie best-effort.
 				setSession(null);
-				clearCookie();
+				if (IS_WEB) {
+					void client.logout().catch(() => {});
+				}
 			},
-			signOut() {
+			async signOut() {
+				// On web, only drop the session once the API has actually cleared the
+				// HttpOnly cookie. Otherwise a failed logout would look successful while the
+				// cookie survived, and the next reload's `me()` would sign us back in.
+				if (IS_WEB) {
+					try {
+						await client.logout();
+					} catch {
+						// Couldn't reach the API to clear the cookie — stay signed in rather
+						// than show a false "signed out" that a reload would silently undo.
+						return;
+					}
+				}
 				setSession(null);
-				clearCookie();
 			},
 		};
 	}, [client, session, restoring]);
