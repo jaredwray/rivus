@@ -2,12 +2,11 @@ import {
 	type AccountId,
 	acceptInviteSchema,
 	loginSchema,
-	type Role,
 	signupSchema,
 	type UserId,
 	verifyCodeSchema,
 } from '@rivus/core';
-import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import {
 	authResponseSchema,
@@ -22,6 +21,7 @@ import { ConflictError } from '../repositories/errors';
 import type { PendingSignup, SignupResult, VerificationPurpose } from '../repositories/types';
 import { generateUniqueSlug } from '../services/accounts';
 import { hashSecret, verifySecret } from '../services/hash';
+import { issueSession } from '../services/session';
 import {
 	codeExpiry,
 	generateVerificationCode,
@@ -49,23 +49,6 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 		void mailer
 			.sendVerificationCode({ to, code, purpose })
 			.catch((err) => request.log.error({ err }, 'failed to send verification code'));
-	}
-
-	/**
-	 * Sign a session JWT, set it as the HttpOnly session cookie (for web clients),
-	 * and return the token so it can also go in the response body (for native
-	 * clients, which have no cookie jar and send it as a bearer header). The cookie's
-	 * `maxAge` is derived from the token's own `exp` so the two expire together.
-	 */
-	async function issueSession(
-		reply: FastifyReply,
-		payload: { sub: UserId; email: string; accountId: AccountId; role: Role },
-	): Promise<string> {
-		const token = await reply.jwtSign(payload);
-		const decoded = app.jwt.decode<{ exp?: number }>(token);
-		const maxAge = decoded?.exp ? decoded.exp - Math.floor(Date.now() / 1000) : undefined;
-		reply.setCookie(SESSION_COOKIE, token, sessionCookieOptions(app.deps.config, maxAge));
-		return token;
 	}
 
 	/** Generate, store, and email a fresh one-time code for an email. */
@@ -214,7 +197,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 					throw app.httpErrors.unauthorized('Invalid or expired code');
 				}
 				const { user, account, membership } = await createAccount(email, record.signup);
-				const token = await issueSession(reply, {
+				const token = await issueSession(app, reply, {
 					sub: user.id,
 					email: user.email,
 					accountId: account.id,
@@ -240,7 +223,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 			if (account.status === 'canceled') {
 				throw app.httpErrors.unauthorized('Invalid or expired code');
 			}
-			const token = await issueSession(reply, {
+			const token = await issueSession(app, reply, {
 				sub: user.id,
 				email: user.email,
 				accountId: account.id,
@@ -317,7 +300,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 				role: invite.role,
 				inviteId: invite.id,
 			});
-			const token = await issueSession(reply, {
+			const token = await issueSession(app, reply, {
 				sub: user.id,
 				email: user.email,
 				accountId: account.id,

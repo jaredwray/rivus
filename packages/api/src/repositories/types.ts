@@ -92,10 +92,26 @@ export interface UpdateAccount {
 	timezone?: string;
 }
 
+/**
+ * Options for {@link AccountRepository.list}: a page of accounts, optionally
+ * filtered by a free-text `search` over the business name and slug.
+ */
+export interface ListAccountsOptions {
+	page: number;
+	pageSize: number;
+	/** Case-insensitive substring matched against the account name and slug. */
+	search?: string;
+}
+
 export interface AccountRepository {
 	create(input: NewAccount): Promise<Account>;
 	findById(id: AccountId): Promise<Account | null>;
 	findBySlug(slug: string): Promise<Account | null>;
+	/**
+	 * A page of active accounts (newest filter applied first), for the staff
+	 * company switcher. Canceled accounts are excluded since they can't be entered.
+	 */
+	list(options: ListAccountsOptions): Promise<{ accounts: Account[]; total: number }>;
 	/** Apply a partial business-info update; returns the updated account or null. */
 	update(id: AccountId, input: UpdateAccount): Promise<Account | null>;
 	/** Soft-delete: mark the account `canceled` (data retained). Returns it, or null. */

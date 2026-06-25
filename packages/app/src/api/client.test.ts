@@ -1,4 +1,5 @@
 import { faker } from '@faker-js/faker';
+import type { AccountId } from '@rivus/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, createApiClient, ValidationError } from './client';
 
@@ -450,6 +451,83 @@ describe('createApiClient', () => {
 			const client = createApiClient(BASE, fetchMock);
 			const result = await client.listItems('token');
 			expect(result.data).toEqual([]);
+		});
+	});
+
+	describe('listCompanies', () => {
+		function companyPage(accounts: ReturnType<typeof makeAccount>[]) {
+			return {
+				data: accounts,
+				meta: {
+					page: 1,
+					pageSize: 20,
+					total: accounts.length,
+					totalPages: 1,
+					hasNextPage: false,
+					hasPreviousPage: false,
+				},
+			};
+		}
+
+		it('returns parsed companies and sends the bearer auth header', async () => {
+			const accounts = [makeAccount(), makeAccount()];
+			fetchMock.mockResolvedValueOnce(jsonResponse(companyPage(accounts)));
+
+			const client = createApiClient(BASE, fetchMock);
+			const token = faker.string.alphanumeric(32);
+			const result = await client.listCompanies(token);
+
+			expect(result.data).toEqual(accounts);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/admin/companies?page=1&pageSize=20`);
+			expect(init.headers).toMatchObject({ Authorization: `Bearer ${token}` });
+		});
+
+		it('forwards a trimmed search term and custom pagination', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(companyPage([])));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.listCompanies('token', { search: '  Acme  ', page: 2, pageSize: 5 });
+
+			const [url] = fetchMock.mock.calls[0] as [string];
+			expect(url).toBe(`${BASE}/v1/admin/companies?page=2&pageSize=5&search=Acme`);
+		});
+
+		it('omits the search param when the term is blank', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(companyPage([])));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.listCompanies('token', { search: '   ' });
+
+			const [url] = fetchMock.mock.calls[0] as [string];
+			expect(url).toBe(`${BASE}/v1/admin/companies?page=1&pageSize=20`);
+		});
+	});
+
+	describe('switchCompany', () => {
+		it('posts to the switch endpoint and returns the new session', async () => {
+			const auth = makeAuthResponse('owner');
+			fetchMock.mockResolvedValueOnce(jsonResponse(auth));
+
+			const client = createApiClient(BASE, fetchMock);
+			const accountId = auth.account.id as AccountId;
+			const result = await client.switchCompany('staff-token', accountId);
+
+			expect(result.account.id).toBe(auth.account.id);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/admin/companies/${accountId}/switch`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer staff-token' });
+		});
+
+		it('url-encodes the company id', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(makeAuthResponse()));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.switchCompany('staff-token', 'a/b c' as AccountId);
+
+			const [url] = fetchMock.mock.calls[0] as [string];
+			expect(url).toBe(`${BASE}/v1/admin/companies/a%2Fb%20c/switch`);
 		});
 	});
 

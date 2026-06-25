@@ -210,6 +210,20 @@ export interface ItemListResponse {
 	meta: PaginationMeta;
 }
 
+// A page of companies (accounts) for the staff company switcher.
+const accountListResponseSchema = z.object({
+	data: z.array(accountResponseSchema),
+	meta: paginationMetaSchema,
+});
+
+export interface CompanyListResponse {
+	data: Account[];
+	meta: PaginationMeta;
+}
+
+/** Query for {@link RivusApiClient.listCompanies}: pagination plus a name/slug search. */
+export type CompanyListQuery = Partial<PaginationQuery> & { search?: string };
+
 const healthResponseSchema = z.object({
 	status: z.literal('ok'),
 	uptime: z.number(),
@@ -253,6 +267,16 @@ export interface RivusApiClient {
 	/** Read the account's billing summary (owner only). */
 	getBilling(token: string): Promise<Billing>;
 	listItems(token: string, query?: Partial<PaginationQuery>): Promise<ItemListResponse>;
+	/**
+	 * List/search every company, for the staff company switcher. Restricted to Rivus
+	 * staff server-side (a regular customer gets 403).
+	 */
+	listCompanies(token: string, query?: CompanyListQuery): Promise<CompanyListResponse>;
+	/**
+	 * Switch the active company to `accountId`, returning a fresh session scoped to
+	 * it (Rivus staff only). On web the API also sets the new session cookie.
+	 */
+	switchCompany(token: string, accountId: AccountId): Promise<AuthResponse>;
 }
 
 /** Strip a single trailing slash so `${base}${path}` never doubles up. */
@@ -398,6 +422,30 @@ export function createApiClient(
 				method: 'GET',
 				headers: authHeaders(token),
 			});
+		},
+
+		async listCompanies(token: string, query?: CompanyListQuery) {
+			const { page, pageSize } = parseInput(paginationQuerySchema, {
+				page: query?.page,
+				pageSize: query?.pageSize,
+			});
+			const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+			const term = query?.search?.trim();
+			if (term) {
+				params.set('search', term);
+			}
+			return request(`/v1/admin/companies?${params.toString()}`, accountListResponseSchema, {
+				method: 'GET',
+				headers: authHeaders(token),
+			});
+		},
+
+		switchCompany(token: string, accountId: AccountId) {
+			return request(
+				`/v1/admin/companies/${encodeURIComponent(accountId)}/switch`,
+				authResponseSchema,
+				{ method: 'POST', headers: authHeaders(token) },
+			);
 		},
 	};
 }

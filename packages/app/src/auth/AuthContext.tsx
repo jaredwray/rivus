@@ -1,4 +1,10 @@
-import type { LoginInput, UpdateAccountInput, VerifyCodeInput } from '@rivus/core';
+import {
+	type AccountId,
+	isRivusStaffEmail,
+	type LoginInput,
+	type UpdateAccountInput,
+	type VerifyCodeInput,
+} from '@rivus/core';
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import {
@@ -21,6 +27,11 @@ export interface AuthContextValue {
 	/** The active session, or `null` when signed out. */
 	session: AuthResponse | null;
 	/**
+	 * Whether the signed-in user is Rivus staff (an `@rivus.ai` address). Staff can
+	 * switch the active company; a regular customer belongs to one company and can't.
+	 */
+	isStaff: boolean;
+	/**
 	 * True while we're restoring a session on startup (web checks the cookie via
 	 * `me()`). The gate shows a spinner until this clears so a valid session never
 	 * flashes the sign-in screen.
@@ -37,6 +48,8 @@ export interface AuthContextValue {
 	acceptInvite: (token: string) => Promise<void>;
 	/** Update the account's business settings, keeping the session in sync (owner only). */
 	updateAccount: (input: UpdateAccountInput) => Promise<void>;
+	/** Switch the active company and adopt the new session (Rivus staff only). */
+	switchCompany: (accountId: AccountId) => Promise<void>;
 	/** Cancel (soft-delete) the account, then sign out since it's now locked (owner only). */
 	cancelAccount: () => Promise<void>;
 	signOut: () => void;
@@ -94,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		const adopt = (res: AuthResponse): AuthResponse => (IS_WEB ? { ...res, token: '' } : res);
 		return {
 			session,
+			isStaff: session ? isRivusStaffEmail(session.user.email) : false,
 			restoring,
 			client,
 			signIn(input) {
@@ -114,6 +128,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				}
 				const account = await client.updateAccount(session.token, input);
 				setSession({ ...session, account });
+			},
+			async switchCompany(accountId) {
+				if (!session) {
+					return;
+				}
+				// Re-issues the session scoped to the target company. On web the API also
+				// swaps the HttpOnly cookie; `adopt` blanks the in-JS token to match.
+				setSession(adopt(await client.switchCompany(session.token, accountId)));
 			},
 			async cancelAccount() {
 				if (!session) {

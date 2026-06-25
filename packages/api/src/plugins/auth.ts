@@ -1,6 +1,6 @@
 import fastifyCookie, { type CookieSerializeOptions } from '@fastify/cookie';
 import fastifyJwt from '@fastify/jwt';
-import type { Role } from '@rivus/core';
+import { isRivusStaffEmail, type Role } from '@rivus/core';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import type { Config } from '../config';
@@ -58,9 +58,6 @@ export default fp(
 				app.deps.memberships.findByAccountAndUser(request.user.accountId, request.user.sub),
 				app.deps.accounts.findById(request.user.accountId),
 			]);
-			if (!membership) {
-				throw app.httpErrors.unauthorized('Your access to this account has been revoked');
-			}
 			// A missing account must fail closed: without this an orphaned membership
 			// would authenticate and downstream handlers would assume an account exists.
 			if (!account) {
@@ -69,7 +66,25 @@ export default fp(
 			if (account.status === 'canceled') {
 				throw app.httpErrors.unauthorized('This account has been canceled');
 			}
-			request.user.role = membership.role;
+			if (membership) {
+				request.user.role = membership.role;
+			} else if (!isRivusStaffEmail(request.user.email)) {
+				// A regular user must have a membership in the account their token is
+				// scoped to; without one their access was revoked.
+				throw app.httpErrors.unauthorized('Your access to this account has been revoked');
+			} else {
+				// Rivus staff may operate inside any active company without a membership
+				// *of that company* (the "switch company" feature), keeping the role carried
+				// in their staff-issued token. But they must still be an active Rivus user —
+				// i.e. retain their own membership. Re-checking it here keeps revocation
+				// immediate: removing a staff member's membership (offboarding) drops the
+				// bypass on their next request, instead of letting a stale switched token
+				// keep owner-level access to every company until the JWT expires.
+				const ownMembership = await app.deps.memberships.findByUserId(request.user.sub);
+				if (!ownMembership) {
+					throw app.httpErrors.unauthorized('Your access to this account has been revoked');
+				}
+			}
 		});
 
 		// Role check reads `request.user` (populated by `authenticate`), so list it
@@ -80,6 +95,14 @@ export default fp(
 					throw app.httpErrors.forbidden('Insufficient permissions for this action');
 				}
 			};
+		});
+
+		// Gate for staff-only endpoints (listing every company, switching the active
+		// one). Runs after `authenticate`, which puts the token's email on `request.user`.
+		app.decorate('requireStaff', async (request: FastifyRequest, _reply: FastifyReply) => {
+			if (!isRivusStaffEmail(request.user.email)) {
+				throw app.httpErrors.forbidden('This action is restricted to Rivus staff');
+			}
 		});
 	},
 	{ name: 'auth' },
