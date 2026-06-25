@@ -7,11 +7,19 @@ import {
 	Pressable,
 	StyleSheet,
 	TextInput,
+	useWindowDimensions,
 	View,
 } from 'react-native';
 import type { Account } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
-import { colors, font, radii, SIDEBAR_WIDTH, shadowSoft } from '@/src/theme/tokens';
+import {
+	colors,
+	font,
+	radii,
+	SIDEBAR_BREAKPOINT,
+	SIDEBAR_WIDTH,
+	shadowSoft,
+} from '@/src/theme/tokens';
 import { Txt } from './ui';
 
 /** Debounce window for the company search, matching AddressAutocomplete. */
@@ -39,6 +47,10 @@ function CompanyMark({ letter, small = false }: { letter: string; small?: boolea
 export function CompanySwitcher() {
 	const { session, isStaff, client, switchCompany } = useAuth();
 	const account = session?.account;
+	// In the wide layout the trigger sits in the top bar beside the fixed sidebar;
+	// in the narrow layout it's a full-width sub-header. Anchor the dropdown to match.
+	const { width } = useWindowDimensions();
+	const wide = width >= SIDEBAR_BREAKPOINT;
 
 	const [open, setOpen] = useState(false);
 	const [query, setQuery] = useState('');
@@ -168,7 +180,10 @@ export function CompanySwitcher() {
 			</Pressable>
 
 			<Modal visible={open} transparent animationType="fade" onRequestClose={close}>
-				<Pressable style={styles.backdrop} onPress={close}>
+				<Pressable
+					style={[styles.backdrop, wide ? styles.backdropWide : styles.backdropNarrow]}
+					onPress={close}
+				>
 					{/* Stop taps inside the panel from dismissing it. */}
 					<Pressable style={styles.panel} onPress={() => {}}>
 						<View style={styles.searchRow}>
@@ -277,17 +292,25 @@ const styles = StyleSheet.create({
 		fontSize: 11,
 		color: colors.textMuted,
 	},
-	// The dropdown is anchored under the company button (top bar lives only in the
-	// wide layout, beside the fixed-width sidebar), approximating a popover.
+	// The dropdown is anchored under the company button, approximating a popover.
 	backdrop: {
 		flex: 1,
 		alignItems: 'flex-start',
 		justifyContent: 'flex-start',
+	},
+	// Wide: the trigger sits in the top bar, right of the fixed-width sidebar.
+	backdropWide: {
 		paddingTop: 58,
 		paddingLeft: SIDEBAR_WIDTH + 18,
 	},
+	// Narrow: the trigger is a full-width sub-header below the compact top bar.
+	backdropNarrow: {
+		paddingTop: 92,
+		paddingLeft: 14,
+	},
 	panel: {
 		width: 320,
+		maxWidth: '92%',
 		maxHeight: 440,
 		backgroundColor: colors.surface,
 		borderWidth: 1,

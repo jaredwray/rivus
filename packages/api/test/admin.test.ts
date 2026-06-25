@@ -1,6 +1,7 @@
+import type { AccountId, UserId } from '@rivus/core';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { addMember, authHeader, buildTestApp, signupOwner } from './helpers';
+import { addMember, authHeader, buildTestApp, buildTestAppWithRepos, signupOwner } from './helpers';
 
 const STAFF_EMAIL = 'ops@rivus.ai';
 
@@ -231,5 +232,48 @@ describe('admin companies — switch', () => {
 			url: `/v1/admin/companies/${target.account.id}/switch`,
 		});
 		expect(response.statusCode).toBe(401);
+	});
+});
+
+describe('admin companies — staff access revocation', () => {
+	it('drops the staff bypass once the staff user’s own membership is removed', async () => {
+		const { app, repos } = await buildTestAppWithRepos();
+		// The staff user joins a company as a plain member — their single "home" membership.
+		const host = await signupOwner(app, { businessName: 'Host Co' });
+		const staff = await addMember(app, host.token, 'member', STAFF_EMAIL);
+		// They switch into another company (no membership there → owner access).
+		const target = await signupOwner(app, { businessName: 'Target Co' });
+		const switched = await app.inject({
+			method: 'POST',
+			url: `/v1/admin/companies/${target.account.id}/switch`,
+			headers: authHeader(staff.token),
+		});
+		expect(switched.statusCode).toBe(200);
+		const switchedToken = switched.json().token as string;
+
+		// The switched session works while their home membership is intact.
+		const before = await app.inject({
+			method: 'GET',
+			url: '/v1/auth/me',
+			headers: authHeader(switchedToken),
+		});
+		expect(before.statusCode).toBe(200);
+
+		// Offboard the staff member: remove their only membership.
+		const removed = await repos.memberships.delete(
+			host.account.id as AccountId,
+			staff.userId as UserId,
+		);
+		expect(removed).toBe(true);
+
+		// The previously-valid switched token no longer authenticates — revocation is
+		// immediate, not deferred until the JWT expires.
+		const after = await app.inject({
+			method: 'GET',
+			url: '/v1/auth/me',
+			headers: authHeader(switchedToken),
+		});
+		expect(after.statusCode).toBe(401);
+		await app.close();
 	});
 });

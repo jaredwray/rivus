@@ -148,6 +148,9 @@ function Shell() {
 	return (
 		<View style={styles.rootColumn}>
 			<CompactBar />
+			<View style={styles.compactCompany}>
+				<CompanySwitcher />
+			</View>
 			<NavStrip />
 			<View style={styles.content}>
 				<Slot />
@@ -498,6 +501,13 @@ const styles = StyleSheet.create({
 		height: 34,
 		alignItems: 'center',
 		justifyContent: 'center',
+	},
+	compactCompany: {
+		backgroundColor: colors.surface,
+		borderBottomWidth: 1,
+		borderBottomColor: colors.border,
+		paddingHorizontal: 18,
+		paddingVertical: 10,
 	},
 	navStripWrap: {
 		backgroundColor: colors.surface,

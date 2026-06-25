@@ -72,10 +72,19 @@ export default fp(
 				// A regular user must have a membership in the account their token is
 				// scoped to; without one their access was revoked.
 				throw app.httpErrors.unauthorized('Your access to this account has been revoked');
+			} else {
+				// Rivus staff may operate inside any active company without a membership
+				// *of that company* (the "switch company" feature), keeping the role carried
+				// in their staff-issued token. But they must still be an active Rivus user —
+				// i.e. retain their own membership. Re-checking it here keeps revocation
+				// immediate: removing a staff member's membership (offboarding) drops the
+				// bypass on their next request, instead of letting a stale switched token
+				// keep owner-level access to every company until the JWT expires.
+				const ownMembership = await app.deps.memberships.findByUserId(request.user.sub);
+				if (!ownMembership) {
+					throw app.httpErrors.unauthorized('Your access to this account has been revoked');
+				}
 			}
-			// Rivus staff may operate inside any active company without a membership of
-			// their own (the "switch company" feature); the role they act with is the one
-			// carried in their staff-issued token, so it is left untouched here.
 		});
 
 		// Role check reads `request.user` (populated by `authenticate`), so list it
