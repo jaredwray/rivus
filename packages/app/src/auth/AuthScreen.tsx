@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { ApiError, type SignupBody } from '@/src/api/client';
 import { getGoogleMapsApiKey } from '@/src/api/config';
 import { deviceTimezone, listTimezones } from '@/src/api/timezones';
@@ -58,7 +58,11 @@ export function AuthScreen() {
 	const [error, setError] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
 
-	const mapsApiKey = useMemo(() => getGoogleMapsApiKey(), []);
+	// The Maps key is HTTP-referrer restricted, which only authorizes web
+	// origins. Native requests carry no referer, so the key would be rejected on
+	// every keystroke; gate autocomplete to web and let the field fall back to a
+	// plain text input elsewhere.
+	const mapsApiKey = useMemo(() => (Platform.OS === 'web' ? getGoogleMapsApiKey() : null), []);
 	const timezoneOptions = useMemo(
 		() => listTimezones().map((zone) => ({ label: zone.replace(/_/g, ' '), value: zone })),
 		[],

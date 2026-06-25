@@ -40,7 +40,9 @@ export function getApiBaseUrl(env: Record<string, string | undefined> = ambientE
  * The Google Maps Platform key used for address autocomplete, or `null` when
  * unset (the address field then degrades to a plain text input). This key is
  * inlined into the client bundle, so it must be HTTP-referrer + API restricted
- * in the Google Cloud console.
+ * in the Google Cloud console. Because that referrer restriction only authorizes
+ * web origins, callers gate autocomplete to web (see `AuthScreen`); native
+ * builds carry no referer and would be rejected.
  */
 export function getGoogleMapsApiKey(
 	env: Record<string, string | undefined> = ambientEnv(),
