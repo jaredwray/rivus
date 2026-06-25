@@ -133,6 +133,14 @@ export const itemListResponseSchema = z
 	})
 	.meta({ id: 'ItemList' });
 
+/** A page of companies (accounts) for the staff company switcher. */
+export const accountListResponseSchema = z
+	.object({
+		data: z.array(accountResponseSchema),
+		meta: paginationMetaSchema,
+	})
+	.meta({ id: 'AccountList' });
+
 /**
  * Billing summary for the account (owner-only). Rivus has no payment provider
  * wired up yet, so this is a placeholder: every account is on the free plan and

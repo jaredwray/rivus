@@ -45,6 +45,8 @@ declare module 'fastify' {
 		authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
 		/** Build an `onRequest` guard allowing only the given roles (run after `authenticate`). */
 		requireRole: (...roles: Role[]) => RoleGuard;
+		/** `onRequest` guard allowing only Rivus staff (run after `authenticate`). */
+		requireStaff: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
 	}
 }
 

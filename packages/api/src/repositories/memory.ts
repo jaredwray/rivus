@@ -22,6 +22,7 @@ import type {
 	AccountRepository,
 	InviteRepository,
 	ItemRepository,
+	ListAccountsOptions,
 	ListItemsOptions,
 	MembershipRepository,
 	NewAccount,
@@ -159,6 +160,25 @@ export class InMemoryAccountRepository implements AccountRepository {
 			}
 		}
 		return null;
+	}
+
+	async list(options: ListAccountsOptions): Promise<{ accounts: Account[]; total: number }> {
+		const needle = options.search?.trim().toLowerCase() ?? '';
+		const matched = [...this.data.accounts.values()]
+			.filter((account) => account.status === 'active')
+			.filter(
+				(account) =>
+					needle === '' ||
+					account.name.toLowerCase().includes(needle) ||
+					account.slug.toLowerCase().includes(needle),
+			)
+			.sort((a, b) => a.name.localeCompare(b.name));
+		const { pageSize } = normalizePagination(options.page, options.pageSize);
+		const skip = pageToSkip(options.page, options.pageSize);
+		return {
+			accounts: matched.slice(skip, skip + pageSize).map((account) => structuredClone(account)),
+			total: matched.length,
+		};
 	}
 
 	async update(id: AccountId, input: UpdateAccount): Promise<Account | null> {

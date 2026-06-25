@@ -31,6 +31,7 @@ import type {
 	AccountRepository,
 	InviteRepository,
 	ItemRepository,
+	ListAccountsOptions,
 	ListItemsOptions,
 	MembershipRepository,
 	NewAccount,
@@ -196,6 +197,29 @@ export class MongoAccountRepository implements AccountRepository {
 	async findBySlug(slug: string): Promise<Account | null> {
 		const doc = await AccountModel.findOne({ slug: slug.trim().toLowerCase() }).exec();
 		return doc ? mapAccount(doc) : null;
+	}
+
+	async list(options: ListAccountsOptions): Promise<{ accounts: Account[]; total: number }> {
+		const { pageSize } = normalizePagination(options.page, options.pageSize);
+		const skip = pageToSkip(options.page, options.pageSize);
+		const needle = options.search?.trim();
+		// Escape regex metacharacters so a search like "a.b" is matched literally, then
+		// match it case-insensitively against either the name or the slug. Only active
+		// accounts are listed — a canceled one can't be entered.
+		const filter = needle
+			? {
+					status: 'active' as const,
+					$or: [
+						{ name: new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+						{ slug: new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+					],
+				}
+			: { status: 'active' as const };
+		const [docs, total] = await Promise.all([
+			AccountModel.find(filter).sort({ name: 1, _id: 1 }).skip(skip).limit(pageSize).exec(),
+			AccountModel.countDocuments(filter).exec(),
+		]);
+		return { accounts: docs.map(mapAccount), total };
 	}
 
 	async update(id: AccountId, input: UpdateAccount): Promise<Account | null> {
