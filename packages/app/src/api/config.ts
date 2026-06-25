@@ -16,11 +16,13 @@ export const DEFAULT_API_URL = 'http://localhost:4000';
  * replacement, so the value is `undefined` in the bundle and the address field
  * silently degrades to a plain text input. Reference each var directly here so
  * the bundler can substitute it; the accessors keep an injectable `env`
- * parameter for hermetic tests. `typeof process` is guarded because `process`
- * can be undefined in some React Native / Expo JS engines.
+ * parameter for hermetic tests. `process` and `process.env` are both guarded:
+ * in some React Native / Expo (or edge) JS engines `process` may be undefined,
+ * or shimmed as an object whose `env` is undefined, either of which would crash
+ * a direct property read.
  */
 function ambientEnv(): Record<string, string | undefined> {
-	if (typeof process === 'undefined') {
+	if (typeof process === 'undefined' || typeof process.env === 'undefined') {
 		return {};
 	}
 	return {
