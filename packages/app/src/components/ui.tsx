@@ -153,7 +153,10 @@ export function GradientButton({
 	style?: StyleProp<ViewStyle>;
 }) {
 	return (
-		<Pressable onPress={onPress} style={({ pressed }) => [pressed && styles.pressed, style]}>
+		<Pressable
+			onPress={onPress}
+			style={({ pressed }) => [styles.gradientBtnWrap, pressed && styles.pressed, style]}
+		>
 			<BrandGradient style={styles.gradientBtn}>
 				{icon ? <Feather name={icon} size={16} color="#fff" /> : null}
 				<Txt style={styles.gradientBtnTxt}>{label}</Txt>
@@ -386,6 +389,11 @@ export const styles = StyleSheet.create({
 	center: {
 		alignItems: 'center',
 		justifyContent: 'center',
+	},
+	// The focusable wrapper carries the same radius as the gradient so the
+	// keyboard focus ring hugs the button's rounded corners.
+	gradientBtnWrap: {
+		borderRadius: radii.lg,
 	},
 	gradientBtn: {
 		flexDirection: 'row',
