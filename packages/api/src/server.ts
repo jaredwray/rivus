@@ -1,7 +1,12 @@
 import closeWithGrace from 'close-with-grace';
 import { buildApp } from './app';
 import { loadConfig } from './config';
-import { connectMongoose, disconnectMongoose, isMongoConnected } from './db/mongoose';
+import {
+	assertDatabaseReady,
+	connectMongoose,
+	disconnectMongoose,
+	isDatabaseReady,
+} from './db/mongoose';
 import {
 	MongoAccountRepository,
 	MongoInviteRepository,
@@ -17,6 +22,11 @@ import { createMailer } from './services/resend-mailer';
 export async function start(): Promise<void> {
 	const config = loadConfig();
 	await connectMongoose(config.MONGODB_URI);
+	// `connect()` only proves the client authenticated. A user that authenticates
+	// but lacks roles on the database fails *every* query with "not authorized", so
+	// verify real access now and fail fast with an actionable log, instead of
+	// booting "healthy" and returning an opaque 500 for every request.
+	await assertDatabaseReady();
 
 	const app = buildApp({
 		config,
@@ -28,7 +38,9 @@ export async function start(): Promise<void> {
 		items: new MongoItemRepository(),
 		verificationCodes: new MongoVerificationCodeRepository(),
 		mailer: createMailer(config),
-		ping: async () => isMongoConnected(),
+		// Real readiness: run an actual command so "connected but unauthorized"
+		// reports unready (503) instead of falsely healthy.
+		ping: isDatabaseReady,
 	});
 
 	if (!config.RESEND_API_KEY) {
