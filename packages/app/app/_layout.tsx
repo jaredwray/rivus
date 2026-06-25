@@ -57,7 +57,7 @@ function isActive(pathname: string, href: string): boolean {
 }
 
 /** Paths that render their own auth screen instead of the dashboard shell. */
-const AUTH_PATHS = ['/login', '/signup'];
+const AUTH_PATHS = ['/login', '/signup', '/accept-invite'];
 
 function isAuthPath(pathname: string): boolean {
 	const normalized = pathname.replace(/\/+$/, '') || '/';
@@ -96,8 +96,8 @@ function Gate() {
 	const onAuthRoute = isAuthPath(pathname);
 
 	if (!session) {
-		// Signed out: /login and /signup render their own screen; every other
-		// path (the root included) falls back to the sign-in screen.
+		// Signed out: /login, /signup and /accept-invite render their own screen;
+		// every other path (the root included) falls back to the sign-in screen.
 		return onAuthRoute ? <Slot /> : <AuthScreen initialMode="signin" />;
 	}
 

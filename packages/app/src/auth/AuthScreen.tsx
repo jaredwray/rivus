@@ -25,7 +25,7 @@ const COPY: Record<Mode, { title: string; subtitle: string; submit: string }> = 
 	},
 	invite: {
 		title: 'Join your team',
-		subtitle: 'Paste the invite code you were sent to join your team.',
+		subtitle: 'Use the invite code you were sent to join your team.',
 		submit: 'Join the team',
 	},
 };
@@ -43,9 +43,14 @@ function messageFor(error: unknown): string {
 type AuthScreenProps = {
 	/** Which form the screen opens on. Each auth route picks its own. */
 	initialMode?: Mode;
+	/** Invite code to pre-fill, supplied by the accept-invite email link. */
+	initialInviteToken?: string;
 };
 
-export function AuthScreen({ initialMode = 'signin' }: AuthScreenProps = {}) {
+export function AuthScreen({
+	initialMode = 'signin',
+	initialInviteToken = '',
+}: AuthScreenProps = {}) {
 	const router = useRouter();
 	const { signUp, signIn, verifyCode, acceptInvite } = useAuth();
 	const [mode, setMode] = useState<Mode>(initialMode);
@@ -58,7 +63,7 @@ export function AuthScreen({ initialMode = 'signin' }: AuthScreenProps = {}) {
 	const [timezone, setTimezone] = useState(() => deviceTimezone());
 	const [name, setName] = useState('');
 	const [email, setEmail] = useState('');
-	const [inviteToken, setInviteToken] = useState('');
+	const [inviteToken, setInviteToken] = useState(initialInviteToken);
 	const [code, setCode] = useState('');
 	const [pendingEmail, setPendingEmail] = useState('');
 
