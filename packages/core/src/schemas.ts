@@ -1,13 +1,44 @@
 import { z } from 'zod';
 
 /**
+ * Free-text fields fail in two ways — left blank, or too long — and Zod's stock
+ * copy for them is terse and leaks the raw constraint ("Too small: expected
+ * string to have >=1 characters"). These helpers say, in plain language, what to
+ * do instead. `requiredText` reuses one message for the missing and the blank
+ * case so the caller is prompted the same way either way.
+ */
+function requiredText(label: string, max: number) {
+	return z
+		.string({ error: `${label} is required.` })
+		.trim()
+		.min(1, { error: `${label} is required.` })
+		.max(max, { error: `${label} must be ${max} characters or fewer.` });
+}
+
+/** An optional, trimmed free-text field, capped so it can't overflow storage. */
+function optionalText(label: string, max: number) {
+	return z
+		.string()
+		.trim()
+		.max(max, { error: `${label} must be ${max} characters or fewer.` });
+}
+
+/**
  * Trim + lowercase before validating so `  Foo@Bar.com ` is accepted. Built from
  * a plain `z.string()` (not `z.preprocess`) so generated OpenAPI/JSON Schema
  * still marks the field as required.
  */
-export const emailSchema = z.string().trim().toLowerCase().pipe(z.email().max(254));
+export const emailSchema = z
+	.string({ error: 'Email address is required.' })
+	.trim()
+	.toLowerCase()
+	.pipe(
+		z
+			.email({ error: 'Enter a valid email address.' })
+			.max(254, { error: 'That email address is too long.' }),
+	);
 
-export const nameSchema = z.string().trim().min(1).max(120);
+export const nameSchema = requiredText('Name', 120);
 
 /**
  * A 6-digit numeric one-time code emailed for passwordless sign-in. Trimmed so
@@ -16,7 +47,7 @@ export const nameSchema = z.string().trim().min(1).max(120);
 export const verificationCodeSchema = z
 	.string()
 	.trim()
-	.regex(/^\d{6}$/, 'Enter the 6-digit code we emailed you');
+	.regex(/^\d{6}$/, { error: 'Enter the 6-digit code we emailed you.' });
 
 export const loginSchema = z.object({
 	email: emailSchema,
@@ -35,22 +66,26 @@ export type VerifyCodeInput = z.infer<typeof verifyCodeSchema>;
 // `Role` itself is the source-of-truth union in `types.ts` (mirrors the
 // `ItemStatus`/`itemStatusSchema` split); here we only need the runtime schema.
 /** Every role a member can hold. */
-export const roleSchema = z.enum(['owner', 'manager', 'team_member']);
+export const roleSchema = z.enum(['owner', 'manager', 'team_member'], {
+	error: 'Choose a valid role.',
+});
 
 /** Roles that can be granted to an invited member (ownership is not invitable). */
-export const assignableRoleSchema = z.enum(['manager', 'team_member']);
+export const assignableRoleSchema = z.enum(['manager', 'team_member'], {
+	error: 'Choose either Manager or Team Member.',
+});
 
-export const businessNameSchema = z.string().trim().min(1).max(160);
-export const phoneSchema = z.string().trim().max(40);
-export const addressSchema = z.string().trim().max(300);
-export const timezoneSchema = z.string().trim().max(64);
+export const businessNameSchema = requiredText('Business name', 160);
+export const phoneSchema = optionalText('Phone number', 40);
+export const addressSchema = optionalText('Address', 300);
+export const timezoneSchema = optionalText('Time zone', 64);
 /** A website URL, or an empty string when none is provided. */
 export const websiteSchema = z
 	.string()
 	.trim()
-	.max(2048)
+	.max(2048, { error: 'That website URL is too long.' })
 	.refine((value) => value === '' || z.url().safeParse(value).success, {
-		message: 'Must be a valid URL',
+		error: 'Enter a valid website URL, like https://example.com.',
 	});
 
 /** The "standard business information" collected when an account is created. */
@@ -89,7 +124,9 @@ export type InviteMemberInput = z.infer<typeof inviteMemberSchema>;
  * directly, no password or extra code required.
  */
 export const acceptInviteSchema = z.object({
-	token: z.string().min(1),
+	token: z
+		.string({ error: 'Enter your invite code.' })
+		.min(1, { error: 'Enter your invite code.' }),
 });
 export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>;
 
@@ -99,11 +136,13 @@ export const updateMemberRoleSchema = z.object({
 });
 export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;
 
-export const itemStatusSchema = z.enum(['active', 'archived']);
+export const itemStatusSchema = z.enum(['active', 'archived'], {
+	error: 'Status must be either active or archived.',
+});
 
 export const createItemSchema = z.object({
 	name: nameSchema,
-	description: z.string().trim().max(2000).default(''),
+	description: optionalText('Description', 2000).default(''),
 	status: itemStatusSchema.default('active'),
 });
 export type CreateItemInput = z.infer<typeof createItemSchema>;
@@ -116,17 +155,22 @@ export type CreateItemInput = z.infer<typeof createItemSchema>;
 export const updateItemSchema = z
 	.object({
 		name: nameSchema.optional(),
-		description: z.string().trim().max(2000).optional(),
+		description: optionalText('Description', 2000).optional(),
 		status: itemStatusSchema.optional(),
 	})
 	.refine((value) => Object.values(value).some((field) => field !== undefined), {
-		message: 'At least one field must be provided',
+		error: 'Provide at least one field to update.',
 	});
 export type UpdateItemInput = z.infer<typeof updateItemSchema>;
 
 /** Query string for list endpoints; coerces `?page=2&pageSize=50`. */
 export const paginationQuerySchema = z.object({
-	page: z.coerce.number().int().min(1).default(1),
-	pageSize: z.coerce.number().int().min(1).max(100).default(20),
+	page: z.coerce.number().int().min(1, { error: 'Page must be 1 or greater.' }).default(1),
+	pageSize: z.coerce
+		.number()
+		.int()
+		.min(1, { error: 'Page size must be 1 or greater.' })
+		.max(100, { error: 'Page size must be 100 or fewer.' })
+		.default(20),
 });
 export type PaginationQuery = z.infer<typeof paginationQuerySchema>;

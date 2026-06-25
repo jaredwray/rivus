@@ -1,6 +1,6 @@
 import { faker } from '@faker-js/faker';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, createApiClient } from './client';
+import { ApiError, createApiClient, ValidationError } from './client';
 
 /** Build a `Response`-like object the client's `text()`/`ok` logic understands. */
 function jsonResponse(body: unknown, init: { status?: number } = {}): Response {
@@ -130,6 +130,25 @@ describe('createApiClient', () => {
 					business: { businessName: '' },
 				}),
 			).rejects.toThrow();
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it('surfaces a friendly ValidationError for a bad field, not a raw JSON dump', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client
+				.signup({
+					email: 'owner@business.com',
+					name: 'Marcus Thompson',
+					business: { businessName: 'Acme', website: 'not a url' },
+				})
+				.catch((caught) => caught);
+
+			expect(error).toBeInstanceOf(ValidationError);
+			expect(error.message).toBe('Enter a valid website URL, like https://example.com.');
+			// Regression: the old path let `ZodError.message` — a pretty-printed JSON
+			// array — land in the UI verbatim. A friendly message is a single line.
+			expect(error.message).not.toContain('[');
+			expect(error.issues[0]?.path).toEqual(['business', 'website']);
 			expect(fetchMock).not.toHaveBeenCalled();
 		});
 	});

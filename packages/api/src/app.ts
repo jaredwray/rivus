@@ -42,9 +42,13 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
 	app.setErrorHandler((error: FastifyError, request, reply) => {
 		if (hasZodFastifySchemaValidationErrors(error)) {
+			// Lead with the first field's friendly message (the schemas spell these out
+			// in plain language) so a client that only shows `message` still says
+			// something useful; `details` keeps the full per-field breakdown.
+			const [firstIssue] = error.validation;
 			return reply.status(400).send({
 				error: 'Bad Request',
-				message: 'Request validation failed',
+				message: firstIssue?.message ?? 'Request validation failed',
 				statusCode: 400,
 				details: error.validation,
 			});

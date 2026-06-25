@@ -55,6 +55,38 @@ export class ApiError extends Error {
 	}
 }
 
+/**
+ * Thrown when a request body fails client-side validation before any network
+ * call. Its `message` is a single, human-readable line (the first issue), so UI
+ * that surfaces `error.message` shows friendly text — not the raw JSON array
+ * that `ZodError.message` serializes to. The full field-level `issues` are kept
+ * for callers that want to highlight individual inputs.
+ */
+export class ValidationError extends Error {
+	readonly issues: z.ZodError['issues'];
+
+	constructor(message: string, issues: z.ZodError['issues']) {
+		super(message);
+		this.name = 'ValidationError';
+		this.issues = issues;
+	}
+}
+
+/**
+ * Validate request input, raising a friendly {@link ValidationError} on failure.
+ * Wraps `schema.safeParse` so a bad field never escapes as a `ZodError` (whose
+ * `.message` is a JSON dump that would land verbatim in the UI).
+ */
+function parseInput<S extends z.ZodType>(schema: S, input: unknown): z.infer<S> {
+	const result = schema.safeParse(input);
+	if (!result.success) {
+		const message =
+			result.error.issues[0]?.message ?? 'Please check the details you entered and try again.';
+		throw new ValidationError(message, result.error.issues);
+	}
+	return result.data;
+}
+
 // --- Response schemas (mirror @rivus/api http-schemas; app depends on core only).
 
 const userResponseSchema = z.object({
@@ -240,22 +272,22 @@ export function createApiClient(baseUrl: string, fetchImpl: FetchLike = fetch): 
 		// `async` so input-validation errors surface as a rejected promise
 		// (the expected async contract) rather than a synchronous throw.
 		async signup(input: SignupBody) {
-			const payload = signupSchema.parse(input);
+			const payload = parseInput(signupSchema, input);
 			return request('/v1/auth/signup', codeSentResponseSchema, jsonInit('POST', payload));
 		},
 
 		async login(input: LoginInput) {
-			const payload = loginSchema.parse(input);
+			const payload = parseInput(loginSchema, input);
 			return request('/v1/auth/login', codeSentResponseSchema, jsonInit('POST', payload));
 		},
 
 		async verifyCode(input: VerifyCodeInput) {
-			const payload = verifyCodeSchema.parse(input);
+			const payload = parseInput(verifyCodeSchema, input);
 			return request('/v1/auth/verify', authResponseSchema, jsonInit('POST', payload));
 		},
 
 		async acceptInvite(input: AcceptInviteInput) {
-			const payload = acceptInviteSchema.parse(input);
+			const payload = parseInput(acceptInviteSchema, input);
 			return request('/v1/auth/accept-invite', authResponseSchema, jsonInit('POST', payload));
 		},
 
@@ -274,12 +306,12 @@ export function createApiClient(baseUrl: string, fetchImpl: FetchLike = fetch): 
 		},
 
 		async inviteMember(token: string, input: InviteMemberInput) {
-			const payload = inviteMemberSchema.parse(input);
+			const payload = parseInput(inviteMemberSchema, input);
 			return request('/v1/members/invites', inviteResponseSchema, jsonInit('POST', payload, token));
 		},
 
 		async listItems(token: string, query?: Partial<PaginationQuery>) {
-			const { page, pageSize } = paginationQuerySchema.parse(query ?? {});
+			const { page, pageSize } = parseInput(paginationQuerySchema, query ?? {});
 			const search = new URLSearchParams({
 				page: String(page),
 				pageSize: String(pageSize),
