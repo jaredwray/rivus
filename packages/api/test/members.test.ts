@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Mailer } from '../src/services/email';
 import { authHeader, buildTestApp, RecordingMailer, signupOwner } from './helpers';
 
 describe('members', () => {
@@ -29,7 +28,7 @@ describe('members', () => {
 		const accepted = await app.inject({
 			method: 'POST',
 			url: '/v1/auth/accept-invite',
-			payload: { token: inviteToken, password: 'memberpass123' },
+			payload: { token: inviteToken },
 		});
 		const body = accepted.json();
 		return { token: body.token as string, userId: body.user.id as string };
@@ -405,12 +404,14 @@ describe('member invitations send email', () => {
 	});
 
 	it('still creates the invite when email delivery fails', async () => {
-		const failingMailer: Mailer = {
-			async sendInviteEmail() {
+		// Records verification codes (so signupOwner still works) but fails to deliver
+		// the invitation email.
+		class FailingInviteMailer extends RecordingMailer {
+			override async sendInviteEmail(): Promise<void> {
 				throw new Error('resend is down');
-			},
-		};
-		const app = await buildTestApp({ mailer: failingMailer });
+			}
+		}
+		const app = await buildTestApp({ mailer: new FailingInviteMailer() });
 		try {
 			const owner = await signupOwner(app);
 			const response = await app.inject({

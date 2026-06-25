@@ -30,8 +30,14 @@ Roles, in ascending privilege:
   The last remaining owner can't be removed or demoted.
 
 Members are added via tokenized invites (`POST /v1/members/invites` →
-`POST /v1/auth/accept-invite`). Email delivery is not wired up yet, so the invite
-token is returned in the response for the inviter to share.
+`POST /v1/auth/accept-invite`); the invite token is emailed to the invitee and
+also returned to the inviter.
+
+Authentication is **passwordless**. Signup and login email a 6-digit one-time
+code (`POST /v1/auth/signup` and `/v1/auth/login` return `202 { status:
+"code_sent" }`); `POST /v1/auth/verify` exchanges the code for a JWT — and, for a
+signup, creates the account on first verification. Codes are single-use, expire
+in 10 minutes, and lock after 5 wrong attempts.
 
 ## Endpoints
 
@@ -40,8 +46,9 @@ token is returned in the response for the inviter to share.
 | GET    | `/health`                       | —              | Liveness probe                      |
 | GET    | `/ready`                        | —              | Readiness probe                     |
 | GET    | `/docs`                         | —              | Swagger UI (non-prod)               |
-| POST   | `/v1/auth/signup`               | —              | Create a business account + owner   |
-| POST   | `/v1/auth/login`                | —              | Exchange creds for a JWT            |
+| POST   | `/v1/auth/signup`               | —              | Begin signup; emails a one-time code |
+| POST   | `/v1/auth/login`                | —              | Request a one-time sign-in code     |
+| POST   | `/v1/auth/verify`               | —              | Exchange a code for a JWT           |
 | POST   | `/v1/auth/accept-invite`        | —              | Accept an invite and join an account |
 | GET    | `/v1/auth/me`                   | JWT            | Current user, account, and role     |
 | GET    | `/v1/members`                   | JWT            | List members + pending invites      |
@@ -69,13 +76,14 @@ comes from environment variables — see `.env.example`.
 
 ### Email (Resend)
 
-Invitation emails are delivered through [Resend](https://resend.com). Set:
+Invitation **and one-time sign-in codes** are delivered through
+[Resend](https://resend.com). Set:
 
-| Variable         | Default                    | Notes                                                       |
-| ---------------- | -------------------------- | ----------------------------------------------------------- |
-| `RESEND_API_KEY` | _(unset)_                  | When unset, the API runs but invitation emails aren't sent. |
-| `EMAIL_FROM`     | `Rivus <hello@rivus.ai>`   | Sender address; its domain must be verified in Resend.      |
-| `APP_URL`        | `https://app.rivus.ai`     | Base URL used to build the accept-invitation link.          |
+| Variable         | Default                    | Notes                                                                   |
+| ---------------- | -------------------------- | ----------------------------------------------------------------------- |
+| `RESEND_API_KEY` | _(unset)_                  | **Required in production** — auth is passwordless, so without it the API refuses to boot. In dev it's optional (codes just aren't delivered). |
+| `EMAIL_FROM`     | `Rivus <hello@rivus.ai>`   | Sender address; its domain must be verified in Resend.                  |
+| `APP_URL`        | `https://app.rivus.ai`     | Base URL used to build the accept-invitation / sign-in links.           |
 
 The API calls Resend's HTTP API directly (no SDK) so the transport stays small
 and is testable by injecting a fake `fetch`.

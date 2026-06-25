@@ -8,6 +8,7 @@ import type {
 	MembershipRepository,
 	OnboardingRepository,
 	UserRepository,
+	VerificationCodeRepository,
 } from './repositories/types';
 import type { Mailer } from './services/email';
 
@@ -20,7 +21,9 @@ export interface AppDeps {
 	invites: InviteRepository;
 	onboarding: OnboardingRepository;
 	items: ItemRepository;
-	/** Sends transactional email (invitations). */
+	/** Stores one-time sign-in codes for passwordless auth. */
+	verificationCodes: VerificationCodeRepository;
+	/** Sends transactional email (invitations and sign-in codes). */
 	mailer: Mailer;
 	/** Readiness check for downstream dependencies (e.g. the database). */
 	ping: () => Promise<boolean>;

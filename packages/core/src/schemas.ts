@@ -7,22 +7,28 @@ import { z } from 'zod';
  */
 export const emailSchema = z.string().trim().toLowerCase().pipe(z.email().max(254));
 
-export const passwordSchema = z.string().min(8).max(200);
-
 export const nameSchema = z.string().trim().min(1).max(120);
 
-export const registerSchema = z.object({
-	email: emailSchema,
-	password: passwordSchema,
-	name: nameSchema,
-});
-export type RegisterInput = z.infer<typeof registerSchema>;
+/**
+ * A 6-digit numeric one-time code emailed for passwordless sign-in. Trimmed so
+ * pasted codes with stray whitespace still validate.
+ */
+export const verificationCodeSchema = z
+	.string()
+	.trim()
+	.regex(/^\d{6}$/, 'Enter the 6-digit code we emailed you');
 
 export const loginSchema = z.object({
 	email: emailSchema,
-	password: passwordSchema,
 });
 export type LoginInput = z.infer<typeof loginSchema>;
+
+/** Verify a one-time code (login or signup) and exchange it for a session. */
+export const verifyCodeSchema = z.object({
+	email: emailSchema,
+	code: verificationCodeSchema,
+});
+export type VerifyCodeInput = z.infer<typeof verifyCodeSchema>;
 
 // --- Accounts, roles & business information -----------------------------------
 
@@ -58,11 +64,13 @@ export const accountBusinessSchema = z.object({
 export type AccountBusinessInput = z.infer<typeof accountBusinessSchema>;
 
 /**
- * Sign up: create the owner's user, the business account, and the owner
- * membership in one step. `name` is the person; `business.businessName` is the
- * company.
+ * Sign up: capture the owner's name + email and the business details. Sign-in is
+ * passwordless — submitting this emails a one-time code that `verifyCode`
+ * exchanges for a session (and, on first use, creates the account).
  */
-export const signupSchema = registerSchema.extend({
+export const signupSchema = z.object({
+	email: emailSchema,
+	name: nameSchema,
 	business: accountBusinessSchema,
 });
 export type SignupInput = z.infer<typeof signupSchema>;
@@ -75,10 +83,13 @@ export const inviteMemberSchema = z.object({
 });
 export type InviteMemberInput = z.infer<typeof inviteMemberSchema>;
 
-/** Accept an invitation: the invitee sets their password using the token. */
+/**
+ * Accept an invitation. The invite token was emailed to the invitee, so it
+ * already proves they control the address — presenting it signs them in
+ * directly, no password or extra code required.
+ */
 export const acceptInviteSchema = z.object({
 	token: z.string().min(1),
-	password: passwordSchema,
 });
 export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>;
 

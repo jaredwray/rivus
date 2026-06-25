@@ -1,6 +1,8 @@
 import { Feather } from '@expo/vector-icons';
-import type { ComponentProps, ReactNode } from 'react';
+import { type ComponentProps, type ReactNode, useMemo, useState } from 'react';
 import {
+	FlatList,
+	Modal,
 	Pressable,
 	type StyleProp,
 	StyleSheet,
@@ -176,6 +178,113 @@ export function TextField({
 	);
 }
 
+export interface SelectOption {
+	label: string;
+	value: string;
+}
+
+/**
+ * A labelled dropdown: a field-styled trigger that opens a modal list. Optional
+ * search filters long lists (e.g. the IANA timezones). Cross-platform — uses RN
+ * primitives so it works on web and native.
+ */
+export function Select({
+	label,
+	value,
+	options,
+	onSelect,
+	placeholder = 'Select…',
+	searchable = false,
+	hint,
+}: {
+	label: string;
+	value: string;
+	options: SelectOption[];
+	onSelect: (value: string) => void;
+	placeholder?: string;
+	searchable?: boolean;
+	hint?: string;
+}) {
+	const [open, setOpen] = useState(false);
+	const [query, setQuery] = useState('');
+
+	const selected = options.find((option) => option.value === value);
+	const filtered = useMemo(() => {
+		const needle = query.trim().toLowerCase();
+		if (!needle) {
+			return options;
+		}
+		return options.filter((option) => option.label.toLowerCase().includes(needle));
+	}, [options, query]);
+
+	function choose(next: string) {
+		onSelect(next);
+		setOpen(false);
+		setQuery('');
+	}
+
+	return (
+		<View style={styles.fieldWrap}>
+			<Txt style={styles.fieldLabel}>{label}</Txt>
+			<Pressable
+				onPress={() => setOpen(true)}
+				style={[styles.input, styles.selectTrigger]}
+				accessibilityRole="button"
+			>
+				<Txt style={selected ? styles.selectValue : styles.selectPlaceholder}>
+					{selected ? selected.label : placeholder}
+				</Txt>
+				<Feather name="chevron-down" size={16} color={colors.textMuted} />
+			</Pressable>
+			{hint ? <Txt style={styles.fieldHint}>{hint}</Txt> : null}
+
+			<Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+				<Pressable style={styles.selectBackdrop} onPress={() => setOpen(false)}>
+					<Pressable style={styles.selectSheet} onPress={() => {}}>
+						<View style={styles.selectSheetHeader}>
+							<Txt style={styles.selectSheetTitle}>{label}</Txt>
+							<Pressable onPress={() => setOpen(false)} accessibilityRole="button">
+								<Feather name="x" size={18} color={colors.textMuted} />
+							</Pressable>
+						</View>
+						{searchable ? (
+							<TextInput
+								placeholder="Search…"
+								placeholderTextColor={colors.textHint}
+								value={query}
+								onChangeText={setQuery}
+								autoCorrect={false}
+								autoCapitalize="none"
+								style={[styles.input, styles.selectSearch]}
+							/>
+						) : null}
+						<FlatList
+							data={filtered}
+							keyExtractor={(option) => option.value}
+							keyboardShouldPersistTaps="handled"
+							style={styles.selectList}
+							renderItem={({ item }) => {
+								const active = item.value === value;
+								return (
+									<Pressable
+										onPress={() => choose(item.value)}
+										style={[styles.selectRow, active && styles.selectRowActive]}
+									>
+										<Txt style={[styles.selectRowTxt, active && styles.selectRowTxtActive]}>
+											{item.label}
+										</Txt>
+										{active ? <Feather name="check" size={16} color={colors.brandPurple} /> : null}
+									</Pressable>
+								);
+							}}
+						/>
+					</Pressable>
+				</Pressable>
+			</Modal>
+		</View>
+	);
+}
+
 /** A segmented single-choice control (e.g. picking a role). */
 export function Segmented<T extends string>({
 	options,
@@ -316,6 +425,71 @@ export const styles = StyleSheet.create({
 		borderRadius: radii.md,
 		paddingVertical: 11,
 		paddingHorizontal: 13,
+	},
+	selectTrigger: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+	},
+	selectValue: {
+		fontSize: 14,
+		color: colors.text,
+	},
+	selectPlaceholder: {
+		fontSize: 14,
+		color: colors.textHint,
+	},
+	selectBackdrop: {
+		flex: 1,
+		backgroundColor: 'rgba(15,15,25,0.45)',
+		justifyContent: 'center',
+		alignItems: 'center',
+		padding: 20,
+	},
+	selectSheet: {
+		width: '100%',
+		maxWidth: 420,
+		maxHeight: '70%',
+		backgroundColor: colors.surface,
+		borderRadius: radii.lg,
+		padding: 14,
+		gap: 10,
+	},
+	selectSheetHeader: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+	},
+	selectSheetTitle: {
+		fontFamily: font.semibold,
+		fontSize: 14,
+		color: colors.text,
+	},
+	selectSearch: {
+		marginBottom: 2,
+	},
+	selectList: {
+		flexGrow: 0,
+	},
+	selectRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		paddingVertical: 11,
+		paddingHorizontal: 12,
+		borderRadius: radii.sm,
+	},
+	selectRowActive: {
+		backgroundColor: colors.field,
+	},
+	selectRowTxt: {
+		fontFamily: font.regular,
+		fontSize: 13.5,
+		color: colors.textSub,
+	},
+	selectRowTxtActive: {
+		fontFamily: font.semibold,
+		color: colors.text,
 	},
 	segmented: {
 		flexDirection: 'row',

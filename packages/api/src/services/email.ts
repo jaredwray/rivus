@@ -16,6 +16,16 @@ export interface InviteEmail {
 	acceptUrl: string;
 }
 
+/** A one-time sign-in code emailed for passwordless signup or login. */
+export interface VerificationEmail {
+	/** Recipient address. */
+	to: string;
+	/** The 6-digit code (plaintext — this email is the only place it appears). */
+	code: string;
+	/** Whether the code finishes a new signup or signs in an existing user. */
+	purpose: 'login' | 'signup';
+}
+
 /** A fully rendered email body — what a transport actually sends. */
 export interface RenderedEmail {
 	subject: string;
@@ -26,6 +36,7 @@ export interface RenderedEmail {
 /** Delivers transactional email. Implementations reject on delivery failure. */
 export interface Mailer {
 	sendInviteEmail(email: InviteEmail): Promise<void>;
+	sendVerificationCode(email: VerificationEmail): Promise<void>;
 }
 
 /** Human-readable labels for the assignable roles. */
@@ -91,12 +102,49 @@ export function renderInviteEmail(email: InviteEmail): RenderedEmail {
 	return { subject, html, text };
 }
 
+/** Render a one-time sign-in code into subject + HTML + plain-text bodies. */
+export function renderVerificationEmail(email: VerificationEmail): RenderedEmail {
+	const lead =
+		email.purpose === 'signup'
+			? 'Use this code to finish creating your Rivus account:'
+			: 'Use this code to sign in to Rivus:';
+	const subject = `Your Rivus verification code is ${email.code}`;
+
+	const text = [
+		lead,
+		'',
+		email.code,
+		'',
+		'This code expires in 10 minutes. If you did not request it, you can ignore this email.',
+	].join('\n');
+
+	// The code is generated server-side (digits only), so it needs no escaping;
+	// there are no user-controlled values in this template.
+	const html = [
+		'<!doctype html>',
+		'<html lang="en">',
+		'<body style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: #111;">',
+		`<p>${lead}</p>`,
+		`<p style="font-size: 32px; font-weight: 700; letter-spacing: 6px; margin: 16px 0;">${email.code}</p>`,
+		'<p style="color: #888; font-size: 12px;">This code expires in 10 minutes. ' +
+			'If you did not request it, you can ignore this email.</p>',
+		'</body>',
+		'</html>',
+	].join('\n');
+
+	return { subject, html, text };
+}
+
 /**
  * A mailer that delivers nothing — used when `RESEND_API_KEY` is unset so the API
  * still runs in development and tests without attempting real delivery.
  */
 export class NoopMailer implements Mailer {
 	async sendInviteEmail(_email: InviteEmail): Promise<void> {
+		// Intentionally does nothing.
+	}
+
+	async sendVerificationCode(_email: VerificationEmail): Promise<void> {
 		// Intentionally does nothing.
 	}
 }

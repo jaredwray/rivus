@@ -5,6 +5,8 @@ import {
 	type InviteEmail,
 	NoopMailer,
 	renderInviteEmail,
+	renderVerificationEmail,
+	type VerificationEmail,
 } from '../src/services/email';
 import { createMailer, type FetchLike, ResendMailer } from '../src/services/resend-mailer';
 
@@ -71,9 +73,30 @@ describe('renderInviteEmail', () => {
 	});
 });
 
+describe('renderVerificationEmail', () => {
+	const code: VerificationEmail = { to: 'a@b.com', code: '123456', purpose: 'login' };
+
+	it('puts the code in the subject and both bodies', () => {
+		const { subject, html, text } = renderVerificationEmail(code);
+		expect(subject).toContain('123456');
+		expect(html).toContain('123456');
+		expect(text).toContain('123456');
+		expect(text).toContain('sign in');
+	});
+
+	it('uses signup wording for a signup code', () => {
+		const { text } = renderVerificationEmail({ ...code, purpose: 'signup' });
+		expect(text).toContain('finish creating your Rivus account');
+	});
+});
+
 describe('NoopMailer', () => {
-	it('resolves without doing anything', async () => {
-		await expect(new NoopMailer().sendInviteEmail(sampleInvite)).resolves.toBeUndefined();
+	it('resolves both send methods without doing anything', async () => {
+		const mailer = new NoopMailer();
+		await expect(mailer.sendInviteEmail(sampleInvite)).resolves.toBeUndefined();
+		await expect(
+			mailer.sendVerificationCode({ to: 'a@b.com', code: '123456', purpose: 'login' }),
+		).resolves.toBeUndefined();
 	});
 });
 
@@ -109,6 +132,26 @@ describe('ResendMailer', () => {
 		});
 		expect(sent.html).toContain('Accept invitation');
 		expect(sent.text).toContain('Acme Co');
+	});
+
+	it('POSTs a rendered verification code to the Resend API', async () => {
+		const fetchImpl = vi.fn<FetchLike>().mockResolvedValue({
+			ok: true,
+			status: 200,
+			text: async () => '{"id":"email_2"}',
+		});
+		const mailer = new ResendMailer({ apiKey: 're_k', from: 'Rivus <hello@rivus.ai>', fetchImpl });
+
+		await mailer.sendVerificationCode({ to: 'a@b.com', code: '424242', purpose: 'signup' });
+
+		const [, init] = fetchImpl.mock.calls[0] as [
+			string,
+			{ method: string; headers: Record<string, string>; body: string },
+		];
+		const sent = JSON.parse(init.body);
+		expect(sent).toMatchObject({ from: 'Rivus <hello@rivus.ai>', to: 'a@b.com' });
+		expect(sent.subject).toContain('424242');
+		expect(sent.text).toContain('424242');
 	});
 
 	it('throws with the response detail when Resend rejects the email', async () => {

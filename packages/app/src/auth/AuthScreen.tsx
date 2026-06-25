@@ -1,11 +1,15 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { ApiError, type SignupBody } from '@/src/api/client';
-import { GradientButton, RivusBadge, TextField, Txt } from '@/src/components/ui';
+import { getGoogleMapsApiKey } from '@/src/api/config';
+import { deviceTimezone, listTimezones } from '@/src/api/timezones';
+import { AddressAutocomplete } from '@/src/components/AddressAutocomplete';
+import { GradientButton, RivusBadge, Select, TextField, Txt } from '@/src/components/ui';
 import { colors, font, radii } from '@/src/theme/tokens';
 import { useAuth } from './AuthContext';
 
 type Mode = 'signup' | 'signin' | 'invite';
+type Step = 'form' | 'code';
 
 const COPY: Record<Mode, { title: string; subtitle: string; submit: string }> = {
 	signup: {
@@ -15,12 +19,12 @@ const COPY: Record<Mode, { title: string; subtitle: string; submit: string }> = 
 	},
 	signin: {
 		title: 'Welcome back',
-		subtitle: 'Sign in to your Rivus account.',
-		submit: 'Sign in',
+		subtitle: 'Enter your email and we’ll send you a sign-in code.',
+		submit: 'Send code',
 	},
 	invite: {
 		title: 'Join your team',
-		subtitle: 'Paste the invite code you were sent and pick a password.',
+		subtitle: 'Paste the invite code you were sent to join your team.',
 		submit: 'Join the team',
 	},
 };
@@ -36,50 +40,94 @@ function messageFor(error: unknown): string {
 }
 
 export function AuthScreen() {
-	const { signUp, signIn, acceptInvite } = useAuth();
+	const { signUp, signIn, verifyCode, acceptInvite } = useAuth();
 	const [mode, setMode] = useState<Mode>('signup');
+	const [step, setStep] = useState<Step>('form');
 
 	const [businessName, setBusinessName] = useState('');
 	const [phone, setPhone] = useState('');
 	const [address, setAddress] = useState('');
 	const [website, setWebsite] = useState('');
-	const [timezone, setTimezone] = useState('');
+	const [timezone, setTimezone] = useState(() => deviceTimezone());
 	const [name, setName] = useState('');
 	const [email, setEmail] = useState('');
-	const [password, setPassword] = useState('');
 	const [inviteToken, setInviteToken] = useState('');
+	const [code, setCode] = useState('');
+	const [pendingEmail, setPendingEmail] = useState('');
 
 	const [error, setError] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
 
+	const mapsApiKey = useMemo(() => getGoogleMapsApiKey(), []);
+	const timezoneOptions = useMemo(
+		() => listTimezones().map((zone) => ({ label: zone.replace(/_/g, ' '), value: zone })),
+		[],
+	);
+
 	function switchMode(next: Mode) {
 		setMode(next);
+		setStep('form');
 		setError(null);
+		setCode('');
 	}
 
-	async function onSubmit() {
-		if (submitting) {
-			return;
+	function buildBusiness(): SignupBody['business'] {
+		const business: SignupBody['business'] = { businessName: businessName.trim() };
+		if (phone.trim()) business.phone = phone.trim();
+		if (address.trim()) business.address = address.trim();
+		if (website.trim()) business.website = website.trim();
+		if (timezone.trim()) business.timezone = timezone.trim();
+		return business;
+	}
+
+	/** Send (or resend) the one-time code for signup / signin. */
+	async function sendCode() {
+		if (mode === 'signup') {
+			await signUp({ name: name.trim(), email: email.trim(), business: buildBusiness() });
+		} else {
+			await signIn({ email: email.trim() });
 		}
+	}
+
+	async function onSubmitForm() {
+		if (submitting) return;
 		setError(null);
 		setSubmitting(true);
 		try {
-			if (mode === 'signup') {
-				const business: SignupBody['business'] = { businessName: businessName.trim() };
-				if (phone.trim()) business.phone = phone.trim();
-				if (address.trim()) business.address = address.trim();
-				if (website.trim()) business.website = website.trim();
-				if (timezone.trim()) business.timezone = timezone.trim();
-				await signUp({ name: name.trim(), email: email.trim(), password, business });
-			} else if (mode === 'signin') {
-				await signIn({ email: email.trim(), password });
+			if (mode === 'invite') {
+				await acceptInvite(inviteToken.trim());
 			} else {
-				await acceptInvite(inviteToken.trim(), password);
+				await sendCode();
+				setPendingEmail(email.trim());
+				setStep('code');
 			}
 		} catch (caught) {
 			setError(messageFor(caught));
 		} finally {
 			setSubmitting(false);
+		}
+	}
+
+	async function onSubmitCode() {
+		if (submitting) return;
+		setError(null);
+		setSubmitting(true);
+		try {
+			await verifyCode({ email: pendingEmail, code: code.trim() });
+			// On success the provider sets the session and this screen unmounts.
+		} catch (caught) {
+			setError(messageFor(caught));
+		} finally {
+			setSubmitting(false);
+		}
+	}
+
+	async function onResend() {
+		setError(null);
+		try {
+			await sendCode();
+		} catch (caught) {
+			setError(messageFor(caught));
 		}
 	}
 
@@ -94,122 +142,163 @@ export function AuthScreen() {
 			>
 				<View style={styles.card}>
 					<RivusBadge size={46} />
-					<Txt style={styles.title}>{copy.title}</Txt>
-					<Txt style={styles.subtitle}>{copy.subtitle}</Txt>
 
-					<View style={styles.form}>
-						{mode === 'signup' ? (
-							<>
-								<TextField
-									label="Business name"
-									value={businessName}
-									onChangeText={setBusinessName}
-									placeholder="Cascade Plumbing & Heating"
-									autoCapitalize="words"
-								/>
-								<TextField
-									label="Your name"
-									value={name}
-									onChangeText={setName}
-									placeholder="Marcus Thompson"
-									autoCapitalize="words"
-								/>
-							</>
-						) : null}
+					{step === 'code' ? (
+						<>
+							<Txt style={styles.title}>Enter your code</Txt>
+							<Txt style={styles.subtitle}>
+								We emailed a 6-digit code to {pendingEmail}. It expires in 10 minutes.
+							</Txt>
 
-						{mode !== 'invite' ? (
-							<TextField
-								label="Email"
-								value={email}
-								onChangeText={setEmail}
-								placeholder="you@business.com"
-								autoCapitalize="none"
-								autoComplete="email"
-								keyboardType="email-address"
-							/>
-						) : null}
-
-						{mode === 'invite' ? (
-							<TextField
-								label="Invite code"
-								value={inviteToken}
-								onChangeText={setInviteToken}
-								placeholder="Paste your invite code"
-								autoCapitalize="none"
-							/>
-						) : null}
-
-						<TextField
-							label="Password"
-							value={password}
-							onChangeText={setPassword}
-							placeholder="At least 8 characters"
-							secureTextEntry
-							autoCapitalize="none"
-						/>
-
-						{mode === 'signup' ? (
-							<>
-								<Txt style={styles.sectionLabel}>Business details (optional)</Txt>
+							<View style={styles.form}>
 								<TextField
-									label="Phone"
-									value={phone}
-									onChangeText={setPhone}
-									placeholder="+1 (206) 555-0100"
-									keyboardType="phone-pad"
+									label="Verification code"
+									value={code}
+									onChangeText={(next) => setCode(next.replace(/\D/g, '').slice(0, 6))}
+									placeholder="123456"
+									keyboardType="number-pad"
+									autoComplete="one-time-code"
+									textContentType="oneTimeCode"
+									maxLength={6}
+									style={styles.codeInput}
 								/>
-								<TextField
-									label="Address"
-									value={address}
-									onChangeText={setAddress}
-									placeholder="123 Main St, Seattle, WA"
-								/>
-								<TextField
-									label="Website"
-									value={website}
-									onChangeText={setWebsite}
-									placeholder="https://yourbusiness.com"
-									autoCapitalize="none"
-									keyboardType="url"
-								/>
-								<TextField
-									label="Time zone"
-									value={timezone}
-									onChangeText={setTimezone}
-									placeholder="America/Los_Angeles"
-									autoCapitalize="none"
-									hint="Defaults to UTC if left blank."
-								/>
-							</>
-						) : null}
 
-						{error ? (
-							<View style={styles.errorBox}>
-								<Txt style={styles.errorTxt}>{error}</Txt>
+								{error ? (
+									<View style={styles.errorBox}>
+										<Txt style={styles.errorTxt}>{error}</Txt>
+									</View>
+								) : null}
+
+								<GradientButton
+									label={submitting ? 'Verifying…' : 'Verify & continue'}
+									icon="arrow-right"
+									onPress={onSubmitCode}
+								/>
 							</View>
-						) : null}
 
-						<GradientButton
-							label={submitting ? 'Please wait…' : copy.submit}
-							icon="arrow-right"
-							onPress={onSubmit}
-						/>
-					</View>
+							<View style={styles.links}>
+								<Link label="Resend code" onPress={onResend} />
+								<Link label="Use a different email" onPress={() => switchMode(mode)} />
+							</View>
+						</>
+					) : (
+						<>
+							<Txt style={styles.title}>{copy.title}</Txt>
+							<Txt style={styles.subtitle}>{copy.subtitle}</Txt>
 
-					<View style={styles.links}>
-						{mode !== 'signin' ? (
-							<Link label="Already have an account? Sign in" onPress={() => switchMode('signin')} />
-						) : null}
-						{mode !== 'signup' ? (
-							<Link
-								label="New here? Create a business account"
-								onPress={() => switchMode('signup')}
-							/>
-						) : null}
-						{mode !== 'invite' ? (
-							<Link label="Have an invite code? Join a team" onPress={() => switchMode('invite')} />
-						) : null}
-					</View>
+							<View style={styles.form}>
+								{mode === 'signup' ? (
+									<>
+										<TextField
+											label="Business name"
+											value={businessName}
+											onChangeText={setBusinessName}
+											placeholder="Cascade Plumbing & Heating"
+											autoCapitalize="words"
+										/>
+										<TextField
+											label="Your name"
+											value={name}
+											onChangeText={setName}
+											placeholder="Marcus Thompson"
+											autoCapitalize="words"
+										/>
+									</>
+								) : null}
+
+								{mode !== 'invite' ? (
+									<TextField
+										label="Email"
+										value={email}
+										onChangeText={setEmail}
+										placeholder="you@business.com"
+										autoCapitalize="none"
+										autoComplete="email"
+										keyboardType="email-address"
+									/>
+								) : null}
+
+								{mode === 'invite' ? (
+									<TextField
+										label="Invite code"
+										value={inviteToken}
+										onChangeText={setInviteToken}
+										placeholder="Paste your invite code"
+										autoCapitalize="none"
+									/>
+								) : null}
+
+								{mode === 'signup' ? (
+									<>
+										<Txt style={styles.sectionLabel}>Business details (optional)</Txt>
+										<TextField
+											label="Phone"
+											value={phone}
+											onChangeText={setPhone}
+											placeholder="+1 (206) 555-0100"
+											keyboardType="phone-pad"
+										/>
+										<AddressAutocomplete
+											label="Address"
+											value={address}
+											onChangeText={setAddress}
+											placeholder="Start typing your address…"
+											apiKey={mapsApiKey}
+										/>
+										<TextField
+											label="Website"
+											value={website}
+											onChangeText={setWebsite}
+											placeholder="https://yourbusiness.com"
+											autoCapitalize="none"
+											keyboardType="url"
+										/>
+										<Select
+											label="Time zone"
+											value={timezone}
+											onSelect={setTimezone}
+											options={timezoneOptions}
+											searchable
+											hint="Defaulted from your device — change it if needed."
+										/>
+									</>
+								) : null}
+
+								{error ? (
+									<View style={styles.errorBox}>
+										<Txt style={styles.errorTxt}>{error}</Txt>
+									</View>
+								) : null}
+
+								<GradientButton
+									label={submitting ? 'Please wait…' : copy.submit}
+									icon="arrow-right"
+									onPress={onSubmitForm}
+								/>
+							</View>
+
+							<View style={styles.links}>
+								{mode !== 'signin' ? (
+									<Link
+										label="Already have an account? Sign in"
+										onPress={() => switchMode('signin')}
+									/>
+								) : null}
+								{mode !== 'signup' ? (
+									<Link
+										label="New here? Create a business account"
+										onPress={() => switchMode('signup')}
+									/>
+								) : null}
+								{mode !== 'invite' ? (
+									<Link
+										label="Have an invite code? Join a team"
+										onPress={() => switchMode('invite')}
+									/>
+								) : null}
+							</View>
+						</>
+					)}
 				</View>
 
 				<Txt style={styles.legal}>Rivus · Your AI teammate for local business</Txt>
@@ -271,6 +360,12 @@ const styles = StyleSheet.create({
 		letterSpacing: 0.6,
 		textTransform: 'uppercase',
 		color: colors.textFaint,
+	},
+	codeInput: {
+		fontFamily: font.semibold,
+		fontSize: 22,
+		letterSpacing: 8,
+		textAlign: 'center',
 	},
 	errorBox: {
 		backgroundColor: 'rgba(240,88,75,0.08)',

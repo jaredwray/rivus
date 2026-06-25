@@ -7,57 +7,41 @@ import {
 	inviteMemberSchema,
 	loginSchema,
 	paginationQuerySchema,
-	registerSchema,
 	signupSchema,
 	updateItemSchema,
 	updateMemberRoleSchema,
+	verifyCodeSchema,
 } from './schemas';
 
-describe('registerSchema', () => {
-	it('accepts a valid registration and normalizes the email and name', () => {
-		const parsed = registerSchema.parse({
-			email: '  Foo@Example.COM ',
-			password: 'supersecret',
-			name: '  Ada Lovelace  ',
-		});
-		expect(parsed.email).toBe('foo@example.com');
-		expect(parsed.name).toBe('Ada Lovelace');
+describe('loginSchema', () => {
+	it('accepts an email and lowercases it (passwordless — no password field)', () => {
+		const email = faker.internet.email();
+		const parsed = loginSchema.parse({ email });
+		expect(parsed.email).toBe(email.trim().toLowerCase());
 	});
 
 	it('rejects an invalid email', () => {
-		expect(() =>
-			registerSchema.parse({ email: 'not-an-email', password: 'supersecret', name: 'A' }),
-		).toThrow();
-	});
-
-	it('rejects a non-string email', () => {
-		expect(() =>
-			registerSchema.parse({ email: 12345, password: 'supersecret', name: 'A' }),
-		).toThrow();
-	});
-
-	it('rejects a short password', () => {
-		expect(() =>
-			registerSchema.parse({ email: faker.internet.email(), password: 'short', name: 'A' }),
-		).toThrow();
-	});
-
-	it('rejects a blank name', () => {
-		expect(() =>
-			registerSchema.parse({
-				email: faker.internet.email(),
-				password: 'supersecret',
-				name: '   ',
-			}),
-		).toThrow();
+		expect(() => loginSchema.parse({ email: 'not-an-email' })).toThrow();
 	});
 });
 
-describe('loginSchema', () => {
-	it('accepts valid credentials and lowercases the email', () => {
+describe('verifyCodeSchema', () => {
+	it('accepts a 6-digit code and normalizes the email', () => {
+		const parsed = verifyCodeSchema.parse({ email: '  Foo@Example.COM ', code: '123456' });
+		expect(parsed).toEqual({ email: 'foo@example.com', code: '123456' });
+	});
+
+	it('trims surrounding whitespace from a pasted code', () => {
+		expect(verifyCodeSchema.parse({ email: faker.internet.email(), code: ' 000042 ' }).code).toBe(
+			'000042',
+		);
+	});
+
+	it('rejects codes that are not exactly six digits', () => {
 		const email = faker.internet.email();
-		const parsed = loginSchema.parse({ email, password: 'supersecret' });
-		expect(parsed.email).toBe(email.trim().toLowerCase());
+		for (const code of ['12345', '1234567', 'abcdef', '12 34 56', '']) {
+			expect(() => verifyCodeSchema.parse({ email, code })).toThrow();
+		}
 	});
 });
 
@@ -106,10 +90,9 @@ describe('accountBusinessSchema', () => {
 });
 
 describe('signupSchema', () => {
-	it('combines owner credentials with nested business info', () => {
+	it('combines owner identity with nested business info (no password)', () => {
 		const parsed = signupSchema.parse({
 			email: 'OWNER@Example.com',
-			password: 'supersecret123',
 			name: 'Marcus Thompson',
 			business: { businessName: 'Cascade Plumbing' },
 		});
@@ -121,7 +104,6 @@ describe('signupSchema', () => {
 		expect(() =>
 			signupSchema.parse({
 				email: faker.internet.email(),
-				password: 'supersecret123',
 				name: 'Marcus',
 			}),
 		).toThrow();
@@ -145,13 +127,9 @@ describe('inviteMemberSchema', () => {
 });
 
 describe('acceptInviteSchema', () => {
-	it('requires a token and a valid password', () => {
-		expect(acceptInviteSchema.parse({ token: 'abc', password: 'supersecret123' })).toEqual({
-			token: 'abc',
-			password: 'supersecret123',
-		});
-		expect(() => acceptInviteSchema.parse({ token: '', password: 'supersecret123' })).toThrow();
-		expect(() => acceptInviteSchema.parse({ token: 'abc', password: 'short' })).toThrow();
+	it('requires only a non-empty token (passwordless)', () => {
+		expect(acceptInviteSchema.parse({ token: 'abc' })).toEqual({ token: 'abc' });
+		expect(() => acceptInviteSchema.parse({ token: '' })).toThrow();
 	});
 });
 
