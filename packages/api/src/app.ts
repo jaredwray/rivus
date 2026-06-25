@@ -99,11 +99,21 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
 	app.register(sensible);
 	const corsOrigin = parseCorsOrigin(deps.config.CORS_ORIGIN);
+	// Credentialed CORS can't safely use a wildcard: reflecting any origin while
+	// `credentials: true` lets any site make authenticated cross-origin requests and
+	// read the response. Require an explicit allowlist in production (the deployed
+	// dev and prod containers both run NODE_ENV=production); only local development
+	// may stay wide-open, where reflecting localhost origins is harmless.
+	if (deps.config.NODE_ENV === 'production' && corsOrigin === '*') {
+		throw new Error(
+			'CORS_ORIGIN must be an explicit origin allowlist in production, not "*": credentialed CORS reflects the request origin, so a wildcard would authorize every site.',
+		);
+	}
 	app.register(cors, {
 		// Web clients send the session cookie cross-origin (app.rivus.ai →
 		// api.rivus.ai), which requires credentialed CORS. A credentialed request
 		// can't use a wildcard `Access-Control-Allow-Origin`, so reflect the request
-		// origin when configured wide-open (the dev default) and otherwise echo only
+		// origin when configured wide-open (local dev only) and otherwise echo only
 		// the configured allowlist.
 		origin: corsOrigin === '*' ? true : corsOrigin,
 		credentials: true,
