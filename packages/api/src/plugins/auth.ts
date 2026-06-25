@@ -28,7 +28,12 @@ export default fp(
 			if (!membership) {
 				throw app.httpErrors.unauthorized('Your access to this account has been revoked');
 			}
-			if (account?.status === 'canceled') {
+			// A missing account must fail closed: without this an orphaned membership
+			// would authenticate and downstream handlers would assume an account exists.
+			if (!account) {
+				throw app.httpErrors.unauthorized('Account no longer exists');
+			}
+			if (account.status === 'canceled') {
 				throw app.httpErrors.unauthorized('This account has been canceled');
 			}
 			request.user.role = membership.role;

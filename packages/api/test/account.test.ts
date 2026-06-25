@@ -1,6 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { addMember, authHeader, buildTestApp, signupOwner } from './helpers';
+import {
+	addMember,
+	authHeader,
+	buildTestApp,
+	buildTestAppWithRepos,
+	latestCodeFor,
+	signupOwner,
+} from './helpers';
 
 describe('account settings', () => {
 	let app: FastifyInstance;
@@ -172,6 +179,27 @@ describe('account cancellation (soft delete)', () => {
 		expect(accepted.statusCode).toBe(401);
 	});
 
+	it('refuses to issue a session when logging in to a canceled account (401)', async () => {
+		const owner = await signupOwner(app);
+		await cancel(owner.token);
+		// The user record survives a soft delete, so a login code is still issued...
+		await app.inject({
+			method: 'POST',
+			url: '/v1/auth/login',
+			payload: { email: owner.credentials.email },
+		});
+		// ...but verifying it must not mint a session for the canceled account.
+		const verified = await app.inject({
+			method: 'POST',
+			url: '/v1/auth/verify',
+			payload: {
+				email: owner.credentials.email,
+				code: latestCodeFor(app, owner.credentials.email),
+			},
+		});
+		expect(verified.statusCode).toBe(401);
+	});
+
 	it('forbids a manager from canceling the account (403)', async () => {
 		const owner = await signupOwner(app);
 		const manager = await addMember(app, owner.token, 'manager', 'mgr@example.com');
@@ -184,5 +212,25 @@ describe('account cancellation (soft delete)', () => {
 		const member = await addMember(app, owner.token, 'member', 'tm@example.com');
 		const response = await cancel(member.token);
 		expect(response.statusCode).toBe(403);
+	});
+});
+
+describe('authentication when the account record is missing', () => {
+	it('fails closed (401) rather than authenticating an orphaned membership', async () => {
+		const { app, repos } = await buildTestAppWithRepos();
+		try {
+			const owner = await signupOwner(app);
+			// Simulate an account row that vanished while the membership remained.
+			repos.data.accounts.delete(owner.account.id);
+
+			const me = await app.inject({
+				method: 'GET',
+				url: '/v1/auth/me',
+				headers: authHeader(owner.token),
+			});
+			expect(me.statusCode).toBe(401);
+		} finally {
+			await app.close();
+		}
 	});
 });

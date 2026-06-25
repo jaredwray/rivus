@@ -215,6 +215,11 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!user || !membership || !account) {
 				throw app.httpErrors.unauthorized('Invalid or expired code');
 			}
+			// A canceled (soft-deleted) account is a hard lockout: don't mint a session
+			// or leak its data, mirroring the accept-invite guard above.
+			if (account.status === 'canceled') {
+				throw app.httpErrors.unauthorized('Invalid or expired code');
+			}
 			const token = await reply.jwtSign({
 				sub: user.id,
 				email: user.email,
