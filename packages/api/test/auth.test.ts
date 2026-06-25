@@ -119,9 +119,12 @@ describe('signup', () => {
 		expect(account.slug).toBe('account');
 	});
 
-	it('rejects an invalid email with 400', async () => {
+	it('rejects an invalid email with 400 and a friendly top-level message', async () => {
 		const response = await requestSignup(app, { ...signupBody(), email: 'not-an-email' });
 		expect(response.statusCode).toBe(400);
+		// Not the generic "Request validation failed" — the field's plain-language message.
+		expect(response.json().message).toBe('Enter a valid email address.');
+		expect(response.json().details).toHaveLength(1);
 	});
 
 	it('rejects signup without business information with 400', async () => {

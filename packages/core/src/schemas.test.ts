@@ -23,6 +23,12 @@ describe('loginSchema', () => {
 	it('rejects an invalid email', () => {
 		expect(() => loginSchema.parse({ email: 'not-an-email' })).toThrow();
 	});
+
+	it('explains an invalid email in plain language', () => {
+		const result = loginSchema.safeParse({ email: 'not-an-email' });
+		expect(result.success).toBe(false);
+		expect(result.error?.issues[0]?.message).toBe('Enter a valid email address.');
+	});
 });
 
 describe('verifyCodeSchema', () => {
@@ -72,6 +78,20 @@ describe('accountBusinessSchema', () => {
 		expect(() =>
 			accountBusinessSchema.parse({ businessName: 'Acme', website: 'not a url' }),
 		).toThrow();
+	});
+
+	it('gives a friendly, actionable message for a bad website URL', () => {
+		const result = accountBusinessSchema.safeParse({ businessName: 'Acme', website: 'not a url' });
+		expect(result.success).toBe(false);
+		expect(result.error?.issues[0]?.message).toBe(
+			'Enter a valid website URL, like https://example.com.',
+		);
+	});
+
+	it('prompts for the business name when it is blank', () => {
+		const result = accountBusinessSchema.safeParse({ businessName: '   ' });
+		expect(result.success).toBe(false);
+		expect(result.error?.issues[0]?.message).toBe('Business name is required.');
 	});
 
 	it('keeps provided phone, address, and timezone', () => {
