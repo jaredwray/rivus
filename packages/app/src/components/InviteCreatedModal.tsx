@@ -82,9 +82,9 @@ function CopyField({ label, value }: { label: string; value: string }) {
 }
 
 /**
- * Success dialog shown after an invite is created. Surfaces the full
- * accept-invitation link (with the code embedded in the URL) plus the bare code,
- * each copyable, so the inviter can share whichever is convenient.
+ * Success dialog shown after an invite is created. Confirms the invitation
+ * email was sent and offers the full accept-invitation link (with the code
+ * embedded in the URL), copyable, as a fallback the inviter can share directly.
  */
 export function InviteCreatedModal({
 	invite,
@@ -127,10 +127,10 @@ export function InviteCreatedModal({
 							<Feather name="user-check" size={24} color="#fff" />
 						</BrandGradient>
 
-						<Txt style={styles.title}>Invitation ready</Txt>
+						<Txt style={styles.title}>Invitation sent</Txt>
 						<Txt style={styles.subtitle}>
-							Share this link with <Txt style={styles.subtitleStrong}>{shown.email}</Txt> so they
-							can join {accountName}.
+							We emailed <Txt style={styles.subtitleStrong}>{shown.email}</Txt> a link to join{' '}
+							{accountName}. If it doesn’t arrive, you can share this link with them:
 						</Txt>
 
 						<Pill
@@ -141,7 +141,6 @@ export function InviteCreatedModal({
 						/>
 
 						<CopyField label="Invite link" value={acceptUrl} />
-						<CopyField label="Invite code" value={shown.token} />
 
 						<GradientButton label="Done" onPress={onClose} style={styles.done} />
 					</Pressable>
