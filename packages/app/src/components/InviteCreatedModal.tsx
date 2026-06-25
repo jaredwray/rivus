@@ -98,12 +98,24 @@ export function InviteCreatedModal({
 	accountName: string;
 	onClose: () => void;
 }) {
-	const acceptUrl = invite ? buildInviteAcceptUrl(invite.token) : '';
+	// `invite` flips to null the instant the dialog is dismissed. Drive the
+	// Modal's `visible` off that live value, but render from the last non-null
+	// invite so the sheet stays put and fades out with the backdrop instead of
+	// vanishing the moment it's closed.
+	const [lastShown, setLastShown] = useState<Invite | null>(null);
+	useEffect(() => {
+		if (invite) {
+			setLastShown(invite);
+		}
+	}, [invite]);
+
+	const shown = invite ?? lastShown;
+	const acceptUrl = shown ? buildInviteAcceptUrl(shown.token) : '';
 
 	return (
 		<Modal visible={invite !== null} transparent animationType="fade" onRequestClose={onClose}>
 			<Pressable style={styles.backdrop} onPress={onClose}>
-				{invite ? (
+				{shown ? (
 					<Pressable style={styles.sheet} onPress={() => {}}>
 						<Pressable
 							onPress={onClose}
@@ -120,19 +132,19 @@ export function InviteCreatedModal({
 
 						<Txt style={styles.title}>Invitation ready</Txt>
 						<Txt style={styles.subtitle}>
-							Share this link with <Txt style={styles.subtitleStrong}>{invite.email}</Txt> so they
+							Share this link with <Txt style={styles.subtitleStrong}>{shown.email}</Txt> so they
 							can join {accountName}.
 						</Txt>
 
 						<Pill
-							label={`Joining as ${roleLabel(invite.role)}`}
+							label={`Joining as ${roleLabel(shown.role)}`}
 							color={colors.brandPurpleInk}
 							background={colors.purpleTint}
 							style={styles.rolePill}
 						/>
 
 						<CopyField label="Invite link" value={acceptUrl} />
-						<CopyField label="Invite code" value={invite.token} />
+						<CopyField label="Invite code" value={shown.token} />
 
 						<GradientButton label="Done" onPress={onClose} style={styles.done} />
 					</Pressable>
