@@ -1,4 +1,5 @@
 import { Feather } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import type { Invite } from '@/src/api/client';
@@ -9,22 +10,18 @@ import { BrandGradient } from './Gradient';
 import { GradientButton, Pill, Txt } from './ui';
 
 /**
- * Best-effort copy to the system clipboard. Resolves `true` when the value was
- * written. Web exposes `navigator.clipboard`; on native (where no clipboard
- * module is installed) it resolves `false` and callers fall back to the
- * always-selectable text.
+ * Copy a value to the system clipboard. Backed by `expo-clipboard` so it works
+ * on web and native alike. Resolves `true` when the write succeeds — native
+ * always resolves `true`; web reflects the real outcome (it can be denied in an
+ * insecure context or without permission), in which case callers leave the
+ * value as selectable text to copy by hand.
  */
 async function copyToClipboard(value: string): Promise<boolean> {
 	try {
-		const nav = typeof navigator !== 'undefined' ? navigator : undefined;
-		if (nav?.clipboard?.writeText) {
-			await nav.clipboard.writeText(value);
-			return true;
-		}
+		return await Clipboard.setStringAsync(value);
 	} catch {
-		// Clipboard access can be denied (permissions / insecure context); fall through.
+		return false;
 	}
-	return false;
 }
 
 /** A read-only value shown in a field with a one-tap copy button. */
