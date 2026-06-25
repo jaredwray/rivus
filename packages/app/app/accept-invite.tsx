@@ -9,5 +9,7 @@ import { AuthScreen } from '@/src/auth/AuthScreen';
 export default function AcceptInviteScreen() {
 	const { token } = useLocalSearchParams();
 	const inviteToken = Array.isArray(token) ? (token[0] ?? '') : (token ?? '');
-	return <AuthScreen initialMode="invite" initialInviteToken={inviteToken} />;
+	// `AuthScreen` seeds its state from `initialInviteToken` once (via useState), so
+	// key on the token to remount — and pick up the new code — if the link changes.
+	return <AuthScreen key={inviteToken} initialMode="invite" initialInviteToken={inviteToken} />;
 }
