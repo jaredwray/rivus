@@ -1,7 +1,7 @@
 import closeWithGrace from 'close-with-grace';
 import { buildApp } from './app';
 import { loadConfig } from './config';
-import { connectMongoose, disconnectMongoose, isMongoConnected } from './db/mongoose';
+import { checkDatabaseReady, connectMongoose, disconnectMongoose } from './db/mongoose';
 import {
 	MongoAccountRepository,
 	MongoInviteRepository,
@@ -28,8 +28,26 @@ export async function start(): Promise<void> {
 		items: new MongoItemRepository(),
 		verificationCodes: new MongoVerificationCodeRepository(),
 		mailer: createMailer(config),
-		ping: async () => isMongoConnected(),
+		// Real readiness: run an actual query so "connected but unauthorized" reports
+		// unready (503, with the reason) instead of falsely healthy.
+		ping: checkDatabaseReady,
 	});
+
+	// `connect()` only proves the client authenticated. A user that authenticates but
+	// lacks roles on the database fails every query with "not authorized", so verify
+	// real access and log a loud, actionable message if it's missing. We don't exit:
+	// staying up lets `/ready` report the reason (503) instead of crash-looping out
+	// of reach, and a transient blip self-heals on the next request.
+	const readiness = await checkDatabaseReady();
+	if (!readiness.ready) {
+		app.log.error(
+			{ reason: readiness.reason },
+			'MongoDB is connected but not usable — the database user authenticated but appears ' +
+				'unauthorized to read/write the database, so every request will fail until this is ' +
+				'fixed. Grant the user readWrite on the database (Atlas: Database Access → Edit user) ' +
+				'and confirm MONGODB_URI uses the correct database name and authSource.',
+		);
+	}
 
 	if (!config.RESEND_API_KEY) {
 		app.log.warn('RESEND_API_KEY is not set — invitation emails will not be delivered');

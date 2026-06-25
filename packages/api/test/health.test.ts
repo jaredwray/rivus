@@ -46,12 +46,26 @@ describe('health', () => {
 		expect(response.json()).toEqual({ status: 'ready' });
 	});
 
-	it('returns 503 when a dependency is not ready', async () => {
-		const downApp = await buildTestApp({ ping: async () => false });
+	it('returns 503 with the reason when a dependency is not ready', async () => {
+		const downApp = await buildTestApp({
+			ping: async () => ({ ready: false, reason: 'Unauthorized: not authorized on rivus' }),
+		});
 		const response = await downApp.inject({ method: 'GET', url: '/ready' });
 
 		expect(response.statusCode).toBe(503);
-		expect(response.json().statusCode).toBe(503);
+		const body = response.json();
+		expect(body.statusCode).toBe(503);
+		// The reason is surfaced so the failure can be diagnosed from the endpoint.
+		expect(body.message).toBe('Unauthorized: not authorized on rivus');
+		await downApp.close();
+	});
+
+	it('falls back to a generic message when not ready without a reason', async () => {
+		const downApp = await buildTestApp({ ping: async () => ({ ready: false }) });
+		const response = await downApp.inject({ method: 'GET', url: '/ready' });
+
+		expect(response.statusCode).toBe(503);
+		expect(response.json().message).toBe('Dependencies are not ready');
 		await downApp.close();
 	});
 });

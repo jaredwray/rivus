@@ -31,10 +31,14 @@ export const healthRoutes: FastifyPluginAsync = async (fastify) => {
 			},
 		},
 		async (_request, reply) => {
-			if (!(await app.deps.ping())) {
+			const readiness = await app.deps.ping();
+			if (!readiness.ready) {
 				return reply.status(503).send({
 					error: 'Service Unavailable',
-					message: 'Dependencies are not ready',
+					// Surface *why* it isn't ready (e.g. the database authorization failure)
+					// so it can be diagnosed by hitting the endpoint, not just the logs. The
+					// reason is bounded upstream so this stays safe on a public probe.
+					message: readiness.reason ?? 'Dependencies are not ready',
 					statusCode: 503,
 				});
 			}

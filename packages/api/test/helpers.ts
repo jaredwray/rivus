@@ -40,7 +40,7 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		verificationCodes,
 		// A recording mailer by default so helpers can read back the emailed code.
 		mailer: new RecordingMailer(),
-		ping: async () => true,
+		ping: async () => ({ ready: true }),
 		...overrides,
 	});
 	await app.ready();
@@ -67,7 +67,7 @@ export async function buildTestAppWithRepos(): Promise<{
 		items,
 		verificationCodes,
 		mailer: new RecordingMailer(),
-		ping: async () => true,
+		ping: async () => ({ ready: true }),
 	});
 	await app.ready();
 	return { app, repos };
