@@ -15,7 +15,7 @@ import {
 	type UpdateItemInput,
 	type UserId,
 } from '@rivus/core';
-import { ConflictError, InviteNotPendingError } from './errors';
+import { ConflictError, InviteNotPendingError, LastOwnerError } from './errors';
 import type {
 	AcceptInviteInput,
 	AcceptInviteResult,
@@ -246,6 +246,10 @@ export class InMemoryMembershipRepository implements MembershipRepository {
 	async updateRole(accountId: AccountId, userId: UserId, role: Role): Promise<Membership | null> {
 		for (const membership of this.data.memberships.values()) {
 			if (membership.accountId === accountId && membership.userId === userId) {
+				// Demoting the last owner would orphan the account; refuse atomically.
+				if (membership.role === 'owner' && role !== 'owner' && this.ownerCount(accountId) <= 1) {
+					throw new LastOwnerError();
+				}
 				const updated: Membership = { ...membership, role, updatedAt: now() };
 				this.data.memberships.set(membership.id, updated);
 				return structuredClone(updated);
@@ -257,10 +261,25 @@ export class InMemoryMembershipRepository implements MembershipRepository {
 	async delete(accountId: AccountId, userId: UserId): Promise<boolean> {
 		for (const membership of this.data.memberships.values()) {
 			if (membership.accountId === accountId && membership.userId === userId) {
+				// Removing the last owner would orphan the account; refuse atomically.
+				if (membership.role === 'owner' && this.ownerCount(accountId) <= 1) {
+					throw new LastOwnerError();
+				}
 				return this.data.memberships.delete(membership.id);
 			}
 		}
 		return false;
+	}
+
+	/** Count the owners of an account — the invariant guarded above is "at least one". */
+	private ownerCount(accountId: AccountId): number {
+		let count = 0;
+		for (const membership of this.data.memberships.values()) {
+			if (membership.accountId === accountId && membership.role === 'owner') {
+				count += 1;
+			}
+		}
+		return count;
 	}
 }
 

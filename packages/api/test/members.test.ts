@@ -323,6 +323,18 @@ describe('members', () => {
 		expect(response.statusCode).toBe(409);
 	});
 
+	it('allows removing an owner once a second owner exists', async () => {
+		const owner = await signupOwner(app);
+		const coOwner = await addMember(owner.token, 'owner', 'coowner@example.com');
+
+		const response = await app.inject({
+			method: 'DELETE',
+			url: `/v1/members/${coOwner.userId}`,
+			headers: authHeader(owner.token),
+		});
+		expect(response.statusCode).toBe(204);
+	});
+
 	it('returns 404 removing a non-member', async () => {
 		const owner = await signupOwner(app);
 		const response = await app.inject({

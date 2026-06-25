@@ -14,7 +14,7 @@ import {
 	type UpdateItemInput,
 	type UserId,
 } from '@rivus/core';
-import mongoose, { type HydratedDocument, Types } from 'mongoose';
+import mongoose, { type ClientSession, type HydratedDocument, Types } from 'mongoose';
 import { type AccountDocument, AccountModel } from '../db/models/account.model';
 import { type InviteDocument, InviteModel } from '../db/models/invite.model';
 import { type ItemDocument, ItemModel } from '../db/models/item.model';
@@ -24,7 +24,7 @@ import {
 	type VerificationCodeDocument,
 	VerificationCodeModel,
 } from '../db/models/verification-code.model';
-import { ConflictError, InviteNotPendingError } from './errors';
+import { ConflictError, InviteNotPendingError, LastOwnerError } from './errors';
 import type {
 	AcceptInviteInput,
 	AcceptInviteResult,
@@ -227,6 +227,47 @@ export class MongoAccountRepository implements AccountRepository {
 	}
 }
 
+/**
+ * Run an owner-mutating membership write inside a transaction that first bumps
+ * the account's `membershipsVersion`. That shared write is the serialization
+ * point: two concurrent demote/remove requests on the same account collide on
+ * it, so one is retried by `withTransaction` and re-evaluates the owner count
+ * against the other's committed result — closing the check-then-write race.
+ */
+async function withOwnerGuard<T>(
+	accountOid: Types.ObjectId,
+	fn: (session: ClientSession) => Promise<T>,
+): Promise<T> {
+	const session = await mongoose.startSession();
+	try {
+		let result: T | undefined;
+		await session.withTransaction(async () => {
+			await AccountModel.updateOne(
+				{ _id: accountOid },
+				{ $inc: { membershipsVersion: 1 } },
+				{ session },
+			).exec();
+			result = await fn(session);
+		});
+		return result as T;
+	} finally {
+		await session.endSession();
+	}
+}
+
+/** Throw {@link LastOwnerError} unless the account still has another owner. */
+async function assertAnotherOwnerRemains(
+	accountOid: Types.ObjectId,
+	session: ClientSession,
+): Promise<void> {
+	const owners = await MembershipModel.countDocuments({ accountId: accountOid, role: 'owner' })
+		.session(session)
+		.exec();
+	if (owners <= 1) {
+		throw new LastOwnerError();
+	}
+}
+
 export class MongoMembershipRepository implements MembershipRepository {
 	async create(input: NewMembership): Promise<Membership> {
 		try {
@@ -277,23 +318,54 @@ export class MongoMembershipRepository implements MembershipRepository {
 		if (!Types.ObjectId.isValid(accountId) || !Types.ObjectId.isValid(userId)) {
 			return null;
 		}
-		const doc = await MembershipModel.findOneAndUpdate(
-			{ accountId: new Types.ObjectId(accountId), userId: new Types.ObjectId(userId) },
-			{ $set: { role } },
-			{ new: true },
-		).exec();
-		return doc ? mapMembership(doc) : null;
+		const accountOid = new Types.ObjectId(accountId);
+		const userOid = new Types.ObjectId(userId);
+		return withOwnerGuard(accountOid, async (session) => {
+			const target = await MembershipModel.findOne({ accountId: accountOid, userId: userOid })
+				.session(session)
+				.exec();
+			if (!target) {
+				return null;
+			}
+			// Demoting an owner must leave at least one behind. The owner count is read
+			// after the guard's account write, so a concurrent demote/remove forces a
+			// write conflict and retries against the fresh count.
+			if (target.role === 'owner' && role !== 'owner') {
+				await assertAnotherOwnerRemains(accountOid, session);
+			}
+			const doc = await MembershipModel.findOneAndUpdate(
+				{ accountId: accountOid, userId: userOid },
+				{ $set: { role } },
+				{ new: true, session },
+			).exec();
+			return doc ? mapMembership(doc) : null;
+		});
 	}
 
 	async delete(accountId: AccountId, userId: UserId): Promise<boolean> {
 		if (!Types.ObjectId.isValid(accountId) || !Types.ObjectId.isValid(userId)) {
 			return false;
 		}
-		const result = await MembershipModel.deleteOne({
-			accountId: new Types.ObjectId(accountId),
-			userId: new Types.ObjectId(userId),
-		}).exec();
-		return result.deletedCount === 1;
+		const accountOid = new Types.ObjectId(accountId);
+		const userOid = new Types.ObjectId(userId);
+		return withOwnerGuard(accountOid, async (session) => {
+			const target = await MembershipModel.findOne({ accountId: accountOid, userId: userOid })
+				.session(session)
+				.exec();
+			if (!target) {
+				return false;
+			}
+			if (target.role === 'owner') {
+				await assertAnotherOwnerRemains(accountOid, session);
+			}
+			const result = await MembershipModel.deleteOne({
+				accountId: accountOid,
+				userId: userOid,
+			})
+				.session(session)
+				.exec();
+			return result.deletedCount === 1;
+		});
 	}
 }
 

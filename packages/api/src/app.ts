@@ -10,7 +10,7 @@ import {
 import { parseCorsOrigin } from './config';
 import authPlugin from './plugins/auth';
 import swaggerPlugin from './plugins/swagger';
-import { ConflictError, InviteNotPendingError } from './repositories/errors';
+import { ConflictError, InviteNotPendingError, LastOwnerError } from './repositories/errors';
 import { accountRoutes } from './routes/account';
 import { authRoutes } from './routes/auth';
 import { billingRoutes } from './routes/billing';
@@ -69,6 +69,14 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 				error: 'Unauthorized',
 				message: error.message,
 				statusCode: 401,
+			});
+		}
+
+		if (error instanceof LastOwnerError) {
+			return reply.status(409).send({
+				error: 'Conflict',
+				message: error.message,
+				statusCode: 409,
 			});
 		}
 

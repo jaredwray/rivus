@@ -2,7 +2,6 @@ import {
 	type AccountId,
 	type InviteId,
 	inviteMemberSchema,
-	type Role,
 	type UserId,
 	updateMemberRoleSchema,
 } from '@rivus/core';
@@ -21,15 +20,6 @@ import { createInviteToken } from '../services/invites';
 
 const userIdParamsSchema = z.object({ userId: z.string().min(1) });
 const inviteIdParamsSchema = z.object({ inviteId: z.string().min(1) });
-
-/** Count the owners of an account (used to guard against orphaning it). */
-async function ownerCount(
-	memberships: { listByAccount(id: AccountId): Promise<{ role: Role }[]> },
-	accountId: AccountId,
-): Promise<number> {
-	const all = await memberships.listByAccount(accountId);
-	return all.filter((m) => m.role === 'owner').length;
-}
 
 export const memberRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
@@ -188,14 +178,8 @@ export const memberRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!target) {
 				throw app.httpErrors.notFound('Member not found');
 			}
-			// Don't let the final owner be demoted out of ownership.
-			if (
-				target.role === 'owner' &&
-				role !== 'owner' &&
-				(await ownerCount(memberships, accountId)) <= 1
-			) {
-				throw app.httpErrors.conflict('Cannot change the role of the last owner');
-			}
+			// `updateRole` atomically refuses to demote the last owner (409 via
+			// LastOwnerError), so the check and the write can't race.
 			const updated = await memberships.updateRole(accountId, targetUserId, role);
 			const user = await users.findById(targetUserId);
 			if (!updated || !user) {
@@ -233,9 +217,8 @@ export const memberRoutes: FastifyPluginAsync = async (fastify) => {
 			if (request.user.role === 'manager' && target.role !== 'member') {
 				throw app.httpErrors.forbidden('Managers can only remove Members');
 			}
-			if (target.role === 'owner' && (await ownerCount(memberships, accountId)) <= 1) {
-				throw app.httpErrors.conflict('Cannot remove the last owner');
-			}
+			// `delete` atomically refuses to remove the last owner (409 via
+			// LastOwnerError), so the check and the write can't race.
 			await memberships.delete(accountId, targetUserId);
 			return reply.code(204).send(null);
 		},
