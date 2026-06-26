@@ -12,6 +12,7 @@ import {
 	MongoUserRepository,
 	MongoVerificationCodeRepository,
 } from './repositories/mongo';
+import { createFaqSimilarityService } from './services/faq-similarity';
 import { createMailer } from './services/resend-mailer';
 
 /** Connect to Mongo, build the app with Mongo-backed repositories, and listen. */
@@ -30,6 +31,7 @@ export async function start(): Promise<void> {
 		faqs: new MongoFaqRepository(),
 		verificationCodes: new MongoVerificationCodeRepository(),
 		mailer: createMailer(config),
+		faqSimilarity: createFaqSimilarityService(config),
 		// Real readiness: run an actual query so "connected but unauthorized" reports
 		// unready (503, with the reason) instead of falsely healthy.
 		ping: checkDatabaseReady,

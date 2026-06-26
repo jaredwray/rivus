@@ -7,6 +7,7 @@ import {
 	createFaqSchema,
 	type Faq,
 	type FaqId,
+	faqSimilarityQuerySchema,
 	faqStatusSchema,
 	type InviteMemberInput,
 	type Item,
@@ -245,6 +246,22 @@ export interface FaqListResponse {
 	meta: PaginationMeta;
 }
 
+const faqSimilarityResponseSchema = z.object({
+	match: faqResponseSchema.nullable(),
+	reason: z.string(),
+	merged: z.object({ question: z.string(), answer: z.string() }).nullable(),
+});
+
+/** Result of the pre-create duplicate check (see {@link RivusApiClient.findSimilarFaq}). */
+export interface FaqSimilarityResult {
+	/** The existing FAQ a new one would duplicate, or null when none is similar. */
+	match: Faq | null;
+	/** One short sentence explaining the match (empty when there is none). */
+	reason: string;
+	/** AI-combined question/answer to offer as an update (null when no match). */
+	merged: { question: string; answer: string } | null;
+}
+
 // A 204 No Content response (FAQ delete) has an empty body; the request helper
 // passes `undefined` to the schema, so accept exactly that.
 const noContentSchema = z.undefined();
@@ -310,6 +327,15 @@ export interface RivusApiClient {
 	listFaqs(token: string, query?: Partial<PaginationQuery>): Promise<FaqListResponse>;
 	/** Create an FAQ for the account. */
 	createFaq(token: string, input: CreateFaqBody): Promise<Faq>;
+	/**
+	 * Ask the API whether a semantically similar FAQ already exists (AI-assisted),
+	 * before creating a new one. Returns the closest existing FAQ plus an AI-merged
+	 * suggestion, or `{ match: null }` when nothing similar is found.
+	 */
+	findSimilarFaq(
+		token: string,
+		input: { question: string; answer?: string },
+	): Promise<FaqSimilarityResult>;
 	/** Update one of the account's FAQs. */
 	updateFaq(token: string, id: FaqId, input: UpdateFaqInput): Promise<Faq>;
 	/** Delete one of the account's FAQs. */
@@ -486,6 +512,15 @@ export function createApiClient(
 		async createFaq(token: string, input: CreateFaqBody) {
 			const payload = parseInput(createFaqSchema, input);
 			return request('/v1/faqs', faqResponseSchema, jsonInit('POST', payload, token));
+		},
+
+		async findSimilarFaq(token: string, input: { question: string; answer?: string }) {
+			const payload = parseInput(faqSimilarityQuerySchema, input);
+			return request(
+				'/v1/faqs/similar',
+				faqSimilarityResponseSchema,
+				jsonInit('POST', payload, token),
+			);
 		},
 
 		async updateFaq(token: string, id: FaqId, input: UpdateFaqInput) {

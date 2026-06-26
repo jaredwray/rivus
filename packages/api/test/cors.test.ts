@@ -4,6 +4,7 @@ import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
 import { SESSION_COOKIE } from '../src/plugins/auth';
 import { createInMemoryRepositories } from '../src/repositories/memory';
+import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { authHeader, RecordingMailer, signupOwner } from './helpers';
 
 /** Build an app with a specific CORS_ORIGIN so we can exercise both origin branches. */
@@ -17,6 +18,7 @@ function buildAppWithCors(corsOrigin: string): FastifyInstance {
 		} as NodeJS.ProcessEnv),
 		...repos,
 		mailer: new RecordingMailer(),
+		faqSimilarity: new NoopFaqSimilarityService(),
 		ping: async () => ({ ready: true }),
 	});
 }
@@ -34,6 +36,7 @@ function buildProdApp(corsOrigin: string): FastifyInstance {
 		} as NodeJS.ProcessEnv),
 		...repos,
 		mailer: new RecordingMailer(),
+		faqSimilarity: new NoopFaqSimilarityService(),
 		ping: async () => ({ ready: true }),
 	});
 }

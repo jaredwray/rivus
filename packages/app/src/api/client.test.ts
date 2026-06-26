@@ -572,6 +572,66 @@ describe('createApiClient', () => {
 		});
 	});
 
+	describe('findSimilarFaq', () => {
+		it('posts the question and returns the parsed match + merged suggestion', async () => {
+			const match = makeFaq();
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse({
+					match,
+					reason: 'Same pricing question.',
+					merged: { question: 'Merged?', answer: 'Merged answer.' },
+				}),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.findSimilarFaq('owner-token', {
+				question: 'What does a call cost?',
+				answer: 'It is $89.',
+			});
+
+			expect(result.match).toEqual(match);
+			expect(result.reason).toBe('Same pricing question.');
+			expect(result.merged).toEqual({ question: 'Merged?', answer: 'Merged answer.' });
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/faqs/similar`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({
+				Authorization: 'Bearer owner-token',
+				'Content-Type': 'application/json',
+			});
+			expect(JSON.parse(init.body as string)).toMatchObject({ question: 'What does a call cost?' });
+		});
+
+		it('parses a "no duplicate" response', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ match: null, reason: '', merged: null }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.findSimilarFaq('tok', { question: 'Anything new?' });
+
+			expect(result.match).toBeNull();
+			expect(result.merged).toBeNull();
+		});
+
+		it('defaults a missing answer to an empty string', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ match: null, reason: '', merged: null }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.findSimilarFaq('tok', { question: 'Just a question?' });
+
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(JSON.parse(init.body as string)).toMatchObject({
+				question: 'Just a question?',
+				answer: '',
+			});
+		});
+
+		it('rejects an empty question before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.findSimilarFaq('tok', { question: '' })).rejects.toThrow();
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+	});
+
 	describe('updateFaq', () => {
 		it('PATCHes the FAQ with the bearer token and returns it', async () => {
 			const faq = { ...makeFaq(), status: 'draft' as const };

@@ -12,6 +12,7 @@ import type {
 	VerificationCodeRepository,
 } from './repositories/types';
 import type { Mailer } from './services/email';
+import type { FaqSimilarityService } from './services/faq-similarity';
 
 /** Result of a readiness check: whether dependencies are usable, and why not. */
 export interface ReadinessResult {
@@ -34,6 +35,8 @@ export interface AppDeps {
 	verificationCodes: VerificationCodeRepository;
 	/** Sends transactional email (invitations and sign-in codes). */
 	mailer: Mailer;
+	/** AI check for near-duplicate FAQs (a no-op when no provider key is set). */
+	faqSimilarity: FaqSimilarityService;
 	/** Readiness check for downstream dependencies (e.g. the database). */
 	ping: () => Promise<ReadinessResult>;
 }

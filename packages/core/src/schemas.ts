@@ -215,6 +215,17 @@ export const updateFaqSchema = z
 	});
 export type UpdateFaqInput = z.infer<typeof updateFaqSchema>;
 
+/**
+ * Body for the "is there already a similar FAQ?" pre-check, sent before creating
+ * a new FAQ. The answer is optional — the question alone is enough to surface a
+ * near-duplicate, but the answer (when present) sharpens the AI's merge.
+ */
+export const faqSimilarityQuerySchema = z.object({
+	question: requiredText('Question', 300),
+	answer: optionalText('Answer', 4000).default(''),
+});
+export type FaqSimilarityQueryInput = z.infer<typeof faqSimilarityQuerySchema>;
+
 /** Query string for list endpoints; coerces `?page=2&pageSize=50`. */
 export const paginationQuerySchema = z.object({
 	page: z.coerce.number().int().min(1, { error: 'Page must be 1 or greater.' }).default(1),
