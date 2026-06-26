@@ -1,8 +1,11 @@
 import {
 	type Account,
 	type AccountId,
+	type CreateCustomerInput,
 	type CreateFaqInput,
 	type CreateItemInput,
+	type Customer,
+	type CustomerId,
 	type Faq,
 	type FaqId,
 	type Invite,
@@ -14,12 +17,14 @@ import {
 	normalizePagination,
 	pageToSkip,
 	type Role,
+	type UpdateCustomerInput,
 	type UpdateFaqInput,
 	type UpdateItemInput,
 	type UserId,
 } from '@rivus/core';
 import mongoose, { type ClientSession, type HydratedDocument, Types } from 'mongoose';
 import { type AccountDocument, AccountModel } from '../db/models/account.model';
+import { type CustomerDocument, CustomerModel } from '../db/models/customer.model';
 import { type FaqDocument, FaqModel } from '../db/models/faq.model';
 import { type InviteDocument, InviteModel } from '../db/models/invite.model';
 import { type ItemDocument, ItemModel } from '../db/models/item.model';
@@ -34,10 +39,12 @@ import type {
 	AcceptInviteInput,
 	AcceptInviteResult,
 	AccountRepository,
+	CustomerRepository,
 	FaqRepository,
 	InviteRepository,
 	ItemRepository,
 	ListAccountsOptions,
+	ListCustomersOptions,
 	ListFaqsOptions,
 	ListItemsOptions,
 	MembershipRepository,
@@ -137,6 +144,24 @@ function mapItem(doc: HydratedDocument<ItemDocument>): Item {
 		name: doc.name,
 		description: doc.description,
 		status: doc.status,
+		createdAt: doc.createdAt.toISOString(),
+		updatedAt: doc.updatedAt.toISOString(),
+	};
+}
+
+function mapCustomer(doc: HydratedDocument<CustomerDocument>): Customer {
+	return {
+		id: doc._id.toString() as CustomerId,
+		accountId: doc.accountId.toString() as AccountId,
+		name: doc.name,
+		email: doc.email,
+		phone: doc.phone,
+		area: doc.area,
+		channel: doc.channel,
+		status: doc.status,
+		lifetimeValue: doc.lifetimeValue,
+		balance: doc.balance,
+		notes: doc.notes,
 		createdAt: doc.createdAt.toISOString(),
 		updatedAt: doc.updatedAt.toISOString(),
 	};
@@ -653,6 +678,65 @@ export class MongoItemRepository implements ItemRepository {
 			return false;
 		}
 		const result = await ItemModel.deleteOne({
+			_id: id,
+			accountId: new Types.ObjectId(accountId),
+		}).exec();
+		return result.deletedCount === 1;
+	}
+}
+
+export class MongoCustomerRepository implements CustomerRepository {
+	async create(accountId: AccountId, input: CreateCustomerInput): Promise<Customer> {
+		const doc = await CustomerModel.create({ accountId: new Types.ObjectId(accountId), ...input });
+		return mapCustomer(doc);
+	}
+
+	async list(options: ListCustomersOptions): Promise<{ customers: Customer[]; total: number }> {
+		if (!Types.ObjectId.isValid(options.accountId)) {
+			return { customers: [], total: 0 };
+		}
+		const { pageSize } = normalizePagination(options.page, options.pageSize);
+		const skip = pageToSkip(options.page, options.pageSize);
+		const filter = { accountId: new Types.ObjectId(options.accountId) };
+		const [docs, total] = await Promise.all([
+			CustomerModel.find(filter).sort({ createdAt: -1, _id: -1 }).skip(skip).limit(pageSize).exec(),
+			CustomerModel.countDocuments(filter).exec(),
+		]);
+		return { customers: docs.map(mapCustomer), total };
+	}
+
+	async findById(accountId: AccountId, id: CustomerId): Promise<Customer | null> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return null;
+		}
+		const doc = await CustomerModel.findOne({
+			_id: id,
+			accountId: new Types.ObjectId(accountId),
+		}).exec();
+		return doc ? mapCustomer(doc) : null;
+	}
+
+	async update(
+		accountId: AccountId,
+		id: CustomerId,
+		input: UpdateCustomerInput,
+	): Promise<Customer | null> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return null;
+		}
+		const doc = await CustomerModel.findOneAndUpdate(
+			{ _id: id, accountId: new Types.ObjectId(accountId) },
+			{ $set: input },
+			{ new: true },
+		).exec();
+		return doc ? mapCustomer(doc) : null;
+	}
+
+	async delete(accountId: AccountId, id: CustomerId): Promise<boolean> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return false;
+		}
+		const result = await CustomerModel.deleteOne({
 			_id: id,
 			accountId: new Types.ObjectId(accountId),
 		}).exec();

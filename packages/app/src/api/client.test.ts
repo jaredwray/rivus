@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import type { AccountId, FaqId } from '@rivus/core';
+import type { AccountId, CustomerId, FaqId } from '@rivus/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, createApiClient, ValidationError } from './client';
 
@@ -73,6 +73,25 @@ function makeFaq() {
 		answer: faker.lorem.paragraph(),
 		category: faker.helpers.arrayElement(['Pricing', 'Scheduling', '']),
 		status: 'published' as const,
+		createdAt: now,
+		updatedAt: now,
+	};
+}
+
+function makeCustomer() {
+	const now = new Date().toISOString();
+	return {
+		id: faker.string.uuid(),
+		accountId: faker.string.uuid(),
+		name: faker.person.fullName(),
+		email: faker.internet.email().toLowerCase(),
+		phone: faker.phone.number(),
+		area: faker.location.city(),
+		channel: faker.helpers.arrayElement(['whatsapp', 'phone', 'email', 'sms'] as const),
+		status: faker.helpers.arrayElement(['lead', 'quote', 'paid', 'due'] as const),
+		lifetimeValue: faker.number.int({ min: 0, max: 1_000_000 }),
+		balance: faker.number.int({ min: 0, max: 100_000 }),
+		notes: faker.lorem.sentence(),
 		createdAt: now,
 		updatedAt: now,
 	};
@@ -688,6 +707,192 @@ describe('createApiClient', () => {
 
 			const client = createApiClient(BASE, fetchMock);
 			const error = await client.deleteFaq('tok', 'missing' as never).catch((e) => e);
+			expect(error).toBeInstanceOf(ApiError);
+			expect(error.status).toBe(404);
+		});
+	});
+
+	describe('listCustomers', () => {
+		it('returns parsed customers and sends the bearer auth header', async () => {
+			const customers = [makeCustomer(), makeCustomer()];
+			const response = {
+				data: customers,
+				meta: {
+					page: 1,
+					pageSize: 20,
+					total: customers.length,
+					totalPages: 1,
+					hasNextPage: false,
+					hasPreviousPage: false,
+				},
+			};
+			fetchMock.mockResolvedValueOnce(jsonResponse(response));
+
+			const client = createApiClient(BASE, fetchMock);
+			const token = faker.string.alphanumeric(32);
+			const result = await client.listCustomers(token);
+
+			expect(result.data).toEqual(customers);
+			expect(result.meta.total).toBe(customers.length);
+
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/customers?page=1&pageSize=20`);
+			expect(init.headers).toMatchObject({ Authorization: `Bearer ${token}` });
+		});
+
+		it('forwards custom pagination query params', async () => {
+			const response = {
+				data: [],
+				meta: {
+					page: 2,
+					pageSize: 100,
+					total: 0,
+					totalPages: 0,
+					hasNextPage: false,
+					hasPreviousPage: false,
+				},
+			};
+			fetchMock.mockResolvedValueOnce(jsonResponse(response));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.listCustomers('token', { page: 2, pageSize: 100 });
+
+			const [url] = fetchMock.mock.calls[0] as [string];
+			expect(url).toBe(`${BASE}/v1/customers?page=2&pageSize=100`);
+		});
+	});
+
+	describe('createCustomer', () => {
+		it('posts a customer with the bearer token and returns it', async () => {
+			const customer = makeCustomer();
+			fetchMock.mockResolvedValueOnce(jsonResponse(customer, { status: 201 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.createCustomer('owner-token', {
+				name: customer.name,
+				email: customer.email,
+				channel: customer.channel,
+				status: customer.status,
+				lifetimeValue: customer.lifetimeValue,
+				balance: customer.balance,
+			});
+
+			expect(result).toEqual(customer);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/customers`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({
+				Authorization: 'Bearer owner-token',
+				'Content-Type': 'application/json',
+			});
+			expect(JSON.parse(init.body as string)).toMatchObject({ name: customer.name });
+		});
+
+		it('accepts just a name, filling every other default', async () => {
+			const customer = makeCustomer();
+			fetchMock.mockResolvedValueOnce(jsonResponse(customer, { status: 201 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			// Only `name` is supplied — the schema defaults the rest, so the client must
+			// not require them at the type level and must send the defaulted values.
+			await client.createCustomer('tok', { name: 'Grace Kim' });
+
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(JSON.parse(init.body as string)).toMatchObject({
+				name: 'Grace Kim',
+				email: '',
+				phone: '',
+				area: '',
+				channel: 'phone',
+				status: 'lead',
+				lifetimeValue: 0,
+				balance: 0,
+				notes: '',
+			});
+		});
+
+		it('rejects a customer with no name before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.createCustomer('tok', { name: '' })).rejects.toThrow(ValidationError);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it('rejects a negative balance before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.createCustomer('tok', { name: 'Bad', balance: -1 })).rejects.toThrow(
+				ValidationError,
+			);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('getCustomer', () => {
+		it('fetches a customer by id and url-encodes it', async () => {
+			const customer = makeCustomer();
+			fetchMock.mockResolvedValueOnce(jsonResponse(customer));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.getCustomer('tok', 'a/b c' as CustomerId);
+
+			expect(result).toEqual(customer);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/customers/a%2Fb%20c`);
+			expect(init.method).toBe('GET');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer tok' });
+		});
+	});
+
+	describe('updateCustomer', () => {
+		it('PATCHes the customer with the bearer token and returns it', async () => {
+			const customer = { ...makeCustomer(), status: 'paid' as const };
+			fetchMock.mockResolvedValueOnce(jsonResponse(customer));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.updateCustomer('owner-token', customer.id as CustomerId, {
+				status: 'paid',
+				balance: 0,
+			});
+
+			expect(result.status).toBe('paid');
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/customers/${customer.id}`);
+			expect(init.method).toBe('PATCH');
+			expect(JSON.parse(init.body as string)).toEqual({ status: 'paid', balance: 0 });
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer owner-token' });
+		});
+
+		it('rejects an empty update before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.updateCustomer('tok', 'id' as CustomerId, {})).rejects.toThrow();
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('deleteCustomer', () => {
+		it('DELETEs the customer with the bearer token and resolves on 204', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(undefined, { status: 204 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.deleteCustomer('owner-token', 'cust-1' as CustomerId),
+			).resolves.toBeUndefined();
+
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/customers/cust-1`);
+			expect(init.method).toBe('DELETE');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer owner-token' });
+		});
+
+		it('throws an ApiError when the customer is gone (404)', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse(
+					{ error: 'Not Found', message: 'Customer not found', statusCode: 404 },
+					{ status: 404 },
+				),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client.deleteCustomer('tok', 'missing' as CustomerId).catch((e) => e);
 			expect(error).toBeInstanceOf(ApiError);
 			expect(error.status).toBe(404);
 		});

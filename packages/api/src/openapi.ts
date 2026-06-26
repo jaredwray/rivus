@@ -13,8 +13,17 @@ import { NoopFaqSimilarityService } from './services/faq-similarity';
  */
 async function main(): Promise<void> {
 	const config = loadConfig({ ...process.env, NODE_ENV: 'test' });
-	const { users, accounts, memberships, invites, onboarding, items, faqs, verificationCodes } =
-		createInMemoryRepositories();
+	const {
+		users,
+		accounts,
+		memberships,
+		invites,
+		onboarding,
+		items,
+		faqs,
+		customers,
+		verificationCodes,
+	} = createInMemoryRepositories();
 	const app = buildApp({
 		config,
 		users,
@@ -24,6 +33,7 @@ async function main(): Promise<void> {
 		onboarding,
 		items,
 		faqs,
+		customers,
 		verificationCodes,
 		mailer: new NoopMailer(),
 		faqSimilarity: new NoopFaqSimilarityService(),
