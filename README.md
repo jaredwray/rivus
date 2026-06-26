@@ -9,8 +9,8 @@
 ---
 
 Rivus is a Node.js + TypeScript **monorepo** that bundles everything a product
-needs: a REST API, a marketing site, an edge worker, a documentation site, and a
-cross-platform app — all sharing one core library and one toolchain.
+needs: a REST API, a marketing site, a documentation site, and a cross-platform
+app — all sharing one core library and one toolchain.
 
 ## Packages
 
@@ -19,7 +19,6 @@ cross-platform app — all sharing one core library and one toolchain.
 | [`@rivus/core`](./packages/core)     | TypeScript, Zod                         | Shared domain types, schemas, and utilities                          |
 | [`@rivus/api`](./packages/api)       | Fastify, Mongoose (MongoDB Atlas), JWT  | REST API with an OpenAPI document generated from its route schemas   |
 | [`@rivus/website`](./packages/website) | Next.js 16 (App Router), React 19     | Marketing site                                                       |
-| [`@rivus/worker`](./packages/worker) | Cloudflare Workers                      | Scheduled and on-demand background tasks                             |
 | [`@rivus/docs`](./packages/docs)     | Docula                                  | Docs, changelog, and the API reference                              |
 | [`@rivus/app`](./packages/app)       | Expo (iOS / Android / Web)              | Cross-platform client application                                   |
 
@@ -73,7 +72,6 @@ pnpm --filter @rivus/website dev
   (in-memory for tests, Mongoose for production), and its Zod schemas generate
   the OpenAPI document the **docs** site renders as its API reference.
 - The **website** and **app** both read `*_PUBLIC_API_URL` to talk to the API.
-- The **worker** runs the same kinds of tasks on a cron and on demand.
 
 ## Supply chain & CI
 
