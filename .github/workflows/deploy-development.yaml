@@ -40,6 +40,18 @@ jobs:
       - uses: ./.github/actions/setup
       - run: pnpm --filter @rivus/worker exec wrangler deploy --env development
 
+  deploy-agent:
+    name: Deploy agent
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter @rivus/agent exec wrangler deploy --env development
+
   deploy-docs:
     name: Deploy docs
     needs: validate
@@ -66,6 +78,8 @@ jobs:
       RIVUS_ENV: development
       # Baked into the Expo web bundle at export time.
       EXPO_PUBLIC_API_URL: https://dev-api.rivus.ai
+      # The deployed app talks to the deployed agent.
+      EXPO_PUBLIC_AGENT_URL: https://dev-agent.rivus.ai
       # Optional: address-autocomplete key (referrer-restricted). Unset → plain field.
       EXPO_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY }}
     steps:
@@ -139,15 +153,15 @@ jobs:
         run: |
           printf '%s' "$DEV_OPENAI_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put OPENAI_API_KEY --env development
 
-  # The five service deploys above all ship to the single Cloudflare `development`
+  # The six service deploys above all ship to the single Cloudflare `development`
   # environment. If each of them set `environment: development`, GitHub would open
-  # one deployment record per job — five per run — which floods the Deployments
+  # one deployment record per job — six per run — which floods the Deployments
   # timeline and makes the "active" deployment race between services. Instead the
   # deploy jobs run without an environment, and this job records exactly one
   # deployment for the run, once every service has shipped.
   record-deployment:
     name: Record development deployment
-    needs: [deploy-worker, deploy-docs, deploy-app, deploy-website, deploy-api]
+    needs: [deploy-worker, deploy-agent, deploy-docs, deploy-app, deploy-website, deploy-api]
     runs-on: ubuntu-latest
     environment:
       name: development

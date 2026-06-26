@@ -1,0 +1,37 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "rivus-agent",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-06-01",
+	// The Agents SDK relies on Node built-ins (and `cloudflare:workers`), so the
+	// nodejs_compat flag is required for the Worker to boot.
+	"compatibility_flags": ["nodejs_compat"],
+	"observability": {
+		"enabled": true
+	},
+	// Each Agent is a SQLite-backed Durable Object. The binding name kebab-cases to
+	// the URL segment the SDK routes on: `RivusAgent` -> `/agents/rivus-agent/:name`.
+	"durable_objects": {
+		"bindings": [{ "name": "RivusAgent", "class_name": "RivusAgent" }]
+	},
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["RivusAgent"] }],
+	// Named environments. `durable_objects` is non-inheritable, so each environment
+	// redeclares it; `main`, `migrations` and `observability` are inherited.
+	// Deploy with `wrangler deploy --env development`.
+	"env": {
+		"development": {
+			"name": "rivus-agent-dev",
+			"routes": [{ "pattern": "dev-agent.rivus.ai", "custom_domain": true }],
+			"durable_objects": {
+				"bindings": [{ "name": "RivusAgent", "class_name": "RivusAgent" }]
+			}
+		},
+		"production": {
+			"name": "rivus-agent",
+			"routes": [{ "pattern": "agent.rivus.ai", "custom_domain": true }],
+			"durable_objects": {
+				"bindings": [{ "name": "RivusAgent", "class_name": "RivusAgent" }]
+			}
+		}
+	}
+}

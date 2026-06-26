@@ -18,6 +18,7 @@ validate the monorepo, then deploy all five packages in parallel:
 | `@rivus/website` | Worker via **OpenNext** (Next.js)          | `dev.rivus.ai`              | `rivus.ai`        |
 | `@rivus/docs`    | Worker **Static Assets** (Docula build)    | `dev-docs.rivus.ai`         | `docs.rivus.ai`   |
 | `@rivus/worker`  | Worker (cron + on-demand tasks)            | cron only (`*.workers.dev`) | cron only         |
+| `@rivus/agent`   | Worker + **Agent** (Durable Object)        | `dev-agent.rivus.ai`        | `agent.rivus.ai`  |
 
 Each package owns a `wrangler.jsonc` with `development` and `production` named
 environments (`wrangler deploy --env <name>`). Development names are suffixed
@@ -141,8 +142,10 @@ target production.
 
 ```bash
 pnpm --filter @rivus/worker  exec wrangler deploy --env development
+pnpm --filter @rivus/agent   exec wrangler deploy --env development
 pnpm --filter @rivus/docs    build && pnpm --filter @rivus/docs exec wrangler deploy --env development
-EXPO_PUBLIC_API_URL=https://dev-api.rivus.ai pnpm --filter @rivus/app export:web && \
+EXPO_PUBLIC_API_URL=https://dev-api.rivus.ai EXPO_PUBLIC_AGENT_URL=https://dev-agent.rivus.ai \
+  pnpm --filter @rivus/app export:web && \
   pnpm --filter @rivus/app exec wrangler deploy --env development
 NEXT_PUBLIC_API_URL=https://dev-api.rivus.ai \
   pnpm --filter @rivus/website exec opennextjs-cloudflare build && \

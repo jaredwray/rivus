@@ -20,6 +20,7 @@ cross-platform app — all sharing one core library and one toolchain.
 | [`@rivus/api`](./packages/api)       | Fastify, Mongoose (MongoDB Atlas), JWT  | REST API with an OpenAPI document generated from its route schemas   |
 | [`@rivus/website`](./packages/website) | Next.js 16 (App Router), React 19     | Marketing site                                                       |
 | [`@rivus/worker`](./packages/worker) | Cloudflare Workers                      | Scheduled and on-demand background tasks                             |
+| [`@rivus/agent`](./packages/agent)   | Cloudflare Agents (Durable Objects)     | The Rivus AI agent the app chats with                               |
 | [`@rivus/docs`](./packages/docs)     | Docula                                  | Docs, changelog, and the API reference                              |
 | [`@rivus/app`](./packages/app)       | Expo (iOS / Android / Web)              | Cross-platform client application                                   |
 
@@ -74,6 +75,8 @@ pnpm --filter @rivus/website dev
   the OpenAPI document the **docs** site renders as its API reference.
 - The **website** and **app** both read `*_PUBLIC_API_URL` to talk to the API.
 - The **worker** runs the same kinds of tasks on a cron and on demand.
+- The **agent** is a Cloudflare Agent (Durable Object) the **app** chats with via
+  a floating "Rivus" launcher; it reads `EXPO_PUBLIC_AGENT_URL` to reach it.
 
 ## Supply chain & CI
 

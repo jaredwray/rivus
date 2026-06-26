@@ -41,3 +41,10 @@ allowBuilds:
   esbuild: true
   workerd: true
   sharp: false
+  # Transitive build scripts we deliberately deny: none is needed at runtime.
+  # core-js-pure's script only prints a funding notice; the two native modules
+  # are optional accelerators (zstd via mongoose, LZMA via the agents SDK's
+  # bash skill) that our code never exercises.
+  '@mongodb-js/zstd': false
+  core-js-pure: false
+  node-liblzma: false
