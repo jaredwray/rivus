@@ -1,8 +1,6 @@
 // Demo content for the Rivus dashboard, lifted verbatim from the Rivus.dc.html
 // design so the UI is fully populated without a backend. Pure data — no imports.
 
-import { colors } from '../theme/tokens';
-
 export type Channel = 'WhatsApp' | 'Phone' | 'Email' | 'SMS';
 
 export const channelColor: Record<Channel, string> = {
@@ -188,111 +186,6 @@ export const threads: Thread[] = [
 		],
 	},
 ];
-
-export type CustomerStatus = 'paid' | 'due' | 'quote' | 'lead';
-export type Customer = {
-	name: string;
-	initials: string;
-	area: string;
-	channel: Channel;
-	ltv: string;
-	balance: string;
-	last: string;
-	status: CustomerStatus;
-};
-
-export const customers: Customer[] = [
-	{
-		name: 'Grace Kim',
-		initials: 'GK',
-		area: 'Fremont',
-		channel: 'WhatsApp',
-		ltv: '$7,140',
-		balance: '$0.00',
-		last: 'Yesterday',
-		status: 'paid',
-	},
-	{
-		name: 'Priya Anand',
-		initials: 'PA',
-		area: 'Capitol Hill',
-		channel: 'Email',
-		ltv: '$5,260',
-		balance: '$540.00',
-		last: 'Today',
-		status: 'due',
-	},
-	{
-		name: 'Dana Whitfield',
-		initials: 'DW',
-		area: 'Ballard',
-		channel: 'WhatsApp',
-		ltv: '$3,480',
-		balance: '$0.00',
-		last: 'Today',
-		status: 'paid',
-	},
-	{
-		name: 'Robert Vance',
-		initials: 'RV',
-		area: 'Magnolia',
-		channel: 'Phone',
-		ltv: '$2,910',
-		balance: '$0.00',
-		last: '2 days ago',
-		status: 'quote',
-	},
-	{
-		name: 'Hari Patel',
-		initials: 'HP',
-		area: 'Greenwood',
-		channel: 'SMS',
-		ltv: '$1,820',
-		balance: '$210.00',
-		last: '3 days ago',
-		status: 'due',
-	},
-	{
-		name: 'Theo Marsh',
-		initials: 'TM',
-		area: 'Queen Anne',
-		channel: 'Phone',
-		ltv: '$910',
-		balance: '$0.00',
-		last: 'Today',
-		status: 'paid',
-	},
-	{
-		name: 'Maya Flores',
-		initials: 'MF',
-		area: 'Bellevue',
-		channel: 'Email',
-		ltv: '$640',
-		balance: '$0.00',
-		last: '1 week ago',
-		status: 'paid',
-	},
-	{
-		name: 'Luis Romero',
-		initials: 'LR',
-		area: 'Bellevue',
-		channel: 'SMS',
-		ltv: '—',
-		balance: '$0.00',
-		last: 'Yesterday',
-		status: 'lead',
-	},
-];
-
-export const customerStatusStyle: Record<
-	CustomerStatus,
-	{ label: string; color: string; background: string }
-> = {
-	paid: { label: 'Paid up', color: colors.green, background: 'rgba(31,181,115,0.12)' },
-	due: { label: 'Balance due', color: colors.redInk, background: 'rgba(240,88,75,0.12)' },
-	quote: { label: 'Quote pending', color: colors.amberInk, background: 'rgba(240,160,32,0.14)' },
-	lead: { label: 'New lead', color: colors.brandPurple, background: 'rgba(110,30,200,0.10)' },
-};
 
 export type Faq = { cat: string; q: string; a: string; uses: string };
 

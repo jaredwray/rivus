@@ -8,13 +8,12 @@ order: 1
 # Rivus
 
 Rivus is a product platform built as a Node.js + TypeScript monorepo. It is made
-of five workspaces:
+of four workspaces:
 
 | Package          | What it is                                               |
 | ---------------- | -------------------------------------------------------- |
 | `@rivus/api`     | Fastify REST API backed by MongoDB Atlas (Mongoose)      |
 | `@rivus/website` | Next.js marketing site                                   |
-| `@rivus/worker`  | Cloudflare Worker for scheduled and on-demand tasks      |
 | `@rivus/app`     | Expo client for iOS, Android, and Web                    |
 | `@rivus/docs`    | This documentation site (Docula)                         |
 

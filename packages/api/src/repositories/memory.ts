@@ -2,8 +2,11 @@ import { randomUUID } from 'node:crypto';
 import {
 	type Account,
 	type AccountId,
+	type CreateCustomerInput,
 	type CreateFaqInput,
 	type CreateItemInput,
+	type Customer,
+	type CustomerId,
 	type Faq,
 	type FaqId,
 	type Invite,
@@ -15,6 +18,7 @@ import {
 	normalizePagination,
 	pageToSkip,
 	type Role,
+	type UpdateCustomerInput,
 	type UpdateFaqInput,
 	type UpdateItemInput,
 	type UserId,
@@ -24,10 +28,12 @@ import type {
 	AcceptInviteInput,
 	AcceptInviteResult,
 	AccountRepository,
+	CustomerRepository,
 	FaqRepository,
 	InviteRepository,
 	ItemRepository,
 	ListAccountsOptions,
+	ListCustomersOptions,
 	ListFaqsOptions,
 	ListItemsOptions,
 	MembershipRepository,
@@ -60,6 +66,7 @@ export interface InMemoryData {
 	invites: Map<string, Invite>;
 	items: Map<string, Item>;
 	faqs: Map<string, Faq>;
+	customers: Map<string, Customer>;
 	/** Active one-time codes, keyed by normalized email (one per email). */
 	verificationCodes: Map<string, StoredVerificationCode>;
 }
@@ -72,6 +79,7 @@ export function createInMemoryData(): InMemoryData {
 		invites: new Map(),
 		items: new Map(),
 		faqs: new Map(),
+		customers: new Map(),
 		verificationCodes: new Map(),
 	};
 }
@@ -571,6 +579,73 @@ export class InMemoryFaqRepository implements FaqRepository {
 	}
 }
 
+/** In-memory customer store, scoped by account. */
+export class InMemoryCustomerRepository implements CustomerRepository {
+	constructor(private readonly data: InMemoryData) {}
+
+	async create(accountId: AccountId, input: CreateCustomerInput): Promise<Customer> {
+		const timestamp = now();
+		const customer: Customer = {
+			id: randomUUID() as CustomerId,
+			accountId,
+			name: input.name,
+			email: input.email,
+			phone: input.phone,
+			area: input.area,
+			channel: input.channel,
+			status: input.status,
+			lifetimeValue: input.lifetimeValue,
+			balance: input.balance,
+			notes: input.notes,
+			createdAt: timestamp,
+			updatedAt: timestamp,
+		};
+		this.data.customers.set(customer.id, customer);
+		return structuredClone(customer);
+	}
+
+	async list(options: ListCustomersOptions): Promise<{ customers: Customer[]; total: number }> {
+		// Map preserves insertion order, so reversing yields a deterministic
+		// newest-first ordering even when timestamps collide within a millisecond.
+		const owned = [...this.data.customers.values()]
+			.filter((customer) => customer.accountId === options.accountId)
+			.reverse();
+		const { pageSize } = normalizePagination(options.page, options.pageSize);
+		const skip = pageToSkip(options.page, options.pageSize);
+		return {
+			customers: owned.slice(skip, skip + pageSize).map((customer) => structuredClone(customer)),
+			total: owned.length,
+		};
+	}
+
+	async findById(accountId: AccountId, id: CustomerId): Promise<Customer | null> {
+		const customer = this.data.customers.get(id);
+		return customer && customer.accountId === accountId ? structuredClone(customer) : null;
+	}
+
+	async update(
+		accountId: AccountId,
+		id: CustomerId,
+		input: UpdateCustomerInput,
+	): Promise<Customer | null> {
+		const customer = this.data.customers.get(id);
+		if (!customer || customer.accountId !== accountId) {
+			return null;
+		}
+		const updated: Customer = { ...customer, ...input, updatedAt: now() };
+		this.data.customers.set(id, updated);
+		return structuredClone(updated);
+	}
+
+	async delete(accountId: AccountId, id: CustomerId): Promise<boolean> {
+		const customer = this.data.customers.get(id);
+		if (!customer || customer.accountId !== accountId) {
+			return false;
+		}
+		return this.data.customers.delete(id);
+	}
+}
+
 export interface InMemoryRepositories {
 	data: InMemoryData;
 	users: InMemoryUserRepository;
@@ -579,6 +654,7 @@ export interface InMemoryRepositories {
 	invites: InMemoryInviteRepository;
 	items: InMemoryItemRepository;
 	faqs: InMemoryFaqRepository;
+	customers: InMemoryCustomerRepository;
 	verificationCodes: InMemoryVerificationCodeRepository;
 	onboarding: InMemoryOnboardingRepository;
 }
@@ -593,6 +669,7 @@ export function createInMemoryRepositories(
 	const invites = new InMemoryInviteRepository(data);
 	const items = new InMemoryItemRepository(data);
 	const faqs = new InMemoryFaqRepository(data);
+	const customers = new InMemoryCustomerRepository(data);
 	const verificationCodes = new InMemoryVerificationCodeRepository(data);
 	const onboarding = new InMemoryOnboardingRepository(users, accounts, memberships, invites);
 	return {
@@ -603,6 +680,7 @@ export function createInMemoryRepositories(
 		invites,
 		items,
 		faqs,
+		customers,
 		verificationCodes,
 		onboarding,
 	};

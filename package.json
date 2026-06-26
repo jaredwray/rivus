@@ -3,7 +3,7 @@
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",
-	"description": "Rivus — a modern product platform monorepo (api, website, worker, docs, app).",
+	"description": "Rivus — a modern product platform monorepo (api, website, docs, app).",
 	"license": "MIT",
 	"author": "Jared Wray (https://jaredwray.com)",
 	"homepage": "https://github.com/jaredwray/rivus",

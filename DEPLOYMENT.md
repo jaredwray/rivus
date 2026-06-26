@@ -1,7 +1,7 @@
 # Deployment
 
 Every Rivus package deploys to **Cloudflare** with Wrangler. Two workflows
-validate the monorepo, then deploy all five packages in parallel:
+validate the monorepo, then deploy all four packages in parallel:
 
 - [`Deploy (development)`](.github/workflows/deploy-development.yaml) → the
   `development` environment, on every push to `main` (or manually).
@@ -17,7 +17,6 @@ validate the monorepo, then deploy all five packages in parallel:
 | `@rivus/app`     | Worker **Static Assets** (Expo web export) | `dev-app.rivus.ai`          | `app.rivus.ai`    |
 | `@rivus/website` | Worker via **OpenNext** (Next.js)          | `dev.rivus.ai`              | `rivus.ai`        |
 | `@rivus/docs`    | Worker **Static Assets** (Docula build)    | `dev-docs.rivus.ai`         | `docs.rivus.ai`   |
-| `@rivus/worker`  | Worker (cron + on-demand tasks)            | cron only (`*.workers.dev`) | cron only         |
 | `@rivus/agent`   | Worker + **Agent** (Durable Object)        | `dev-agent.rivus.ai`        | `agent.rivus.ai`  |
 
 Each package owns a `wrangler.jsonc` with `development` and `production` named
@@ -40,12 +39,6 @@ it ships as a **Cloudflare Container**:
 - Requires the **Workers Paid plan** (containers are not on the free plan) and a
   local Docker engine when deploying from a workstation.
 
-### How the worker is deployed
-
-`@rivus/worker` is already Cloudflare-native: `wrangler deploy --env development`
-bundles `src/index.ts` and registers the `*/15 * * * *` cron. The `development`
-environment points `API_BASE_URL` at `https://dev-api.rivus.ai`.
-
 ## Search engine crawling
 
 Only **production** is crawlable. Every pre-production deployment — the
@@ -67,8 +60,7 @@ default is "don't crawl":
 Production emits an explicit allow-all `robots.txt`; development emits
 `User-agent: * / Disallow: /`. The API (`api.rivus.ai`) serves only JSON with no
 crawlable UI in any environment (its Swagger UI is off under `NODE_ENV=production`,
-which is how the container always runs), and the worker has no public route, so
-neither emits a `robots.txt`.
+which is how the container always runs), so it does not emit a `robots.txt`.
 
 ## One-time setup
 
@@ -141,7 +133,6 @@ Swap `--env development` for `--env production` (and the matching API URLs) to
 target production.
 
 ```bash
-pnpm --filter @rivus/worker  exec wrangler deploy --env development
 pnpm --filter @rivus/agent   exec wrangler deploy --env development
 pnpm --filter @rivus/docs    build && pnpm --filter @rivus/docs exec wrangler deploy --env development
 EXPO_PUBLIC_API_URL=https://dev-api.rivus.ai EXPO_PUBLIC_AGENT_URL=https://dev-agent.rivus.ai \

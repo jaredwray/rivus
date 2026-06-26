@@ -16,3 +16,6 @@
 .env.*
 !.env.example
 .dev.vars
+
+# Design-system source archive (visual reference only; DESIGN_SYSTEM.md is the spec)
+*.mhtml

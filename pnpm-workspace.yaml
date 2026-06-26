@@ -18,9 +18,9 @@ catalog:
   tsdown: ^0.22.0
   # Lint / format
   '@biomejs/biome': ^2.4.0
-  # Validation (shared across api/worker/core)
+  # Validation (shared across api/core)
   zod: ^4.4.0
-  # Cloudflare deploy tooling (worker, api, docs, app, website)
+  # Cloudflare deploy tooling (api, docs, app, website)
   wrangler: ^4.101.0
   '@cloudflare/workers-types': ^4.20260616.1
 

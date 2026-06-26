@@ -1,4 +1,11 @@
-import { accountStatusSchema, faqStatusSchema, itemStatusSchema, roleSchema } from '@rivus/core';
+import {
+	accountStatusSchema,
+	customerChannelSchema,
+	customerStatusSchema,
+	faqStatusSchema,
+	itemStatusSchema,
+	roleSchema,
+} from '@rivus/core';
 import { z } from 'zod';
 
 /** Public user projection — never includes the password hash. */
@@ -152,6 +159,31 @@ export const faqListResponseSchema = z
 		meta: paginationMetaSchema,
 	})
 	.meta({ id: 'FaqList' });
+
+export const customerResponseSchema = z
+	.object({
+		id: z.string(),
+		accountId: z.string(),
+		name: z.string(),
+		email: z.string(),
+		phone: z.string(),
+		area: z.string(),
+		channel: customerChannelSchema,
+		status: customerStatusSchema,
+		lifetimeValue: z.number().int(),
+		balance: z.number().int(),
+		notes: z.string(),
+		createdAt: z.string(),
+		updatedAt: z.string(),
+	})
+	.meta({ id: 'Customer' });
+
+export const customerListResponseSchema = z
+	.object({
+		data: z.array(customerResponseSchema),
+		meta: paginationMetaSchema,
+	})
+	.meta({ id: 'CustomerList' });
 
 /**
  * Result of the AI duplicate check run before creating an FAQ. `match` is the

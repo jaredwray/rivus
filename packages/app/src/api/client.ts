@@ -4,7 +4,12 @@ import {
 	type AccountId,
 	acceptInviteSchema,
 	accountStatusSchema,
+	type Customer,
+	type CustomerId,
+	createCustomerSchema,
 	createFaqSchema,
+	customerChannelSchema,
+	customerStatusSchema,
 	type Faq,
 	type FaqId,
 	faqSimilarityQuerySchema,
@@ -23,10 +28,12 @@ import {
 	roleSchema,
 	signupSchema,
 	type UpdateAccountInput,
+	type UpdateCustomerInput,
 	type UpdateFaqInput,
 	type User,
 	type UserId,
 	updateAccountSchema,
+	updateCustomerSchema,
 	updateFaqSchema,
 	type VerifyCodeInput,
 	verifyCodeSchema,
@@ -43,11 +50,18 @@ export type SignupBody = z.input<typeof signupSchema>;
  */
 export type CreateFaqBody = z.input<typeof createFaqSchema>;
 
+/**
+ * createCustomer accepts the schema's *input*: every field except `name` has a
+ * schema default the API fills, so callers may pass just `{ name }`.
+ */
+export type CreateCustomerBody = z.input<typeof createCustomerSchema>;
+
 // `@rivus/core` brands its ids so a user id can't be passed where an item id is
 // expected. The wire format is a plain string; these helpers validate as strings
 // while preserving the brand in the inferred type.
 const itemId = () => z.string().min(1) as unknown as z.ZodType<ItemId>;
 const faqId = () => z.string().min(1) as unknown as z.ZodType<FaqId>;
+const customerId = () => z.string().min(1) as unknown as z.ZodType<CustomerId>;
 const accountId = () => z.string().min(1) as unknown as z.ZodType<AccountId>;
 const userId = () => z.string().min(1) as unknown as z.ZodType<UserId>;
 
@@ -246,6 +260,32 @@ export interface FaqListResponse {
 	meta: PaginationMeta;
 }
 
+const customerResponseSchema = z.object({
+	id: customerId(),
+	accountId: accountId(),
+	name: z.string(),
+	email: z.string(),
+	phone: z.string(),
+	area: z.string(),
+	channel: customerChannelSchema,
+	status: customerStatusSchema,
+	lifetimeValue: z.number().int(),
+	balance: z.number().int(),
+	notes: z.string(),
+	createdAt: z.string(),
+	updatedAt: z.string(),
+}) satisfies z.ZodType<Customer>;
+
+const customerListResponseSchema = z.object({
+	data: z.array(customerResponseSchema),
+	meta: paginationMetaSchema,
+});
+
+export interface CustomerListResponse {
+	data: Customer[];
+	meta: PaginationMeta;
+}
+
 const faqSimilarityResponseSchema = z.object({
 	match: faqResponseSchema.nullable(),
 	reason: z.string(),
@@ -340,6 +380,16 @@ export interface RivusApiClient {
 	updateFaq(token: string, id: FaqId, input: UpdateFaqInput): Promise<Faq>;
 	/** Delete one of the account's FAQs. */
 	deleteFaq(token: string, id: FaqId): Promise<void>;
+	/** List the account's customers (CRM contacts). */
+	listCustomers(token: string, query?: Partial<PaginationQuery>): Promise<CustomerListResponse>;
+	/** Create a customer for the account. */
+	createCustomer(token: string, input: CreateCustomerBody): Promise<Customer>;
+	/** Fetch one of the account's customers. */
+	getCustomer(token: string, id: CustomerId): Promise<Customer>;
+	/** Update one of the account's customers. */
+	updateCustomer(token: string, id: CustomerId, input: UpdateCustomerInput): Promise<Customer>;
+	/** Delete one of the account's customers. */
+	deleteCustomer(token: string, id: CustomerId): Promise<void>;
 	/**
 	 * List/search every company, for the staff company switcher. Restricted to Rivus
 	 * staff server-side (a regular customer gets 403).
@@ -539,6 +589,46 @@ export function createApiClient(
 			});
 		},
 
+		async listCustomers(token: string, query?: Partial<PaginationQuery>) {
+			const { page, pageSize } = parseInput(paginationQuerySchema, query ?? {});
+			const search = new URLSearchParams({
+				page: String(page),
+				pageSize: String(pageSize),
+			});
+			return request(`/v1/customers?${search.toString()}`, customerListResponseSchema, {
+				method: 'GET',
+				headers: authHeaders(token),
+			});
+		},
+
+		async createCustomer(token: string, input: CreateCustomerBody) {
+			const payload = parseInput(createCustomerSchema, input);
+			return request('/v1/customers', customerResponseSchema, jsonInit('POST', payload, token));
+		},
+
+		getCustomer(token: string, id: CustomerId) {
+			return request(`/v1/customers/${encodeURIComponent(id)}`, customerResponseSchema, {
+				method: 'GET',
+				headers: authHeaders(token),
+			});
+		},
+
+		async updateCustomer(token: string, id: CustomerId, input: UpdateCustomerInput) {
+			const payload = parseInput(updateCustomerSchema, input);
+			return request(
+				`/v1/customers/${encodeURIComponent(id)}`,
+				customerResponseSchema,
+				jsonInit('PATCH', payload, token),
+			);
+		},
+
+		async deleteCustomer(token: string, id: CustomerId) {
+			await request(`/v1/customers/${encodeURIComponent(id)}`, noContentSchema, {
+				method: 'DELETE',
+				headers: authHeaders(token),
+			});
+		},
+
 		async listCompanies(token: string, query?: CompanyListQuery) {
 			const { page, pageSize } = parseInput(paginationQuerySchema, {
 				page: query?.page,
@@ -573,4 +663,4 @@ function safeJsonParse(raw: string): unknown {
 	}
 }
 
-export type { Account, Faq, Item, PaginationMeta, Role, User };
+export type { Account, Customer, Faq, Item, PaginationMeta, Role, User };
