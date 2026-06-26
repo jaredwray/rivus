@@ -1,4 +1,4 @@
-import type { CustomerChannel, CustomerStatus } from '@rivus/core';
+import type { CustomerStatus } from '@rivus/core';
 import { type ComponentProps, useCallback, useEffect, useState } from 'react';
 import {
 	ActivityIndicator,
@@ -27,18 +27,10 @@ import { colors, font, radii, SIDEBAR_BREAKPOINT, SIDEBAR_WIDTH } from '@/src/th
 const COLS = {
 	customer: 2.2,
 	area: 1.3,
-	channel: 1,
 	lifetime: 1,
 	balance: 1.2,
 	status: 1.1,
 };
-
-const CHANNEL_OPTIONS: { label: string; value: CustomerChannel }[] = [
-	{ label: 'WhatsApp', value: 'whatsapp' },
-	{ label: 'Phone', value: 'phone' },
-	{ label: 'Email', value: 'email' },
-	{ label: 'SMS', value: 'sms' },
-];
 
 const STATUS_OPTIONS: { label: string; value: CustomerStatus }[] = [
 	{ label: 'Lead', value: 'lead' },
@@ -46,13 +38,6 @@ const STATUS_OPTIONS: { label: string; value: CustomerStatus }[] = [
 	{ label: 'Paid', value: 'paid' },
 	{ label: 'Due', value: 'due' },
 ];
-
-const CHANNEL_LABEL: Record<CustomerChannel, string> = {
-	whatsapp: 'WhatsApp',
-	phone: 'Phone',
-	email: 'Email',
-	sms: 'SMS',
-};
 
 const STATUS_STYLE: Record<CustomerStatus, { label: string; color: string; background: string }> = {
 	paid: { label: 'Paid up', color: colors.green, background: 'rgba(31,181,115,0.12)' },
@@ -113,7 +98,6 @@ export default function CustomersScreen() {
 	const [email, setEmail] = useState('');
 	const [phone, setPhone] = useState('');
 	const [area, setArea] = useState('');
-	const [channel, setChannel] = useState<CustomerChannel>('phone');
 	const [status, setStatus] = useState<CustomerStatus>('lead');
 	const [lifetime, setLifetime] = useState('');
 	const [balance, setBalance] = useState('');
@@ -176,7 +160,6 @@ export default function CustomersScreen() {
 		setEmail('');
 		setPhone('');
 		setArea('');
-		setChannel('phone');
 		setStatus('lead');
 		setLifetime('');
 		setBalance('');
@@ -196,7 +179,6 @@ export default function CustomersScreen() {
 		setEmail(customer.email);
 		setPhone(customer.phone);
 		setArea(customer.area);
-		setChannel(customer.channel);
 		setStatus(customer.status);
 		setLifetime(centsToInput(customer.lifetimeValue));
 		setBalance(centsToInput(customer.balance));
@@ -229,7 +211,6 @@ export default function CustomersScreen() {
 				email: email.trim(),
 				phone: phone.trim(),
 				area: area.trim(),
-				channel,
 				status,
 				lifetimeValue,
 				balance: balanceValue,
@@ -330,10 +311,6 @@ export default function CustomersScreen() {
 							autoCapitalize="words"
 						/>
 						<View style={styles.fieldWrap}>
-							<Txt style={styles.fieldLabel}>Channel</Txt>
-							<Segmented options={CHANNEL_OPTIONS} value={channel} onChange={setChannel} />
-						</View>
-						<View style={styles.fieldWrap}>
 							<Txt style={styles.fieldLabel}>Status</Txt>
 							<Segmented options={STATUS_OPTIONS} value={status} onChange={setStatus} />
 						</View>
@@ -401,7 +378,6 @@ export default function CustomersScreen() {
 							<View style={styles.tableHead}>
 								<Txt style={[styles.th, { flex: COLS.customer }]}>Customer</Txt>
 								<Txt style={[styles.th, { flex: COLS.area }]}>Area</Txt>
-								<Txt style={[styles.th, { flex: COLS.channel }]}>Channel</Txt>
 								<Txt style={[styles.th, styles.right, { flex: COLS.lifetime }]}>Lifetime</Txt>
 								<Txt style={[styles.th, styles.right, { flex: COLS.balance }]}>Balance</Txt>
 								<Txt style={[styles.th, styles.right, { flex: COLS.status }]}>Status</Txt>
@@ -428,9 +404,6 @@ export default function CustomersScreen() {
 										</View>
 										<Txt style={[styles.td, { flex: COLS.area }]} numberOfLines={1}>
 											{customer.area || '—'}
-										</Txt>
-										<Txt style={[styles.td, { flex: COLS.channel }]}>
-											{CHANNEL_LABEL[customer.channel]}
 										</Txt>
 										<Txt style={[styles.td, styles.right, styles.tdMed, { flex: COLS.lifetime }]}>
 											{formatMoney(customer.lifetimeValue)}
@@ -523,11 +496,6 @@ function AccountPanel({ customer, onEdit }: { customer: Customer; onEdit: () => 
 
 			<SectionLabel style={{ marginTop: 8, marginBottom: 12 }}>Contact</SectionLabel>
 			<View style={{ gap: 12 }}>
-				<ContactRow
-					icon="message-circle"
-					label="Preferred channel"
-					value={CHANNEL_LABEL[customer.channel]}
-				/>
 				{customer.email ? <ContactRow icon="mail" label="Email" value={customer.email} /> : null}
 				{customer.phone ? <ContactRow icon="phone" label="Phone" value={customer.phone} /> : null}
 			</View>

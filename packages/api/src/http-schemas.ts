@@ -1,6 +1,5 @@
 import {
 	accountStatusSchema,
-	customerChannelSchema,
 	customerStatusSchema,
 	faqStatusSchema,
 	itemStatusSchema,
@@ -168,7 +167,6 @@ export const customerResponseSchema = z
 		email: z.string(),
 		phone: z.string(),
 		area: z.string(),
-		channel: customerChannelSchema,
 		status: customerStatusSchema,
 		lifetimeValue: z.number().int(),
 		balance: z.number().int(),
