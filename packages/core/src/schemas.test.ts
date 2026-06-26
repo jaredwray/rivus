@@ -4,6 +4,7 @@ import {
 	acceptInviteSchema,
 	accountBusinessSchema,
 	accountStatusSchema,
+	createCustomerSchema,
 	createFaqSchema,
 	createItemSchema,
 	inviteMemberSchema,
@@ -11,6 +12,7 @@ import {
 	paginationQuerySchema,
 	signupSchema,
 	updateAccountSchema,
+	updateCustomerSchema,
 	updateFaqSchema,
 	updateItemSchema,
 	updateMemberRoleSchema,
@@ -253,6 +255,75 @@ describe('updateFaqSchema', () => {
 
 	it('rejects an empty update', () => {
 		expect(() => updateFaqSchema.parse({})).toThrow();
+	});
+});
+
+describe('createCustomerSchema', () => {
+	it('applies defaults for every optional field', () => {
+		expect(createCustomerSchema.parse({ name: 'Grace Kim' })).toEqual({
+			name: 'Grace Kim',
+			email: '',
+			phone: '',
+			area: '',
+			channel: 'phone',
+			status: 'lead',
+			lifetimeValue: 0,
+			balance: 0,
+			notes: '',
+		});
+	});
+
+	it('accepts and normalizes a fully specified record', () => {
+		const parsed = createCustomerSchema.parse({
+			name: 'Priya Anand',
+			email: '  Priya@Example.COM ',
+			phone: '(206) 555-0119',
+			area: 'Capitol Hill',
+			channel: 'email',
+			status: 'due',
+			lifetimeValue: 526_000,
+			balance: 54_000,
+			notes: 'Billing flag',
+		});
+		expect(parsed.email).toBe('priya@example.com');
+		expect(parsed).toMatchObject({ channel: 'email', status: 'due', balance: 54_000 });
+	});
+
+	it('rejects an unknown channel', () => {
+		expect(() => createCustomerSchema.parse({ name: 'X', channel: 'telegram' })).toThrow();
+	});
+
+	it('rejects an unknown status', () => {
+		expect(() => createCustomerSchema.parse({ name: 'X', status: 'cold' })).toThrow();
+	});
+
+	it('rejects negative money', () => {
+		expect(() => createCustomerSchema.parse({ name: 'X', balance: -1 })).toThrow();
+	});
+
+	it('rejects non-integer money', () => {
+		expect(() => createCustomerSchema.parse({ name: 'X', lifetimeValue: 1.5 })).toThrow();
+	});
+
+	it('accepts a blank email but rejects a malformed one in plain language', () => {
+		expect(createCustomerSchema.parse({ name: 'X', email: '' }).email).toBe('');
+		const result = createCustomerSchema.safeParse({ name: 'X', email: 'not-an-email' });
+		expect(result.success).toBe(false);
+		expect(result.error?.issues[0]?.message).toBe('Enter a valid email address.');
+	});
+});
+
+describe('updateCustomerSchema', () => {
+	it('accepts a partial update of one field', () => {
+		expect(updateCustomerSchema.parse({ status: 'paid' })).toEqual({ status: 'paid' });
+	});
+
+	it('rejects an empty update', () => {
+		expect(() => updateCustomerSchema.parse({})).toThrow();
+	});
+
+	it('rejects a negative balance', () => {
+		expect(() => updateCustomerSchema.parse({ balance: -5 })).toThrow();
 	});
 });
 

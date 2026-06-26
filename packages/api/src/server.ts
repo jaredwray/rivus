@@ -4,6 +4,7 @@ import { loadConfig } from './config';
 import { checkDatabaseReady, connectMongoose, disconnectMongoose } from './db/mongoose';
 import {
 	MongoAccountRepository,
+	MongoCustomerRepository,
 	MongoFaqRepository,
 	MongoInviteRepository,
 	MongoItemRepository,
@@ -29,6 +30,7 @@ export async function start(): Promise<void> {
 		onboarding: new MongoOnboardingRepository(),
 		items: new MongoItemRepository(),
 		faqs: new MongoFaqRepository(),
+		customers: new MongoCustomerRepository(),
 		verificationCodes: new MongoVerificationCodeRepository(),
 		mailer: createMailer(config),
 		faqSimilarity: createFaqSimilarityService(config),

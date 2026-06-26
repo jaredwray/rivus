@@ -7,6 +7,7 @@ export type Id<TBrand extends string> = string & { readonly __brand: TBrand };
 export type UserId = Id<'User'>;
 export type ItemId = Id<'Item'>;
 export type FaqId = Id<'Faq'>;
+export type CustomerId = Id<'Customer'>;
 export type AccountId = Id<'Account'>;
 export type MembershipId = Id<'Membership'>;
 export type InviteId = Id<'Invite'>;
@@ -115,6 +116,38 @@ export interface Faq {
 	/** Free-text grouping (e.g. "Pricing", "Scheduling"); empty when uncategorized. */
 	category: string;
 	status: FaqStatus;
+	createdAt: IsoDateString;
+	updatedAt: IsoDateString;
+}
+
+/** The preferred channel a customer is reached on. */
+export type CustomerChannel = 'whatsapp' | 'phone' | 'email' | 'sms';
+
+/**
+ * Where a customer sits in the sales/billing lifecycle: a fresh `lead`, a
+ * `quote` awaiting approval, `paid` up, or with a balance `due`.
+ */
+export type CustomerStatus = 'lead' | 'quote' | 'paid' | 'due';
+
+/** A CRM contact owned by an account; all members share the account's customers. */
+export interface Customer {
+	id: CustomerId;
+	accountId: AccountId;
+	name: string;
+	/** Empty string when not provided. */
+	email: string;
+	/** Empty string when not provided. */
+	phone: string;
+	/** Service area / neighborhood; empty string when not provided. */
+	area: string;
+	channel: CustomerChannel;
+	status: CustomerStatus;
+	/** Lifetime value in integer cents. */
+	lifetimeValue: number;
+	/** Outstanding balance in integer cents. */
+	balance: number;
+	/** Free-text notes; empty string when none. */
+	notes: string;
 	createdAt: IsoDateString;
 	updatedAt: IsoDateString;
 }
