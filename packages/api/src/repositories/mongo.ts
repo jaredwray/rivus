@@ -156,7 +156,9 @@ function mapCustomer(doc: HydratedDocument<CustomerDocument>): Customer {
 		name: doc.name,
 		email: doc.email,
 		phone: doc.phone,
-		address: doc.address,
+		// Fall back to the legacy `area` field for customers created before it was
+		// renamed to `address`, so their saved location isn't dropped from responses.
+		address: doc.address || doc.area || '',
 		channel: doc.channel,
 		status: doc.status,
 		lifetimeValue: doc.lifetimeValue,
