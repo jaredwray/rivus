@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { ApiError } from '@/src/api/client';
+import { getGoogleMapsApiKey } from '@/src/api/config';
 import { deviceTimezone, listTimezones } from '@/src/api/timezones';
 import { useAuth } from '@/src/auth/AuthContext';
+import { AddressAutocomplete } from '@/src/components/AddressAutocomplete';
 import {
 	Card,
 	GradientButton,
@@ -43,6 +45,12 @@ export default function SettingsScreen() {
 		() => listTimezones().map((zone) => ({ label: zone.replace(/_/g, ' '), value: zone })),
 		[],
 	);
+
+	// The Maps key is HTTP-referrer restricted to web origins, so native requests
+	// (no referer) would be rejected on every keystroke. Gate autocomplete to web
+	// and let the field fall back to a plain text input elsewhere — same as the
+	// signup form (see AuthScreen).
+	const mapsApiKey = useMemo(() => (Platform.OS === 'web' ? getGoogleMapsApiKey() : null), []);
 
 	if (!session) {
 		return null;
@@ -101,7 +109,11 @@ export default function SettingsScreen() {
 	}
 
 	return (
-		<ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+		<ScrollView
+			contentContainerStyle={styles.content}
+			keyboardShouldPersistTaps="handled"
+			showsVerticalScrollIndicator={false}
+		>
 			<Txt style={styles.h1}>Account settings</Txt>
 			<Txt style={styles.subtitle}>Business details for {session.account.name}.</Txt>
 
@@ -125,11 +137,12 @@ export default function SettingsScreen() {
 						placeholder="+1 (206) 555-0100"
 						keyboardType="phone-pad"
 					/>
-					<TextField
+					<AddressAutocomplete
 						label="Address"
 						value={address}
 						onChangeText={setAddress}
 						placeholder="1 Main St, Seattle, WA"
+						apiKey={mapsApiKey}
 					/>
 					<TextField
 						label="Website"
