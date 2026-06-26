@@ -6,7 +6,6 @@ export interface CustomerDocument {
 	email: string;
 	phone: string;
 	area: string;
-	channel: 'whatsapp' | 'phone' | 'email' | 'sms';
 	status: 'lead' | 'quote' | 'paid' | 'due';
 	lifetimeValue: number;
 	balance: number;
@@ -22,7 +21,6 @@ const customerSchema = new Schema<CustomerDocument>(
 		email: { type: String, default: '', trim: true, lowercase: true },
 		phone: { type: String, default: '', trim: true },
 		area: { type: String, default: '', trim: true },
-		channel: { type: String, enum: ['whatsapp', 'phone', 'email', 'sms'], default: 'phone' },
 		status: { type: String, enum: ['lead', 'quote', 'paid', 'due'], default: 'lead' },
 		lifetimeValue: { type: Number, default: 0 },
 		balance: { type: Number, default: 0 },

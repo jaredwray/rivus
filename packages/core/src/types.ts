@@ -120,9 +120,6 @@ export interface Faq {
 	updatedAt: IsoDateString;
 }
 
-/** The preferred channel a customer is reached on. */
-export type CustomerChannel = 'whatsapp' | 'phone' | 'email' | 'sms';
-
 /**
  * Where a customer sits in the sales/billing lifecycle: a fresh `lead`, a
  * `quote` awaiting approval, `paid` up, or with a balance `due`.
@@ -140,7 +137,6 @@ export interface Customer {
 	phone: string;
 	/** Service area / neighborhood; empty string when not provided. */
 	area: string;
-	channel: CustomerChannel;
 	status: CustomerStatus;
 	/** Lifetime value in integer cents. */
 	lifetimeValue: number;

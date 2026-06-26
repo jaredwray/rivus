@@ -265,7 +265,6 @@ describe('createCustomerSchema', () => {
 			email: '',
 			phone: '',
 			area: '',
-			channel: 'phone',
 			status: 'lead',
 			lifetimeValue: 0,
 			balance: 0,
@@ -279,18 +278,13 @@ describe('createCustomerSchema', () => {
 			email: '  Priya@Example.COM ',
 			phone: '(206) 555-0119',
 			area: 'Capitol Hill',
-			channel: 'email',
 			status: 'due',
 			lifetimeValue: 526_000,
 			balance: 54_000,
 			notes: 'Billing flag',
 		});
 		expect(parsed.email).toBe('priya@example.com');
-		expect(parsed).toMatchObject({ channel: 'email', status: 'due', balance: 54_000 });
-	});
-
-	it('rejects an unknown channel', () => {
-		expect(() => createCustomerSchema.parse({ name: 'X', channel: 'telegram' })).toThrow();
+		expect(parsed).toMatchObject({ status: 'due', balance: 54_000 });
 	});
 
 	it('rejects an unknown status', () => {

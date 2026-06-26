@@ -2018,16 +2018,6 @@
                     "type": "string",
                     "maxLength": 120
                   },
-                  "channel": {
-                    "default": "phone",
-                    "type": "string",
-                    "enum": [
-                      "whatsapp",
-                      "phone",
-                      "email",
-                      "sms"
-                    ]
-                  },
                   "status": {
                     "default": "lead",
                     "type": "string",
@@ -2185,15 +2175,6 @@
                   "area": {
                     "type": "string",
                     "maxLength": 120
-                  },
-                  "channel": {
-                    "type": "string",
-                    "enum": [
-                      "whatsapp",
-                      "phone",
-                      "email",
-                      "sms"
-                    ]
                   },
                   "status": {
                     "type": "string",
