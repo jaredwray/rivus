@@ -2,8 +2,11 @@ import type {
 	Account,
 	AccountBusinessInput,
 	AccountId,
+	CreateCustomerInput,
 	CreateFaqInput,
 	CreateItemInput,
+	Customer,
+	CustomerId,
 	Faq,
 	FaqId,
 	Invite,
@@ -12,6 +15,7 @@ import type {
 	ItemId,
 	Membership,
 	Role,
+	UpdateCustomerInput,
 	UpdateFaqInput,
 	UpdateItemInput,
 	User,
@@ -218,4 +222,22 @@ export interface FaqRepository {
 	findById(accountId: AccountId, id: FaqId): Promise<Faq | null>;
 	update(accountId: AccountId, id: FaqId, input: UpdateFaqInput): Promise<Faq | null>;
 	delete(accountId: AccountId, id: FaqId): Promise<boolean>;
+}
+
+export interface ListCustomersOptions {
+	accountId: AccountId;
+	page: number;
+	pageSize: number;
+}
+
+export interface CustomerRepository {
+	create(accountId: AccountId, input: CreateCustomerInput): Promise<Customer>;
+	list(options: ListCustomersOptions): Promise<{ customers: Customer[]; total: number }>;
+	findById(accountId: AccountId, id: CustomerId): Promise<Customer | null>;
+	update(
+		accountId: AccountId,
+		id: CustomerId,
+		input: UpdateCustomerInput,
+	): Promise<Customer | null>;
+	delete(accountId: AccountId, id: CustomerId): Promise<boolean>;
 }

@@ -1,8 +1,27 @@
-import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
-import { RivusSymbol } from '@/src/brand/RivusLogo';
-import { BrandGradient } from '@/src/components/Gradient';
-import { Avatar, GradientButton, Icon, Pill, SectionLabel, Txt } from '@/src/components/ui';
-import { customerStatusStyle, customers } from '@/src/data/demo';
+import type { CustomerChannel, CustomerStatus } from '@rivus/core';
+import { type ComponentProps, useCallback, useEffect, useState } from 'react';
+import {
+	ActivityIndicator,
+	Pressable,
+	ScrollView,
+	StyleSheet,
+	useWindowDimensions,
+	View,
+} from 'react-native';
+import { ApiError, type Customer } from '@/src/api/client';
+import { initialsOf, useAuth } from '@/src/auth/AuthContext';
+import {
+	Avatar,
+	Card,
+	GradientButton,
+	Icon,
+	OutlineButton,
+	Pill,
+	SectionLabel,
+	Segmented,
+	TextField,
+	Txt,
+} from '@/src/components/ui';
 import { colors, font, radii, SIDEBAR_BREAKPOINT, SIDEBAR_WIDTH } from '@/src/theme/tokens';
 
 const COLS = {
@@ -14,25 +33,226 @@ const COLS = {
 	status: 1.1,
 };
 
-const recent = [
-	{ color: colors.brandPurple, title: 'Emailed about invoice #1051', time: 'Today, 8:47 AM' },
-	{ color: colors.brandCyan, title: 'Valve replacement completed', time: 'Jun 18' },
-	{ color: '#d3d6e0', title: 'Left a 5-star review', time: 'May 30' },
+const CHANNEL_OPTIONS: { label: string; value: CustomerChannel }[] = [
+	{ label: 'WhatsApp', value: 'whatsapp' },
+	{ label: 'Phone', value: 'phone' },
+	{ label: 'Email', value: 'email' },
+	{ label: 'SMS', value: 'sms' },
 ];
 
-const invoices = [
-	{ title: '#1051 · Valve replacement', meta: 'Due Jun 30', tag: '$540', paid: false },
-	{ title: '#1037 · Drain cleaning', meta: 'Paid May 28', tag: 'Paid', paid: true },
-	{ title: '#1022 · Faucet install', meta: 'Paid Apr 11', tag: 'Paid', paid: true },
+const STATUS_OPTIONS: { label: string; value: CustomerStatus }[] = [
+	{ label: 'Lead', value: 'lead' },
+	{ label: 'Quote', value: 'quote' },
+	{ label: 'Paid', value: 'paid' },
+	{ label: 'Due', value: 'due' },
 ];
+
+const CHANNEL_LABEL: Record<CustomerChannel, string> = {
+	whatsapp: 'WhatsApp',
+	phone: 'Phone',
+	email: 'Email',
+	sms: 'SMS',
+};
+
+const STATUS_STYLE: Record<CustomerStatus, { label: string; color: string; background: string }> = {
+	paid: { label: 'Paid up', color: colors.green, background: 'rgba(31,181,115,0.12)' },
+	due: { label: 'Balance due', color: colors.redInk, background: 'rgba(240,88,75,0.12)' },
+	quote: { label: 'Quote pending', color: colors.amberInk, background: 'rgba(240,160,32,0.14)' },
+	lead: { label: 'New lead', color: colors.brandPurple, background: 'rgba(110,30,200,0.10)' },
+};
+
+/** Format integer cents as a grouped dollar string (54000 → "$540.00"). */
+function formatMoney(cents: number): string {
+	const sign = cents < 0 ? '-' : '';
+	const abs = Math.abs(cents);
+	const dollars = String(Math.floor(abs / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+	return `${sign}$${dollars}.${String(abs % 100).padStart(2, '0')}`;
+}
+
+/** Parse a dollar text input into integer cents; returns null when invalid. */
+function dollarsToCents(text: string): number | null {
+	const trimmed = text.trim();
+	if (trimmed === '') {
+		return 0;
+	}
+	const value = Number(trimmed.replace(/[$,\s]/g, ''));
+	if (!Number.isFinite(value) || value < 0) {
+		return null;
+	}
+	return Math.round(value * 100);
+}
+
+/** Pre-fill the dollar input when editing (0 shows blank so the placeholder shows). */
+function centsToInput(cents: number): string {
+	if (cents === 0) {
+		return '';
+	}
+	return cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2);
+}
 
 export default function CustomersScreen() {
+	const { session, client } = useAuth();
 	const { width } = useWindowDimensions();
 	const sidebar = width >= SIDEBAR_BREAKPOINT ? SIDEBAR_WIDTH : 0;
 	const showPanel = width >= 1040;
 	const panel = showPanel ? 340 : 0;
 	const avail = width - sidebar - panel - 48;
-	const tableWidth = Math.max(620, avail);
+	const tableWidth = Math.max(640, avail);
+
+	const [list, setList] = useState<Customer[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState<string | null>(null);
+	const [selectedId, setSelectedId] = useState<string | null>(null);
+
+	const [formOpen, setFormOpen] = useState(false);
+	const [editing, setEditing] = useState<Customer | null>(null);
+	const [name, setName] = useState('');
+	const [email, setEmail] = useState('');
+	const [phone, setPhone] = useState('');
+	const [area, setArea] = useState('');
+	const [channel, setChannel] = useState<CustomerChannel>('phone');
+	const [status, setStatus] = useState<CustomerStatus>('lead');
+	const [lifetime, setLifetime] = useState('');
+	const [balance, setBalance] = useState('');
+	const [notes, setNotes] = useState('');
+	const [formError, setFormError] = useState<string | null>(null);
+	const [saving, setSaving] = useState(false);
+	const [deleting, setDeleting] = useState(false);
+
+	const load = useCallback(async () => {
+		if (!session) {
+			return;
+		}
+		setLoading(true);
+		setError(null);
+		try {
+			// The API caps pageSize at 100 and this screen has no pagination UI, so
+			// page through everything — otherwise customers past the first 100 would
+			// vanish from the list with no way to view or edit them.
+			const all: Customer[] = [];
+			let page = 1;
+			let hasNext = true;
+			while (hasNext) {
+				const { data, meta } = await client.listCustomers(session.token, { page, pageSize: 100 });
+				all.push(...data);
+				hasNext = meta.hasNextPage;
+				page += 1;
+			}
+			setList(all);
+		} catch (caught) {
+			setError(caught instanceof ApiError ? caught.message : 'Could not load your customers.');
+		} finally {
+			setLoading(false);
+		}
+	}, [client, session]);
+
+	useEffect(() => {
+		load();
+	}, [load]);
+
+	function resetForm() {
+		setName('');
+		setEmail('');
+		setPhone('');
+		setArea('');
+		setChannel('phone');
+		setStatus('lead');
+		setLifetime('');
+		setBalance('');
+		setNotes('');
+		setFormError(null);
+	}
+
+	function openCreate() {
+		setEditing(null);
+		resetForm();
+		setFormOpen(true);
+	}
+
+	function openEdit(customer: Customer) {
+		setEditing(customer);
+		setName(customer.name);
+		setEmail(customer.email);
+		setPhone(customer.phone);
+		setArea(customer.area);
+		setChannel(customer.channel);
+		setStatus(customer.status);
+		setLifetime(centsToInput(customer.lifetimeValue));
+		setBalance(centsToInput(customer.balance));
+		setNotes(customer.notes);
+		setFormError(null);
+		setSelectedId(customer.id);
+		setFormOpen(true);
+	}
+
+	function closeForm() {
+		setFormOpen(false);
+		setFormError(null);
+	}
+
+	async function onSave() {
+		if (!session || saving) {
+			return;
+		}
+		const lifetimeValue = dollarsToCents(lifetime);
+		const balanceValue = dollarsToCents(balance);
+		if (lifetimeValue === null || balanceValue === null) {
+			setFormError('Enter a valid, non-negative amount for the money fields.');
+			return;
+		}
+		setFormError(null);
+		setSaving(true);
+		try {
+			const input = {
+				name: name.trim(),
+				email: email.trim(),
+				phone: phone.trim(),
+				area: area.trim(),
+				channel,
+				status,
+				lifetimeValue,
+				balance: balanceValue,
+				notes: notes.trim(),
+			};
+			const saved = editing
+				? await client.updateCustomer(session.token, editing.id, input)
+				: await client.createCustomer(session.token, input);
+			setSelectedId(saved.id);
+			closeForm();
+			await load();
+		} catch (caught) {
+			setFormError(caught instanceof Error ? caught.message : 'Could not save the customer.');
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	async function onDelete() {
+		if (!session || !editing || deleting) {
+			return;
+		}
+		setFormError(null);
+		setDeleting(true);
+		try {
+			await client.deleteCustomer(session.token, editing.id);
+			if (selectedId === editing.id) {
+				setSelectedId(null);
+			}
+			closeForm();
+			await load();
+		} catch (caught) {
+			setFormError(caught instanceof ApiError ? caught.message : 'Could not delete the customer.');
+		} finally {
+			setDeleting(false);
+		}
+	}
+
+	if (!session) {
+		return null;
+	}
+
+	const selected = list.find((customer) => customer.id === selectedId) ?? list[0] ?? null;
+	const countLabel = `${list.length} ${list.length === 1 ? 'contact' : 'contacts'}`;
 
 	return (
 		<View style={styles.row}>
@@ -40,120 +260,265 @@ export default function CustomersScreen() {
 				<View style={styles.head}>
 					<View>
 						<Txt style={styles.title}>Customers</Txt>
-						<Txt style={styles.subtitle}>1,284 contacts · synced with QuickBooks</Txt>
+						<Txt style={styles.subtitle}>{countLabel}</Txt>
 					</View>
-					<View style={styles.headActions}>
-						<View style={styles.syncChip}>
-							<Icon name="refresh-cw" size={15} color={colors.green} />
-							<Txt style={styles.syncTxt}>QuickBooks · synced 6m ago</Txt>
-						</View>
-						<GradientButton label="Add customer" icon="plus" />
-					</View>
+					<GradientButton label="Add customer" icon="plus" onPress={openCreate} />
 				</View>
 
-				<ScrollView horizontal showsHorizontalScrollIndicator={false}>
-					<View style={[styles.table, { width: tableWidth }]}>
-						<View style={styles.tableHead}>
-							<Txt style={[styles.th, { flex: COLS.customer }]}>Customer</Txt>
-							<Txt style={[styles.th, { flex: COLS.area }]}>Area</Txt>
-							<Txt style={[styles.th, { flex: COLS.channel }]}>Channel</Txt>
-							<Txt style={[styles.th, styles.right, { flex: COLS.lifetime }]}>Lifetime</Txt>
-							<Txt style={[styles.th, styles.right, { flex: COLS.balance }]}>Balance</Txt>
-							<Txt style={[styles.th, styles.right, { flex: COLS.status }]}>Status</Txt>
+				{formOpen ? (
+					<Card style={styles.form}>
+						<View style={styles.formHead}>
+							<Txt style={styles.formTitle}>{editing ? 'Edit customer' : 'New customer'}</Txt>
+							<Pressable onPress={closeForm} accessibilityRole="button">
+								<Icon name="x" size={18} color={colors.textMuted} />
+							</Pressable>
 						</View>
-						{customers.map((c, i) => {
-							const st = customerStatusStyle[c.status];
-							return (
-								<View key={c.name} style={[styles.tr, i === customers.length - 1 && styles.trLast]}>
-									<View style={[styles.cell, styles.customerCell, { flex: COLS.customer }]}>
-										<Avatar initials={c.initials} size={36} />
-										<Txt style={styles.customerName} numberOfLines={1}>
-											{c.name}
+						<TextField
+							label="Name"
+							value={name}
+							onChangeText={setName}
+							placeholder="Grace Kim"
+							autoCapitalize="words"
+						/>
+						<View style={styles.formRow}>
+							<View style={styles.formCol}>
+								<TextField
+									label="Email"
+									value={email}
+									onChangeText={setEmail}
+									placeholder="grace@example.com"
+									autoCapitalize="none"
+									keyboardType="email-address"
+								/>
+							</View>
+							<View style={styles.formCol}>
+								<TextField
+									label="Phone"
+									value={phone}
+									onChangeText={setPhone}
+									placeholder="(206) 555-0155"
+									keyboardType="phone-pad"
+								/>
+							</View>
+						</View>
+						<TextField
+							label="Area"
+							value={area}
+							onChangeText={setArea}
+							placeholder="Fremont"
+							autoCapitalize="words"
+						/>
+						<View style={styles.fieldWrap}>
+							<Txt style={styles.fieldLabel}>Channel</Txt>
+							<Segmented options={CHANNEL_OPTIONS} value={channel} onChange={setChannel} />
+						</View>
+						<View style={styles.fieldWrap}>
+							<Txt style={styles.fieldLabel}>Status</Txt>
+							<Segmented options={STATUS_OPTIONS} value={status} onChange={setStatus} />
+						</View>
+						<View style={styles.formRow}>
+							<View style={styles.formCol}>
+								<TextField
+									label="Lifetime value ($)"
+									value={lifetime}
+									onChangeText={setLifetime}
+									placeholder="0.00"
+									keyboardType="decimal-pad"
+								/>
+							</View>
+							<View style={styles.formCol}>
+								<TextField
+									label="Balance ($)"
+									value={balance}
+									onChangeText={setBalance}
+									placeholder="0.00"
+									keyboardType="decimal-pad"
+								/>
+							</View>
+						</View>
+						<TextField
+							label="Notes"
+							value={notes}
+							onChangeText={setNotes}
+							placeholder="Repeat client · membership"
+							multiline
+							style={styles.notesInput}
+						/>
+
+						{formError ? <Txt style={styles.errorTxt}>{formError}</Txt> : null}
+
+						<View style={styles.btnRow}>
+							<GradientButton
+								label={saving ? 'Saving…' : editing ? 'Save changes' : 'Add customer'}
+								icon="check"
+								onPress={onSave}
+								style={styles.btnGrow}
+							/>
+							<OutlineButton label="Cancel" onPress={closeForm} style={styles.btnGrow} />
+						</View>
+						{editing ? (
+							<OutlineButton
+								label={deleting ? 'Deleting…' : 'Delete customer'}
+								onPress={onDelete}
+								style={styles.deleteBtn}
+							/>
+						) : null}
+					</Card>
+				) : null}
+
+				{loading ? (
+					<ActivityIndicator color={colors.brandPurple} style={styles.loading} />
+				) : error ? (
+					<Txt style={styles.errorTxt}>{error}</Txt>
+				) : list.length === 0 ? (
+					<Txt style={styles.empty}>
+						No customers yet. Add your first contact to start tracking jobs and balances.
+					</Txt>
+				) : (
+					<ScrollView horizontal showsHorizontalScrollIndicator={false}>
+						<View style={[styles.table, { width: tableWidth }]}>
+							<View style={styles.tableHead}>
+								<Txt style={[styles.th, { flex: COLS.customer }]}>Customer</Txt>
+								<Txt style={[styles.th, { flex: COLS.area }]}>Area</Txt>
+								<Txt style={[styles.th, { flex: COLS.channel }]}>Channel</Txt>
+								<Txt style={[styles.th, styles.right, { flex: COLS.lifetime }]}>Lifetime</Txt>
+								<Txt style={[styles.th, styles.right, { flex: COLS.balance }]}>Balance</Txt>
+								<Txt style={[styles.th, styles.right, { flex: COLS.status }]}>Status</Txt>
+								<View style={styles.editCol} />
+							</View>
+							{list.map((customer, index) => {
+								const st = STATUS_STYLE[customer.status];
+								const isSelected = customer.id === selected?.id;
+								return (
+									<Pressable
+										key={customer.id}
+										onPress={() => setSelectedId(customer.id)}
+										style={[
+											styles.tr,
+											index === list.length - 1 && styles.trLast,
+											isSelected && styles.trSelected,
+										]}
+									>
+										<View style={[styles.cell, styles.customerCell, { flex: COLS.customer }]}>
+											<Avatar initials={initialsOf(customer.name)} size={36} />
+											<Txt style={styles.customerName} numberOfLines={1}>
+												{customer.name}
+											</Txt>
+										</View>
+										<Txt style={[styles.td, { flex: COLS.area }]} numberOfLines={1}>
+											{customer.area || '—'}
 										</Txt>
-									</View>
-									<Txt style={[styles.td, { flex: COLS.area }]}>{c.area}</Txt>
-									<Txt style={[styles.td, { flex: COLS.channel }]}>{c.channel}</Txt>
-									<Txt style={[styles.td, styles.right, styles.tdMed, { flex: COLS.lifetime }]}>
-										{c.ltv}
-									</Txt>
-									<Txt style={[styles.td, styles.right, styles.tdBold, { flex: COLS.balance }]}>
-										{c.balance}
-									</Txt>
-									<View style={[styles.cell, styles.statusCell, { flex: COLS.status }]}>
-										<Pill label={st.label} color={st.color} background={st.background} />
-									</View>
-								</View>
-							);
-						})}
-					</View>
-				</ScrollView>
+										<Txt style={[styles.td, { flex: COLS.channel }]}>
+											{CHANNEL_LABEL[customer.channel]}
+										</Txt>
+										<Txt style={[styles.td, styles.right, styles.tdMed, { flex: COLS.lifetime }]}>
+											{formatMoney(customer.lifetimeValue)}
+										</Txt>
+										<Txt style={[styles.td, styles.right, styles.tdBold, { flex: COLS.balance }]}>
+											{formatMoney(customer.balance)}
+										</Txt>
+										<View style={[styles.cell, styles.statusCell, { flex: COLS.status }]}>
+											<Pill label={st.label} color={st.color} background={st.background} />
+										</View>
+										<Pressable
+											style={styles.editCol}
+											onPress={() => openEdit(customer)}
+											accessibilityRole="button"
+										>
+											<Icon name="edit-3" size={16} color={colors.textFaint} />
+										</Pressable>
+									</Pressable>
+								);
+							})}
+						</View>
+					</ScrollView>
+				)}
 			</ScrollView>
 
-			{showPanel ? <AccountPanel /> : null}
+			{showPanel && selected ? (
+				<AccountPanel customer={selected} onEdit={() => openEdit(selected)} />
+			) : null}
 		</View>
 	);
 }
 
-function AccountPanel() {
+function ContactRow({
+	icon,
+	label,
+	value,
+}: {
+	icon: ComponentProps<typeof Icon>['name'];
+	label: string;
+	value: string;
+}) {
+	return (
+		<View style={styles.contactRow}>
+			<Icon name={icon} size={15} color={colors.textMuted} />
+			<View style={{ flex: 1 }}>
+				<Txt style={styles.contactLabel}>{label}</Txt>
+				<Txt style={styles.contactValue}>{value}</Txt>
+			</View>
+		</View>
+	);
+}
+
+function AccountPanel({ customer, onEdit }: { customer: Customer; onEdit: () => void }) {
+	const st = STATUS_STYLE[customer.status];
+	const since = new Date(customer.createdAt).getFullYear();
 	return (
 		<ScrollView style={styles.panel} contentContainerStyle={styles.panelPad}>
 			<SectionLabel style={{ marginBottom: 14 }}>Account</SectionLabel>
 			<View style={styles.acctHead}>
-				<Avatar initials="PA" size={50} />
+				<Avatar initials={initialsOf(customer.name)} size={50} />
 				<View style={{ flex: 1 }}>
-					<Txt style={styles.acctName}>Priya Anand</Txt>
-					<Txt style={styles.acctSub}>Capitol Hill · Customer since 2020</Txt>
+					<Txt style={styles.acctName}>{customer.name}</Txt>
+					<Txt style={styles.acctSub}>
+						{customer.area ? `${customer.area} · ` : ''}Customer since {since}
+					</Txt>
 				</View>
+			</View>
+
+			<View style={styles.pillRow}>
+				<Pill label={st.label} color={st.color} background={st.background} />
 			</View>
 
 			<View style={styles.billCard}>
-				<View style={styles.qbHead}>
-					<Icon name="credit-card" size={16} color={colors.green} />
-					<Txt style={styles.qbTitle}>Billing · QuickBooks</Txt>
-				</View>
 				<View style={styles.balanceRow}>
 					<Txt style={styles.muted}>Balance due</Txt>
-					<Txt style={styles.balanceAmt}>$540.00</Txt>
+					<Txt
+						style={[
+							styles.balanceAmt,
+							{ color: customer.balance > 0 ? colors.redInk : colors.green },
+						]}
+					>
+						{formatMoney(customer.balance)}
+					</Txt>
 				</View>
-				<View style={styles.invoiceList}>
-					{invoices.map((inv) => (
-						<View key={inv.title} style={styles.invoiceRow}>
-							<View style={{ flex: 1 }}>
-								<Txt style={styles.invoiceTitle}>{inv.title}</Txt>
-								<Txt style={styles.invoiceMeta}>{inv.meta}</Txt>
-							</View>
-							<Pill
-								label={inv.tag}
-								color={inv.paid ? colors.green : colors.redInk}
-								background={inv.paid ? 'rgba(31,181,115,0.12)' : 'rgba(240,88,75,0.12)'}
-							/>
-						</View>
-					))}
+				<View style={styles.ltvRow}>
+					<Txt style={styles.muted}>Lifetime value</Txt>
+					<Txt style={styles.ltvAmt}>{formatMoney(customer.lifetimeValue)}</Txt>
 				</View>
 			</View>
 
-			<View style={styles.rivusNote}>
-				<BrandGradient style={styles.rivusNoteMark}>
-					<RivusSymbol size={16} />
-				</BrandGradient>
-				<Txt style={styles.rivusNoteTxt}>
-					Rivus answers Priya's billing &amp; account questions automatically — payment links,
-					invoice copies, and balance lookups, straight from QuickBooks.
-				</Txt>
+			<SectionLabel style={{ marginTop: 8, marginBottom: 12 }}>Contact</SectionLabel>
+			<View style={{ gap: 12 }}>
+				<ContactRow
+					icon="message-circle"
+					label="Preferred channel"
+					value={CHANNEL_LABEL[customer.channel]}
+				/>
+				{customer.email ? <ContactRow icon="mail" label="Email" value={customer.email} /> : null}
+				{customer.phone ? <ContactRow icon="phone" label="Phone" value={customer.phone} /> : null}
 			</View>
 
-			<SectionLabel style={{ marginTop: 22, marginBottom: 12 }}>Recent activity</SectionLabel>
-			<View style={{ gap: 13 }}>
-				{recent.map((r) => (
-					<View key={r.title} style={styles.activityRow}>
-						<View style={[styles.activityDot, { backgroundColor: r.color }]} />
-						<View>
-							<Txt style={styles.activityTitle}>{r.title}</Txt>
-							<Txt style={styles.invoiceMeta}>{r.time}</Txt>
-						</View>
-					</View>
-				))}
-			</View>
+			{customer.notes ? (
+				<>
+					<SectionLabel style={{ marginTop: 22, marginBottom: 10 }}>Notes</SectionLabel>
+					<Txt style={styles.notesTxt}>{customer.notes}</Txt>
+				</>
+			) : null}
+
+			<OutlineButton label="Edit customer" onPress={onEdit} style={styles.panelEdit} />
 		</ScrollView>
 	);
 }
@@ -171,19 +536,26 @@ const styles = StyleSheet.create({
 	},
 	title: { fontFamily: font.semibold, fontSize: 20 },
 	subtitle: { fontFamily: font.regular, fontSize: 13, color: colors.textMuted, marginTop: 3 },
-	headActions: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
-	syncChip: {
+
+	// Form
+	form: { gap: 14, marginBottom: 22 },
+	formHead: {
 		flexDirection: 'row',
 		alignItems: 'center',
-		gap: 8,
-		borderWidth: 1,
-		borderColor: colors.borderField,
-		backgroundColor: colors.surface,
-		borderRadius: 9,
-		paddingVertical: 8,
-		paddingHorizontal: 12,
+		justifyContent: 'space-between',
 	},
-	syncTxt: { fontFamily: font.regular, fontSize: 12.5, color: colors.textSub },
+	formTitle: { fontFamily: font.semibold, fontSize: 15, color: colors.text },
+	formRow: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
+	formCol: { flexGrow: 1, flexBasis: 180 },
+	fieldWrap: { gap: 6 },
+	fieldLabel: { fontFamily: font.semibold, fontSize: 12.5, color: colors.textSub },
+	notesInput: { minHeight: 80, textAlignVertical: 'top' },
+	btnRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+	btnGrow: { flexGrow: 1, flexBasis: 140 },
+	deleteBtn: { borderColor: 'rgba(240,88,75,0.4)' },
+
+	loading: { paddingVertical: 24 },
+	empty: { fontFamily: font.regular, fontSize: 13, color: colors.textMuted, paddingVertical: 16 },
 
 	table: {
 		backgroundColor: colors.surface,
@@ -194,6 +566,7 @@ const styles = StyleSheet.create({
 	},
 	tableHead: {
 		flexDirection: 'row',
+		alignItems: 'center',
 		paddingVertical: 13,
 		paddingHorizontal: 18,
 		borderBottomWidth: 1,
@@ -217,6 +590,7 @@ const styles = StyleSheet.create({
 		borderBottomColor: colors.borderRow,
 	},
 	trLast: { borderBottomWidth: 0 },
+	trSelected: { backgroundColor: 'rgba(110,30,200,0.05)' },
 	cell: { flexDirection: 'row', alignItems: 'center' },
 	customerCell: { gap: 12 },
 	customerName: { fontFamily: font.medium, fontSize: 13.5, flex: 1 },
@@ -224,6 +598,7 @@ const styles = StyleSheet.create({
 	tdMed: { fontFamily: font.medium, color: colors.text },
 	tdBold: { fontFamily: font.semibold, color: colors.text },
 	statusCell: { justifyContent: 'flex-end' },
+	editCol: { width: 30, alignItems: 'flex-end' },
 
 	// Panel
 	panel: {
@@ -235,9 +610,10 @@ const styles = StyleSheet.create({
 		backgroundColor: colors.surfaceAlt,
 	},
 	panelPad: { paddingVertical: 24, paddingHorizontal: 22 },
-	acctHead: { flexDirection: 'row', alignItems: 'center', gap: 13, marginBottom: 18 },
+	acctHead: { flexDirection: 'row', alignItems: 'center', gap: 13, marginBottom: 14 },
 	acctName: { fontFamily: font.semibold, fontSize: 16 },
 	acctSub: { fontFamily: font.regular, fontSize: 12.5, color: colors.textMuted },
+	pillRow: { marginBottom: 14 },
 	billCard: {
 		backgroundColor: colors.surface,
 		borderWidth: 1,
@@ -245,50 +621,24 @@ const styles = StyleSheet.create({
 		borderRadius: radii.xl,
 		padding: 16,
 		marginBottom: 14,
+		gap: 12,
 	},
-	qbHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 13 },
-	qbTitle: { fontFamily: font.semibold, fontSize: 13 },
 	muted: { fontFamily: font.regular, fontSize: 12.5, color: colors.textMuted },
-	balanceRow: {
+	balanceRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+	balanceAmt: { fontFamily: font.semibold, fontSize: 22 },
+	ltvRow: {
 		flexDirection: 'row',
 		alignItems: 'baseline',
 		justifyContent: 'space-between',
-		marginBottom: 14,
+		borderTopWidth: 1,
+		borderTopColor: '#f0f1f5',
+		paddingTop: 12,
 	},
-	balanceAmt: { fontFamily: font.semibold, fontSize: 22, color: colors.redInk },
-	invoiceList: { borderTopWidth: 1, borderTopColor: '#f0f1f5', paddingTop: 13, gap: 9 },
-	invoiceRow: {
-		flexDirection: 'row',
-		justifyContent: 'space-between',
-		alignItems: 'center',
-		gap: 10,
-	},
-	invoiceTitle: { fontFamily: font.medium, fontSize: 12.5 },
-	invoiceMeta: { fontFamily: font.regular, fontSize: 11, color: colors.textFaint, marginTop: 2 },
-	rivusNote: {
-		flexDirection: 'row',
-		gap: 11,
-		backgroundColor: 'rgba(110,30,200,0.05)',
-		borderWidth: 1,
-		borderColor: 'rgba(110,30,200,0.14)',
-		borderRadius: radii.xl,
-		padding: 14,
-	},
-	rivusNoteMark: {
-		width: 26,
-		height: 26,
-		borderRadius: 7,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	rivusNoteTxt: {
-		flex: 1,
-		fontFamily: font.regular,
-		fontSize: 12,
-		color: '#4a3b60',
-		lineHeight: 18,
-	},
-	activityRow: { flexDirection: 'row', gap: 11 },
-	activityDot: { width: 8, height: 8, borderRadius: 4, marginTop: 5 },
-	activityTitle: { fontFamily: font.regular, fontSize: 12.5 },
+	ltvAmt: { fontFamily: font.semibold, fontSize: 15, color: colors.text },
+	contactRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+	contactLabel: { fontFamily: font.regular, fontSize: 11, color: colors.textFaint },
+	contactValue: { fontFamily: font.medium, fontSize: 13, color: colors.text, marginTop: 1 },
+	notesTxt: { fontFamily: font.regular, fontSize: 12.5, color: colors.textSub, lineHeight: 19 },
+	panelEdit: { marginTop: 22 },
+	errorTxt: { fontFamily: font.medium, fontSize: 12.5, color: colors.redInk },
 });

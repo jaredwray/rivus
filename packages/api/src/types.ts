@@ -3,6 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Config } from './config';
 import type {
 	AccountRepository,
+	CustomerRepository,
 	FaqRepository,
 	InviteRepository,
 	ItemRepository,
@@ -31,6 +32,7 @@ export interface AppDeps {
 	onboarding: OnboardingRepository;
 	items: ItemRepository;
 	faqs: FaqRepository;
+	customers: CustomerRepository;
 	/** Stores one-time sign-in codes for passwordless auth. */
 	verificationCodes: VerificationCodeRepository;
 	/** Sends transactional email (invitations and sign-in codes). */
