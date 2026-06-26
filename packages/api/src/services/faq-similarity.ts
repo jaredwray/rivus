@@ -16,6 +16,11 @@ const MAX_CANDIDATES = 50;
 const MAX_OUTPUT_TOKENS = 600;
 /** Below this the match is too weak to interrupt the user with a modal. */
 const MIN_CONFIDENCE = 0.6;
+// Merged suggestions feed back into the FAQ form, so cap them to the same limits
+// as createFaqSchema/updateFaqSchema — otherwise the pre-filled "update existing"
+// text (e.g. two near-max answers combined) would be rejected on save.
+const MAX_QUESTION_LENGTH = 300;
+const MAX_ANSWER_LENGTH = 4000;
 
 /** What the model returns when asked to find a near-duplicate. */
 const similaritySchema = z.object({
@@ -214,10 +219,10 @@ export class AiFaqSimilarityService implements FaqSimilarityService {
 			const question = result.question.trim();
 			const answer = result.answer.trim();
 			if (question && answer) {
-				return { question, answer };
+				return clampToFaqLimits({ question, answer });
 			}
 		}
-		return fallbackMerge(input, existing);
+		return clampToFaqLimits(fallbackMerge(input, existing));
 	}
 }
 
@@ -236,6 +241,14 @@ function fallbackMerge(
 			? `${existing.answer}\n\n${newAnswer}`.trim()
 			: existing.answer;
 	return { question: existing.question, answer };
+}
+
+/** Trim merged text to the FAQ field limits so the pre-filled form saves cleanly. */
+function clampToFaqLimits(suggestion: FaqMergeSuggestion): FaqMergeSuggestion {
+	return {
+		question: suggestion.question.slice(0, MAX_QUESTION_LENGTH),
+		answer: suggestion.answer.slice(0, MAX_ANSWER_LENGTH),
+	};
 }
 
 /** A no-op service: reports no duplicates and merges by passing the input through. */

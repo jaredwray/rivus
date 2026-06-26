@@ -164,6 +164,33 @@ describe('AiFaqSimilarityService.mergeSuggestion', () => {
 
 		expect(result).toEqual({ question: existing.question, answer: 'Kept answer.' });
 	});
+
+	it('clamps a model-merged answer to the FAQ length limit', async () => {
+		const { generate } = fakeGenerate(() => ({
+			object: { question: 'Combined?', answer: 'z'.repeat(5000) },
+		}));
+		const service = new AiFaqSimilarityService({ models: [PRIMARY], generate });
+
+		const result = await service.mergeSuggestion(NEW_INPUT, makeFaq());
+
+		expect(result.answer.length).toBe(4000);
+		expect(result.question).toBe('Combined?');
+	});
+
+	it('clamps an oversized deterministic-fallback answer', async () => {
+		const { generate } = fakeGenerate(() => {
+			throw new Error('down');
+		});
+		const service = new AiFaqSimilarityService({ models: [PRIMARY], generate });
+		const existing = makeFaq({ answer: 'x'.repeat(3800) });
+
+		const result = await service.mergeSuggestion(
+			{ question: 'q', answer: 'y'.repeat(500) },
+			existing,
+		);
+
+		expect(result.answer.length).toBe(4000);
+	});
 });
 
 describe('NoopFaqSimilarityService', () => {
