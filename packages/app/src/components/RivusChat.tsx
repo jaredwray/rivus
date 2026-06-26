@@ -2,6 +2,7 @@ import { Feather } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
 	ActivityIndicator,
+	KeyboardAvoidingView,
 	Platform,
 	Pressable,
 	ScrollView,
@@ -88,7 +89,11 @@ export function RivusChat() {
 	const panelHeight = Math.min(460, height - insets.top - insets.bottom - 96);
 
 	return (
-		<View
+		<KeyboardAvoidingView
+			// Lift the panel above the iOS soft keyboard so the input stays visible.
+			// Android resizes the window itself, and on web there's no soft keyboard
+			// to avoid, so the behavior is iOS-only.
+			behavior={Platform.OS === 'ios' ? 'padding' : undefined}
 			pointerEvents="box-none"
 			style={[styles.layer, { right: 18, bottom: insets.bottom + 18 }]}
 		>
@@ -175,7 +180,7 @@ export function RivusChat() {
 					)}
 				</BrandGradient>
 			</Pressable>
-		</View>
+		</KeyboardAvoidingView>
 	);
 }
 
