@@ -1,7 +1,10 @@
 import {
 	type Account,
 	type AccountId,
+	type CreateFaqInput,
 	type CreateItemInput,
+	type Faq,
+	type FaqId,
 	type Invite,
 	type InviteId,
 	type Item,
@@ -11,11 +14,13 @@ import {
 	normalizePagination,
 	pageToSkip,
 	type Role,
+	type UpdateFaqInput,
 	type UpdateItemInput,
 	type UserId,
 } from '@rivus/core';
 import mongoose, { type ClientSession, type HydratedDocument, Types } from 'mongoose';
 import { type AccountDocument, AccountModel } from '../db/models/account.model';
+import { type FaqDocument, FaqModel } from '../db/models/faq.model';
 import { type InviteDocument, InviteModel } from '../db/models/invite.model';
 import { type ItemDocument, ItemModel } from '../db/models/item.model';
 import { type MembershipDocument, MembershipModel } from '../db/models/membership.model';
@@ -29,9 +34,11 @@ import type {
 	AcceptInviteInput,
 	AcceptInviteResult,
 	AccountRepository,
+	FaqRepository,
 	InviteRepository,
 	ItemRepository,
 	ListAccountsOptions,
+	ListFaqsOptions,
 	ListItemsOptions,
 	MembershipRepository,
 	NewAccount,
@@ -129,6 +136,19 @@ function mapItem(doc: HydratedDocument<ItemDocument>): Item {
 		accountId: doc.accountId.toString() as AccountId,
 		name: doc.name,
 		description: doc.description,
+		status: doc.status,
+		createdAt: doc.createdAt.toISOString(),
+		updatedAt: doc.updatedAt.toISOString(),
+	};
+}
+
+function mapFaq(doc: HydratedDocument<FaqDocument>): Faq {
+	return {
+		id: doc._id.toString() as FaqId,
+		accountId: doc.accountId.toString() as AccountId,
+		question: doc.question,
+		answer: doc.answer,
+		category: doc.category,
 		status: doc.status,
 		createdAt: doc.createdAt.toISOString(),
 		updatedAt: doc.updatedAt.toISOString(),
@@ -633,6 +653,61 @@ export class MongoItemRepository implements ItemRepository {
 			return false;
 		}
 		const result = await ItemModel.deleteOne({
+			_id: id,
+			accountId: new Types.ObjectId(accountId),
+		}).exec();
+		return result.deletedCount === 1;
+	}
+}
+
+export class MongoFaqRepository implements FaqRepository {
+	async create(accountId: AccountId, input: CreateFaqInput): Promise<Faq> {
+		const doc = await FaqModel.create({ accountId: new Types.ObjectId(accountId), ...input });
+		return mapFaq(doc);
+	}
+
+	async list(options: ListFaqsOptions): Promise<{ faqs: Faq[]; total: number }> {
+		if (!Types.ObjectId.isValid(options.accountId)) {
+			return { faqs: [], total: 0 };
+		}
+		const { pageSize } = normalizePagination(options.page, options.pageSize);
+		const skip = pageToSkip(options.page, options.pageSize);
+		const filter = { accountId: new Types.ObjectId(options.accountId) };
+		const [docs, total] = await Promise.all([
+			FaqModel.find(filter).sort({ createdAt: -1, _id: -1 }).skip(skip).limit(pageSize).exec(),
+			FaqModel.countDocuments(filter).exec(),
+		]);
+		return { faqs: docs.map(mapFaq), total };
+	}
+
+	async findById(accountId: AccountId, id: FaqId): Promise<Faq | null> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return null;
+		}
+		const doc = await FaqModel.findOne({
+			_id: id,
+			accountId: new Types.ObjectId(accountId),
+		}).exec();
+		return doc ? mapFaq(doc) : null;
+	}
+
+	async update(accountId: AccountId, id: FaqId, input: UpdateFaqInput): Promise<Faq | null> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return null;
+		}
+		const doc = await FaqModel.findOneAndUpdate(
+			{ _id: id, accountId: new Types.ObjectId(accountId) },
+			{ $set: input },
+			{ new: true },
+		).exec();
+		return doc ? mapFaq(doc) : null;
+	}
+
+	async delete(accountId: AccountId, id: FaqId): Promise<boolean> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return false;
+		}
+		const result = await FaqModel.deleteOne({
 			_id: id,
 			accountId: new Types.ObjectId(accountId),
 		}).exec();

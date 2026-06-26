@@ -2,13 +2,17 @@ import type {
 	Account,
 	AccountBusinessInput,
 	AccountId,
+	CreateFaqInput,
 	CreateItemInput,
+	Faq,
+	FaqId,
 	Invite,
 	InviteId,
 	Item,
 	ItemId,
 	Membership,
 	Role,
+	UpdateFaqInput,
 	UpdateItemInput,
 	User,
 	UserId,
@@ -200,4 +204,18 @@ export interface ItemRepository {
 	findById(accountId: AccountId, id: ItemId): Promise<Item | null>;
 	update(accountId: AccountId, id: ItemId, input: UpdateItemInput): Promise<Item | null>;
 	delete(accountId: AccountId, id: ItemId): Promise<boolean>;
+}
+
+export interface ListFaqsOptions {
+	accountId: AccountId;
+	page: number;
+	pageSize: number;
+}
+
+export interface FaqRepository {
+	create(accountId: AccountId, input: CreateFaqInput): Promise<Faq>;
+	list(options: ListFaqsOptions): Promise<{ faqs: Faq[]; total: number }>;
+	findById(accountId: AccountId, id: FaqId): Promise<Faq | null>;
+	update(accountId: AccountId, id: FaqId, input: UpdateFaqInput): Promise<Faq | null>;
+	delete(accountId: AccountId, id: FaqId): Promise<boolean>;
 }

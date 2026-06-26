@@ -6,6 +6,7 @@ export type Id<TBrand extends string> = string & { readonly __brand: TBrand };
 
 export type UserId = Id<'User'>;
 export type ItemId = Id<'Item'>;
+export type FaqId = Id<'Faq'>;
 export type AccountId = Id<'Account'>;
 export type MembershipId = Id<'Membership'>;
 export type InviteId = Id<'Invite'>;
@@ -94,6 +95,26 @@ export interface Item {
 	name: string;
 	description: string;
 	status: ItemStatus;
+	createdAt: IsoDateString;
+	updatedAt: IsoDateString;
+}
+
+/**
+ * Whether an FAQ is live. `published` FAQs are the ones Rivus draws on to answer
+ * customers; `draft` keeps an answer staged but unused until it's ready.
+ */
+export type FaqStatus = 'published' | 'draft';
+
+/** A question-and-answer entry in an account's knowledge base. */
+export interface Faq {
+	id: FaqId;
+	/** The account that owns this FAQ; all members share the account's FAQs. */
+	accountId: AccountId;
+	question: string;
+	answer: string;
+	/** Free-text grouping (e.g. "Pricing", "Scheduling"); empty when uncategorized. */
+	category: string;
+	status: FaqStatus;
 	createdAt: IsoDateString;
 	updatedAt: IsoDateString;
 }

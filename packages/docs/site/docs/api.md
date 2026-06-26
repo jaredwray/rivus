@@ -69,3 +69,35 @@ endpoints are paginated with `?page=` and `?pageSize=` and return a `meta` block
   }
 }
 ```
+
+## FAQs
+
+FAQs are the question-and-answer entries Rivus draws on to answer your customers.
+They are account-scoped (shared by every member) and support full CRUD under
+`/v1/faqs`. Each FAQ has a `question`, an `answer`, an optional `category`, and a
+`status` of `published` (live) or `draft` (staged but not used yet). The list
+endpoint is paginated just like Items.
+
+```bash
+# Create an FAQ (status defaults to "published", category to "")
+curl -s -X POST http://localhost:4000/v1/faqs \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{
+    "question": "How much does a service call cost?",
+    "answer": "Our standard diagnostic visit is $89, credited toward any same-day repair.",
+    "category": "Pricing"
+  }'
+
+# List your FAQs (paginated)
+curl -s "http://localhost:4000/v1/faqs?page=1&pageSize=20" \
+  -H "authorization: Bearer $TOKEN"
+
+# Update one (any subset of fields; e.g. take it offline)
+curl -s -X PATCH http://localhost:4000/v1/faqs/<id> \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"status":"draft"}'
+
+# Delete one
+curl -s -X DELETE http://localhost:4000/v1/faqs/<id> \
+  -H "authorization: Bearer $TOKEN"
+```

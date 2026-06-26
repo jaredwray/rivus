@@ -1,14 +1,145 @@
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import type { FaqStatus } from '@rivus/core';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ApiError, type Faq } from '@/src/api/client';
+import { useAuth } from '@/src/auth/AuthContext';
 import { RivusSymbol } from '@/src/brand/RivusLogo';
 import { BrandGradient } from '@/src/components/Gradient';
-import { GradientButton, Icon, Pill, Txt } from '@/src/components/ui';
-import { faqCategories, faqs } from '@/src/data/demo';
+import {
+	Card,
+	GradientButton,
+	Icon,
+	OutlineButton,
+	Pill,
+	Segmented,
+	TextField,
+	Txt,
+} from '@/src/components/ui';
 import { colors, font, radii } from '@/src/theme/tokens';
 
+const STATUS_OPTIONS: { label: string; value: FaqStatus }[] = [
+	{ label: 'Published', value: 'published' },
+	{ label: 'Draft', value: 'draft' },
+];
+
 export default function KnowledgeScreen() {
+	const { session, client } = useAuth();
+
+	const [list, setList] = useState<Faq[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState<string | null>(null);
 	const [active, setActive] = useState('All');
-	const visible = active === 'All' ? faqs : faqs.filter((f) => f.cat === active);
+
+	const [formOpen, setFormOpen] = useState(false);
+	const [editing, setEditing] = useState<Faq | null>(null);
+	const [question, setQuestion] = useState('');
+	const [answer, setAnswer] = useState('');
+	const [category, setCategory] = useState('');
+	const [status, setStatus] = useState<FaqStatus>('published');
+	const [formError, setFormError] = useState<string | null>(null);
+	const [saving, setSaving] = useState(false);
+	const [deleting, setDeleting] = useState(false);
+
+	const load = useCallback(async () => {
+		if (!session) {
+			return;
+		}
+		setLoading(true);
+		setError(null);
+		try {
+			// One page of 100 is plenty for an account's FAQ set; pagination metadata is
+			// returned but the knowledge base is small enough to show in full.
+			const data = await client.listFaqs(session.token, { pageSize: 100 });
+			setList(data.data);
+		} catch (caught) {
+			setError(caught instanceof ApiError ? caught.message : 'Could not load your FAQs.');
+		} finally {
+			setLoading(false);
+		}
+	}, [client, session]);
+
+	useEffect(() => {
+		load();
+	}, [load]);
+
+	function openCreate() {
+		setEditing(null);
+		setQuestion('');
+		setAnswer('');
+		setCategory('');
+		setStatus('published');
+		setFormError(null);
+		setFormOpen(true);
+	}
+
+	function openEdit(faq: Faq) {
+		setEditing(faq);
+		setQuestion(faq.question);
+		setAnswer(faq.answer);
+		setCategory(faq.category);
+		setStatus(faq.status);
+		setFormError(null);
+		setFormOpen(true);
+	}
+
+	function closeForm() {
+		setFormOpen(false);
+		setFormError(null);
+	}
+
+	async function onSave() {
+		if (!session || saving) {
+			return;
+		}
+		setFormError(null);
+		setSaving(true);
+		try {
+			const input = {
+				question: question.trim(),
+				answer: answer.trim(),
+				category: category.trim(),
+				status,
+			};
+			if (editing) {
+				await client.updateFaq(session.token, editing.id, input);
+			} else {
+				await client.createFaq(session.token, input);
+			}
+			closeForm();
+			await load();
+		} catch (caught) {
+			setFormError(caught instanceof Error ? caught.message : 'Could not save the FAQ.');
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	async function onDelete() {
+		if (!session || !editing || deleting) {
+			return;
+		}
+		setFormError(null);
+		setDeleting(true);
+		try {
+			await client.deleteFaq(session.token, editing.id);
+			closeForm();
+			await load();
+		} catch (caught) {
+			setFormError(caught instanceof ApiError ? caught.message : 'Could not delete the FAQ.');
+		} finally {
+			setDeleting(false);
+		}
+	}
+
+	if (!session) {
+		return null;
+	}
+
+	const categories = [
+		'All',
+		...Array.from(new Set(list.map((faq) => faq.category).filter(Boolean))).sort(),
+	];
+	const visible = active === 'All' ? list : list.filter((faq) => faq.category === active);
 
 	return (
 		<ScrollView contentContainerStyle={styles.scroll}>
@@ -20,7 +151,7 @@ export default function KnowledgeScreen() {
 							The FAQs Rivus uses to answer your customers. Post once — Rivus handles the rest.
 						</Txt>
 					</View>
-					<GradientButton label="Add FAQ" icon="plus" />
+					<GradientButton label="Add FAQ" icon="plus" onPress={openCreate} />
 				</View>
 
 				<View style={styles.banner}>
@@ -46,43 +177,129 @@ export default function KnowledgeScreen() {
 					</Pressable>
 				</View>
 
-				<View style={styles.filters}>
-					{faqCategories.map((cat) => {
-						const on = cat === active;
-						return (
-							<Pressable
-								key={cat}
-								onPress={() => setActive(cat)}
-								style={[styles.filter, on && styles.filterOn]}
-							>
-								<Txt style={[styles.filterTxt, on && styles.filterTxtOn]}>{cat}</Txt>
+				{formOpen ? (
+					<Card style={styles.form}>
+						<View style={styles.formHead}>
+							<Txt style={styles.formTitle}>{editing ? 'Edit FAQ' : 'New FAQ'}</Txt>
+							<Pressable onPress={closeForm} accessibilityRole="button">
+								<Icon name="x" size={18} color={colors.textMuted} />
 							</Pressable>
-						);
-					})}
-				</View>
+						</View>
+						<TextField
+							label="Question"
+							value={question}
+							onChangeText={setQuestion}
+							placeholder="How much does a service call cost?"
+						/>
+						<TextField
+							label="Answer"
+							value={answer}
+							onChangeText={setAnswer}
+							placeholder="Our standard diagnostic visit is $89…"
+							multiline
+							style={styles.answerInput}
+						/>
+						<TextField
+							label="Category"
+							value={category}
+							onChangeText={setCategory}
+							placeholder="Pricing"
+							hint="Optional — groups FAQs in the filter bar."
+							autoCapitalize="words"
+						/>
+						<View style={styles.fieldWrap}>
+							<Txt style={styles.fieldLabel}>Status</Txt>
+							<Segmented options={STATUS_OPTIONS} value={status} onChange={setStatus} />
+						</View>
 
-				<View style={{ gap: 12 }}>
-					{visible.map((f) => (
-						<View key={f.q} style={styles.faq}>
-							<View style={styles.faqHead}>
-								<View style={styles.faqQ}>
-									<Pill label={f.cat} color={colors.brandPurple} background={colors.purpleTint} />
-									<Txt style={styles.faqQuestion} numberOfLines={1}>
-										{f.q}
+						{formError ? <Txt style={styles.errorTxt}>{formError}</Txt> : null}
+
+						<View style={styles.btnRow}>
+							<GradientButton
+								label={saving ? 'Saving…' : editing ? 'Save changes' : 'Add FAQ'}
+								icon="check"
+								onPress={onSave}
+								style={styles.btnGrow}
+							/>
+							<OutlineButton label="Cancel" onPress={closeForm} style={styles.btnGrow} />
+						</View>
+						{editing ? (
+							<OutlineButton
+								label={deleting ? 'Deleting…' : 'Delete FAQ'}
+								onPress={onDelete}
+								style={styles.deleteBtn}
+							/>
+						) : null}
+					</Card>
+				) : null}
+
+				{list.length > 0 ? (
+					<View style={styles.filters}>
+						{categories.map((cat) => {
+							const on = cat === active;
+							return (
+								<Pressable
+									key={cat}
+									onPress={() => setActive(cat)}
+									style={[styles.filter, on && styles.filterOn]}
+								>
+									<Txt style={[styles.filterTxt, on && styles.filterTxtOn]}>{cat}</Txt>
+								</Pressable>
+							);
+						})}
+					</View>
+				) : null}
+
+				{loading ? (
+					<ActivityIndicator color={colors.brandPurple} style={styles.loading} />
+				) : error ? (
+					<Txt style={styles.errorTxt}>{error}</Txt>
+				) : visible.length === 0 ? (
+					<Txt style={styles.empty}>
+						{list.length === 0
+							? 'No FAQs yet. Add your first one so Rivus can start answering with it.'
+							: 'No FAQs in this category.'}
+					</Txt>
+				) : (
+					<View style={{ gap: 12 }}>
+						{visible.map((faq) => (
+							<View key={faq.id} style={styles.faq}>
+								<View style={styles.faqHead}>
+									<View style={styles.faqQ}>
+										<Pill
+											label={faq.category || 'General'}
+											color={colors.brandPurple}
+											background={colors.purpleTint}
+										/>
+										<Txt style={styles.faqQuestion} numberOfLines={1}>
+											{faq.question}
+										</Txt>
+									</View>
+									<Pressable
+										style={styles.editBtn}
+										onPress={() => openEdit(faq)}
+										accessibilityRole="button"
+									>
+										<Icon name="edit-3" size={17} color={colors.textFaint} />
+									</Pressable>
+								</View>
+								<Txt style={styles.faqAnswer}>{faq.answer}</Txt>
+								<View style={styles.faqFoot}>
+									{faq.status === 'published' ? (
+										<BrandGradient style={styles.faqFootMark} />
+									) : (
+										<View style={[styles.faqFootMark, styles.faqFootMarkDraft]} />
+									)}
+									<Txt style={styles.faqFootTxt}>
+										{faq.status === 'published'
+											? 'Published — Rivus answers with this'
+											: 'Draft — not in use yet'}
 									</Txt>
 								</View>
-								<Pressable style={styles.editBtn}>
-									<Icon name="edit-3" size={17} color={colors.textFaint} />
-								</Pressable>
 							</View>
-							<Txt style={styles.faqAnswer}>{f.a}</Txt>
-							<View style={styles.faqFoot}>
-								<BrandGradient style={styles.faqFootMark} />
-								<Txt style={styles.faqFootTxt}>{f.uses}</Txt>
-							</View>
-						</View>
-					))}
-				</View>
+						))}
+					</View>
+				)}
 			</View>
 		</ScrollView>
 	);
@@ -160,6 +377,20 @@ const styles = StyleSheet.create({
 	},
 	suggestedBtnTxt: { fontFamily: font.semibold, fontSize: 12.5, color: colors.brandPurple },
 
+	form: { gap: 14, marginBottom: 22 },
+	formHead: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+	},
+	formTitle: { fontFamily: font.semibold, fontSize: 15, color: colors.text },
+	fieldWrap: { gap: 6 },
+	fieldLabel: { fontFamily: font.semibold, fontSize: 12.5, color: colors.textSub },
+	answerInput: { minHeight: 92, textAlignVertical: 'top' },
+	btnRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+	btnGrow: { flexGrow: 1, flexBasis: 140 },
+	deleteBtn: { borderColor: 'rgba(240,88,75,0.4)' },
+
 	filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
 	filter: {
 		paddingVertical: 6,
@@ -170,6 +401,14 @@ const styles = StyleSheet.create({
 	filterOn: { backgroundColor: colors.text },
 	filterTxt: { fontFamily: font.medium, fontSize: 12.5, color: colors.textSub },
 	filterTxtOn: { fontFamily: font.semibold, color: '#fff' },
+
+	loading: { paddingVertical: 24 },
+	empty: {
+		fontFamily: font.regular,
+		fontSize: 13,
+		color: colors.textMuted,
+		paddingVertical: 16,
+	},
 
 	faq: {
 		backgroundColor: colors.surface,
@@ -205,5 +444,7 @@ const styles = StyleSheet.create({
 		paddingTop: 11,
 	},
 	faqFootMark: { width: 14, height: 14, borderRadius: 4 },
+	faqFootMarkDraft: { backgroundColor: colors.textHint },
 	faqFootTxt: { fontFamily: font.regular, fontSize: 11.5, color: colors.textFaint },
+	errorTxt: { fontFamily: font.medium, fontSize: 12.5, color: colors.redInk },
 });

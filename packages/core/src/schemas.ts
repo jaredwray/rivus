@@ -186,6 +186,35 @@ export const updateItemSchema = z
 	});
 export type UpdateItemInput = z.infer<typeof updateItemSchema>;
 
+export const faqStatusSchema = z.enum(['published', 'draft'], {
+	error: 'Status must be either published or draft.',
+});
+
+export const createFaqSchema = z.object({
+	question: requiredText('Question', 300),
+	answer: requiredText('Answer', 4000),
+	category: optionalText('Category', 80).default(''),
+	status: faqStatusSchema.default('published'),
+});
+export type CreateFaqInput = z.infer<typeof createFaqSchema>;
+
+/**
+ * Every field optional, but at least one must be present — mirrors
+ * {@link updateItemSchema}. No `.default()`s (unlike create) so a partial update
+ * only touches the fields the caller actually sent.
+ */
+export const updateFaqSchema = z
+	.object({
+		question: requiredText('Question', 300).optional(),
+		answer: requiredText('Answer', 4000).optional(),
+		category: optionalText('Category', 80).optional(),
+		status: faqStatusSchema.optional(),
+	})
+	.refine((value) => Object.values(value).some((field) => field !== undefined), {
+		error: 'Provide at least one field to update.',
+	});
+export type UpdateFaqInput = z.infer<typeof updateFaqSchema>;
+
 /** Query string for list endpoints; coerces `?page=2&pageSize=50`. */
 export const paginationQuerySchema = z.object({
 	page: z.coerce.number().int().min(1, { error: 'Page must be 1 or greater.' }).default(1),

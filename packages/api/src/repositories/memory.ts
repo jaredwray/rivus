@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto';
 import {
 	type Account,
 	type AccountId,
+	type CreateFaqInput,
 	type CreateItemInput,
+	type Faq,
+	type FaqId,
 	type Invite,
 	type InviteId,
 	type Item,
@@ -12,6 +15,7 @@ import {
 	normalizePagination,
 	pageToSkip,
 	type Role,
+	type UpdateFaqInput,
 	type UpdateItemInput,
 	type UserId,
 } from '@rivus/core';
@@ -20,9 +24,11 @@ import type {
 	AcceptInviteInput,
 	AcceptInviteResult,
 	AccountRepository,
+	FaqRepository,
 	InviteRepository,
 	ItemRepository,
 	ListAccountsOptions,
+	ListFaqsOptions,
 	ListItemsOptions,
 	MembershipRepository,
 	NewAccount,
@@ -53,6 +59,7 @@ export interface InMemoryData {
 	memberships: Map<string, Membership>;
 	invites: Map<string, Invite>;
 	items: Map<string, Item>;
+	faqs: Map<string, Faq>;
 	/** Active one-time codes, keyed by normalized email (one per email). */
 	verificationCodes: Map<string, StoredVerificationCode>;
 }
@@ -64,6 +71,7 @@ export function createInMemoryData(): InMemoryData {
 		memberships: new Map(),
 		invites: new Map(),
 		items: new Map(),
+		faqs: new Map(),
 		verificationCodes: new Map(),
 	};
 }
@@ -505,6 +513,64 @@ export class InMemoryItemRepository implements ItemRepository {
 	}
 }
 
+/** In-memory FAQ store, scoped by account. */
+export class InMemoryFaqRepository implements FaqRepository {
+	constructor(private readonly data: InMemoryData) {}
+
+	async create(accountId: AccountId, input: CreateFaqInput): Promise<Faq> {
+		const timestamp = now();
+		const faq: Faq = {
+			id: randomUUID() as FaqId,
+			accountId,
+			question: input.question,
+			answer: input.answer,
+			category: input.category,
+			status: input.status,
+			createdAt: timestamp,
+			updatedAt: timestamp,
+		};
+		this.data.faqs.set(faq.id, faq);
+		return structuredClone(faq);
+	}
+
+	async list(options: ListFaqsOptions): Promise<{ faqs: Faq[]; total: number }> {
+		// Map preserves insertion order, so reversing yields a deterministic
+		// newest-first ordering even when timestamps collide within a millisecond.
+		const owned = [...this.data.faqs.values()]
+			.filter((faq) => faq.accountId === options.accountId)
+			.reverse();
+		const { pageSize } = normalizePagination(options.page, options.pageSize);
+		const skip = pageToSkip(options.page, options.pageSize);
+		return {
+			faqs: owned.slice(skip, skip + pageSize).map((faq) => structuredClone(faq)),
+			total: owned.length,
+		};
+	}
+
+	async findById(accountId: AccountId, id: FaqId): Promise<Faq | null> {
+		const faq = this.data.faqs.get(id);
+		return faq && faq.accountId === accountId ? structuredClone(faq) : null;
+	}
+
+	async update(accountId: AccountId, id: FaqId, input: UpdateFaqInput): Promise<Faq | null> {
+		const faq = this.data.faqs.get(id);
+		if (!faq || faq.accountId !== accountId) {
+			return null;
+		}
+		const updated: Faq = { ...faq, ...input, updatedAt: now() };
+		this.data.faqs.set(id, updated);
+		return structuredClone(updated);
+	}
+
+	async delete(accountId: AccountId, id: FaqId): Promise<boolean> {
+		const faq = this.data.faqs.get(id);
+		if (!faq || faq.accountId !== accountId) {
+			return false;
+		}
+		return this.data.faqs.delete(id);
+	}
+}
+
 export interface InMemoryRepositories {
 	data: InMemoryData;
 	users: InMemoryUserRepository;
@@ -512,6 +578,7 @@ export interface InMemoryRepositories {
 	memberships: InMemoryMembershipRepository;
 	invites: InMemoryInviteRepository;
 	items: InMemoryItemRepository;
+	faqs: InMemoryFaqRepository;
 	verificationCodes: InMemoryVerificationCodeRepository;
 	onboarding: InMemoryOnboardingRepository;
 }
@@ -525,7 +592,18 @@ export function createInMemoryRepositories(
 	const memberships = new InMemoryMembershipRepository(data);
 	const invites = new InMemoryInviteRepository(data);
 	const items = new InMemoryItemRepository(data);
+	const faqs = new InMemoryFaqRepository(data);
 	const verificationCodes = new InMemoryVerificationCodeRepository(data);
 	const onboarding = new InMemoryOnboardingRepository(users, accounts, memberships, invites);
-	return { data, users, accounts, memberships, invites, items, verificationCodes, onboarding };
+	return {
+		data,
+		users,
+		accounts,
+		memberships,
+		invites,
+		items,
+		faqs,
+		verificationCodes,
+		onboarding,
+	};
 }

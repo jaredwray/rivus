@@ -4,12 +4,14 @@ import {
 	acceptInviteSchema,
 	accountBusinessSchema,
 	accountStatusSchema,
+	createFaqSchema,
 	createItemSchema,
 	inviteMemberSchema,
 	loginSchema,
 	paginationQuerySchema,
 	signupSchema,
 	updateAccountSchema,
+	updateFaqSchema,
 	updateItemSchema,
 	updateMemberRoleSchema,
 	verifyCodeSchema,
@@ -216,6 +218,41 @@ describe('updateItemSchema', () => {
 
 	it('rejects an empty update', () => {
 		expect(() => updateItemSchema.parse({})).toThrow();
+	});
+});
+
+describe('createFaqSchema', () => {
+	it('applies defaults for category and status', () => {
+		expect(
+			createFaqSchema.parse({ question: 'Do you offer free estimates?', answer: 'Yes, always.' }),
+		).toMatchObject({ category: '', status: 'published' });
+	});
+
+	it('requires both a question and an answer', () => {
+		expect(() => createFaqSchema.parse({ question: 'Anyone home?' })).toThrow();
+		expect(() => createFaqSchema.parse({ answer: 'No question here.' })).toThrow();
+	});
+
+	it('prompts in plain language when the question is blank', () => {
+		const result = createFaqSchema.safeParse({ question: '   ', answer: 'A' });
+		expect(result.success).toBe(false);
+		expect(result.error?.issues[0]?.message).toBe('Question is required.');
+	});
+
+	it('rejects an unknown status', () => {
+		expect(() =>
+			createFaqSchema.parse({ question: 'Q?', answer: 'A.', status: 'archived' }),
+		).toThrow();
+	});
+});
+
+describe('updateFaqSchema', () => {
+	it('accepts a partial update', () => {
+		expect(updateFaqSchema.parse({ status: 'draft' })).toEqual({ status: 'draft' });
+	});
+
+	it('rejects an empty update', () => {
+		expect(() => updateFaqSchema.parse({})).toThrow();
 	});
 });
 

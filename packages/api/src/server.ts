@@ -4,6 +4,7 @@ import { loadConfig } from './config';
 import { checkDatabaseReady, connectMongoose, disconnectMongoose } from './db/mongoose';
 import {
 	MongoAccountRepository,
+	MongoFaqRepository,
 	MongoInviteRepository,
 	MongoItemRepository,
 	MongoMembershipRepository,
@@ -26,6 +27,7 @@ export async function start(): Promise<void> {
 		invites: new MongoInviteRepository(),
 		onboarding: new MongoOnboardingRepository(),
 		items: new MongoItemRepository(),
+		faqs: new MongoFaqRepository(),
 		verificationCodes: new MongoVerificationCodeRepository(),
 		mailer: createMailer(config),
 		// Real readiness: run an actual query so "connected but unauthorized" reports

@@ -1,4 +1,4 @@
-import { accountStatusSchema, itemStatusSchema, roleSchema } from '@rivus/core';
+import { accountStatusSchema, faqStatusSchema, itemStatusSchema, roleSchema } from '@rivus/core';
 import { z } from 'zod';
 
 /** Public user projection — never includes the password hash. */
@@ -132,6 +132,26 @@ export const itemListResponseSchema = z
 		meta: paginationMetaSchema,
 	})
 	.meta({ id: 'ItemList' });
+
+export const faqResponseSchema = z
+	.object({
+		id: z.string(),
+		accountId: z.string(),
+		question: z.string(),
+		answer: z.string(),
+		category: z.string(),
+		status: faqStatusSchema,
+		createdAt: z.string(),
+		updatedAt: z.string(),
+	})
+	.meta({ id: 'Faq' });
+
+export const faqListResponseSchema = z
+	.object({
+		data: z.array(faqResponseSchema),
+		meta: paginationMetaSchema,
+	})
+	.meta({ id: 'FaqList' });
 
 /** A page of companies (accounts) for the staff company switcher. */
 export const accountListResponseSchema = z
