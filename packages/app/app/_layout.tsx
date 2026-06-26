@@ -24,6 +24,7 @@ import { AuthScreen } from '@/src/auth/AuthScreen';
 import { RivusWordmark } from '@/src/brand/RivusLogo';
 import { CompanySwitcher } from '@/src/components/CompanySwitcher';
 import { BrandGradient } from '@/src/components/Gradient';
+import { RivusChat } from '@/src/components/RivusChat';
 import { Avatar, Dot, Icon, RivusStatusChip, Txt } from '@/src/components/ui';
 import { installFocusRing } from '@/src/theme/focusRing';
 import { colors, font, radii, SIDEBAR_BREAKPOINT, SIDEBAR_WIDTH } from '@/src/theme/tokens';
@@ -142,6 +143,7 @@ function Shell() {
 						<Slot />
 					</View>
 				</View>
+				<RivusChat />
 			</View>
 		);
 	}
@@ -159,6 +161,7 @@ function Shell() {
 			<View style={styles.content}>
 				<Slot />
 			</View>
+			<RivusChat />
 		</View>
 	);
 }
