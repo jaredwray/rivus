@@ -4,6 +4,10 @@ import {
 	type AccountId,
 	acceptInviteSchema,
 	accountStatusSchema,
+	createFaqSchema,
+	type Faq,
+	type FaqId,
+	faqStatusSchema,
 	type InviteMemberInput,
 	type Item,
 	type ItemId,
@@ -18,9 +22,11 @@ import {
 	roleSchema,
 	signupSchema,
 	type UpdateAccountInput,
+	type UpdateFaqInput,
 	type User,
 	type UserId,
 	updateAccountSchema,
+	updateFaqSchema,
 	type VerifyCodeInput,
 	verifyCodeSchema,
 } from '@rivus/core';
@@ -29,10 +35,18 @@ import { z } from 'zod';
 /** Signup accepts the schema's *input* (business defaults like timezone optional). */
 export type SignupBody = z.input<typeof signupSchema>;
 
+/**
+ * createFaq accepts the schema's *input*: `category` and `status` have schema
+ * defaults the API fills, so callers may omit them (don't force the parsed
+ * *output* type, which would make them required).
+ */
+export type CreateFaqBody = z.input<typeof createFaqSchema>;
+
 // `@rivus/core` brands its ids so a user id can't be passed where an item id is
 // expected. The wire format is a plain string; these helpers validate as strings
 // while preserving the brand in the inferred type.
 const itemId = () => z.string().min(1) as unknown as z.ZodType<ItemId>;
+const faqId = () => z.string().min(1) as unknown as z.ZodType<FaqId>;
 const accountId = () => z.string().min(1) as unknown as z.ZodType<AccountId>;
 const userId = () => z.string().min(1) as unknown as z.ZodType<UserId>;
 
@@ -210,6 +224,31 @@ export interface ItemListResponse {
 	meta: PaginationMeta;
 }
 
+const faqResponseSchema = z.object({
+	id: faqId(),
+	accountId: accountId(),
+	question: z.string(),
+	answer: z.string(),
+	category: z.string(),
+	status: faqStatusSchema,
+	createdAt: z.string(),
+	updatedAt: z.string(),
+}) satisfies z.ZodType<Faq>;
+
+const faqListResponseSchema = z.object({
+	data: z.array(faqResponseSchema),
+	meta: paginationMetaSchema,
+});
+
+export interface FaqListResponse {
+	data: Faq[];
+	meta: PaginationMeta;
+}
+
+// A 204 No Content response (FAQ delete) has an empty body; the request helper
+// passes `undefined` to the schema, so accept exactly that.
+const noContentSchema = z.undefined();
+
 // A page of companies (accounts) for the staff company switcher.
 const accountListResponseSchema = z.object({
 	data: z.array(accountResponseSchema),
@@ -267,6 +306,14 @@ export interface RivusApiClient {
 	/** Read the account's billing summary (owner only). */
 	getBilling(token: string): Promise<Billing>;
 	listItems(token: string, query?: Partial<PaginationQuery>): Promise<ItemListResponse>;
+	/** List the account's FAQs (the knowledge base Rivus answers from). */
+	listFaqs(token: string, query?: Partial<PaginationQuery>): Promise<FaqListResponse>;
+	/** Create an FAQ for the account. */
+	createFaq(token: string, input: CreateFaqBody): Promise<Faq>;
+	/** Update one of the account's FAQs. */
+	updateFaq(token: string, id: FaqId, input: UpdateFaqInput): Promise<Faq>;
+	/** Delete one of the account's FAQs. */
+	deleteFaq(token: string, id: FaqId): Promise<void>;
 	/**
 	 * List/search every company, for the staff company switcher. Restricted to Rivus
 	 * staff server-side (a regular customer gets 403).
@@ -424,6 +471,39 @@ export function createApiClient(
 			});
 		},
 
+		async listFaqs(token: string, query?: Partial<PaginationQuery>) {
+			const { page, pageSize } = parseInput(paginationQuerySchema, query ?? {});
+			const search = new URLSearchParams({
+				page: String(page),
+				pageSize: String(pageSize),
+			});
+			return request(`/v1/faqs?${search.toString()}`, faqListResponseSchema, {
+				method: 'GET',
+				headers: authHeaders(token),
+			});
+		},
+
+		async createFaq(token: string, input: CreateFaqBody) {
+			const payload = parseInput(createFaqSchema, input);
+			return request('/v1/faqs', faqResponseSchema, jsonInit('POST', payload, token));
+		},
+
+		async updateFaq(token: string, id: FaqId, input: UpdateFaqInput) {
+			const payload = parseInput(updateFaqSchema, input);
+			return request(
+				`/v1/faqs/${encodeURIComponent(id)}`,
+				faqResponseSchema,
+				jsonInit('PATCH', payload, token),
+			);
+		},
+
+		async deleteFaq(token: string, id: FaqId) {
+			await request(`/v1/faqs/${encodeURIComponent(id)}`, noContentSchema, {
+				method: 'DELETE',
+				headers: authHeaders(token),
+			});
+		},
+
 		async listCompanies(token: string, query?: CompanyListQuery) {
 			const { page, pageSize } = parseInput(paginationQuerySchema, {
 				page: query?.page,
@@ -458,4 +538,4 @@ function safeJsonParse(raw: string): unknown {
 	}
 }
 
-export type { Account, Item, PaginationMeta, Role, User };
+export type { Account, Faq, Item, PaginationMeta, Role, User };

@@ -15,6 +15,7 @@ import { accountRoutes } from './routes/account';
 import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { billingRoutes } from './routes/billing';
+import { faqRoutes } from './routes/faqs';
 import { healthRoutes } from './routes/health';
 import { itemRoutes } from './routes/items';
 import { memberRoutes } from './routes/members';
@@ -155,6 +156,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 	app.register(adminRoutes, { prefix: '/v1/admin' });
 	app.register(billingRoutes, { prefix: '/v1/billing' });
 	app.register(itemRoutes, { prefix: '/v1/items' });
+	app.register(faqRoutes, { prefix: '/v1/faqs' });
 
 	return app;
 }

@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import type { AccountId } from '@rivus/core';
+import type { AccountId, FaqId } from '@rivus/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, createApiClient, ValidationError } from './client';
 
@@ -59,6 +59,20 @@ function makeItem() {
 		name: faker.commerce.productName(),
 		description: faker.commerce.productDescription(),
 		status: 'active' as const,
+		createdAt: now,
+		updatedAt: now,
+	};
+}
+
+function makeFaq() {
+	const now = new Date().toISOString();
+	return {
+		id: faker.string.uuid(),
+		accountId: faker.string.uuid(),
+		question: `${faker.lorem.sentence().replace(/\.$/, '')}?`,
+		answer: faker.lorem.paragraph(),
+		category: faker.helpers.arrayElement(['Pricing', 'Scheduling', '']),
+		status: 'published' as const,
 		createdAt: now,
 		updatedAt: now,
 	};
@@ -451,6 +465,171 @@ describe('createApiClient', () => {
 			const client = createApiClient(BASE, fetchMock);
 			const result = await client.listItems('token');
 			expect(result.data).toEqual([]);
+		});
+	});
+
+	describe('listFaqs', () => {
+		it('returns parsed FAQs and sends the bearer auth header', async () => {
+			const faqs = [makeFaq(), makeFaq()];
+			const response = {
+				data: faqs,
+				meta: {
+					page: 1,
+					pageSize: 20,
+					total: faqs.length,
+					totalPages: 1,
+					hasNextPage: false,
+					hasPreviousPage: false,
+				},
+			};
+			fetchMock.mockResolvedValueOnce(jsonResponse(response));
+
+			const client = createApiClient(BASE, fetchMock);
+			const token = faker.string.alphanumeric(32);
+			const result = await client.listFaqs(token);
+
+			expect(result.data).toEqual(faqs);
+			expect(result.meta.total).toBe(faqs.length);
+
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/faqs?page=1&pageSize=20`);
+			expect(init.headers).toMatchObject({ Authorization: `Bearer ${token}` });
+		});
+
+		it('forwards custom pagination query params', async () => {
+			const response = {
+				data: [],
+				meta: {
+					page: 2,
+					pageSize: 100,
+					total: 0,
+					totalPages: 0,
+					hasNextPage: false,
+					hasPreviousPage: false,
+				},
+			};
+			fetchMock.mockResolvedValueOnce(jsonResponse(response));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.listFaqs('token', { page: 2, pageSize: 100 });
+
+			const [url] = fetchMock.mock.calls[0] as [string];
+			expect(url).toBe(`${BASE}/v1/faqs?page=2&pageSize=100`);
+		});
+	});
+
+	describe('createFaq', () => {
+		it('posts an FAQ with the bearer token and returns it', async () => {
+			const faq = makeFaq();
+			fetchMock.mockResolvedValueOnce(jsonResponse(faq, { status: 201 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.createFaq('owner-token', {
+				question: faq.question,
+				answer: faq.answer,
+				category: faq.category,
+				status: 'published',
+			});
+
+			expect(result).toEqual(faq);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/faqs`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({
+				Authorization: 'Bearer owner-token',
+				'Content-Type': 'application/json',
+			});
+			expect(JSON.parse(init.body as string)).toMatchObject({
+				question: faq.question,
+				answer: faq.answer,
+			});
+		});
+
+		it('rejects an FAQ with no question/answer before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.createFaq('tok', { question: '', answer: '', category: '', status: 'published' }),
+			).rejects.toThrow();
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it('accepts just a question and answer, filling category/status defaults', async () => {
+			const faq = makeFaq();
+			fetchMock.mockResolvedValueOnce(jsonResponse(faq, { status: 201 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			// category/status omitted — the schema defaults them, so the client must not
+			// require them at the type level and must send the defaulted values.
+			await client.createFaq('tok', { question: faq.question, answer: faq.answer });
+
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(JSON.parse(init.body as string)).toMatchObject({
+				question: faq.question,
+				answer: faq.answer,
+				category: '',
+				status: 'published',
+			});
+		});
+	});
+
+	describe('updateFaq', () => {
+		it('PATCHes the FAQ with the bearer token and returns it', async () => {
+			const faq = { ...makeFaq(), status: 'draft' as const };
+			fetchMock.mockResolvedValueOnce(jsonResponse(faq));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.updateFaq('owner-token', faq.id as FaqId, { status: 'draft' });
+
+			expect(result.status).toBe('draft');
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/faqs/${faq.id}`);
+			expect(init.method).toBe('PATCH');
+			expect(JSON.parse(init.body as string)).toEqual({ status: 'draft' });
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer owner-token' });
+		});
+
+		it('url-encodes the FAQ id', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(makeFaq()));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.updateFaq('tok', 'a/b c' as FaqId, { category: 'Pricing' });
+
+			const [url] = fetchMock.mock.calls[0] as [string];
+			expect(url).toBe(`${BASE}/v1/faqs/a%2Fb%20c`);
+		});
+
+		it('rejects an empty update before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.updateFaq('tok', 'id' as FaqId, {})).rejects.toThrow();
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('deleteFaq', () => {
+		it('DELETEs the FAQ with the bearer token and resolves on 204', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(undefined, { status: 204 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.deleteFaq('owner-token', 'faq-1' as FaqId)).resolves.toBeUndefined();
+
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/faqs/faq-1`);
+			expect(init.method).toBe('DELETE');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer owner-token' });
+		});
+
+		it('throws an ApiError when the FAQ is gone (404)', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse(
+					{ error: 'Not Found', message: 'FAQ not found', statusCode: 404 },
+					{ status: 404 },
+				),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client.deleteFaq('tok', 'missing' as never).catch((e) => e);
+			expect(error).toBeInstanceOf(ApiError);
+			expect(error.status).toBe(404);
 		});
 	});
 

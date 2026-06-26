@@ -12,7 +12,7 @@ import { NoopMailer } from './services/email';
  */
 async function main(): Promise<void> {
 	const config = loadConfig({ ...process.env, NODE_ENV: 'test' });
-	const { users, accounts, memberships, invites, onboarding, items, verificationCodes } =
+	const { users, accounts, memberships, invites, onboarding, items, faqs, verificationCodes } =
 		createInMemoryRepositories();
 	const app = buildApp({
 		config,
@@ -22,6 +22,7 @@ async function main(): Promise<void> {
 		invites,
 		onboarding,
 		items,
+		faqs,
 		verificationCodes,
 		mailer: new NoopMailer(),
 		ping: async () => ({ ready: true }),

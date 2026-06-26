@@ -27,7 +27,7 @@ const TEST_CONFIG = {
 } as NodeJS.ProcessEnv;
 
 export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<FastifyInstance> {
-	const { users, accounts, memberships, invites, onboarding, items, verificationCodes } =
+	const { users, accounts, memberships, invites, onboarding, items, faqs, verificationCodes } =
 		createInMemoryRepositories();
 	const app = buildApp({
 		config: loadConfig(TEST_CONFIG),
@@ -37,6 +37,7 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		invites,
 		onboarding,
 		items,
+		faqs,
 		verificationCodes,
 		// A recording mailer by default so helpers can read back the emailed code.
 		mailer: new RecordingMailer(),
@@ -56,7 +57,8 @@ export async function buildTestAppWithRepos(): Promise<{
 	repos: InMemoryRepositories;
 }> {
 	const repos = createInMemoryRepositories();
-	const { users, accounts, memberships, invites, onboarding, items, verificationCodes } = repos;
+	const { users, accounts, memberships, invites, onboarding, items, faqs, verificationCodes } =
+		repos;
 	const app = buildApp({
 		config: loadConfig(TEST_CONFIG),
 		users,
@@ -65,6 +67,7 @@ export async function buildTestAppWithRepos(): Promise<{
 		invites,
 		onboarding,
 		items,
+		faqs,
 		verificationCodes,
 		mailer: new RecordingMailer(),
 		ping: async () => ({ ready: true }),
