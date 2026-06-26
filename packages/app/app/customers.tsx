@@ -1,7 +1,8 @@
 import type { CustomerChannel, CustomerStatus } from '@rivus/core';
-import { type ComponentProps, useCallback, useEffect, useState } from 'react';
+import { type ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
 import {
 	ActivityIndicator,
+	Platform,
 	Pressable,
 	ScrollView,
 	StyleSheet,
@@ -9,7 +10,9 @@ import {
 	View,
 } from 'react-native';
 import { ApiError, type Customer } from '@/src/api/client';
+import { getGoogleMapsApiKey } from '@/src/api/config';
 import { initialsOf, useAuth } from '@/src/auth/AuthContext';
+import { AddressAutocomplete } from '@/src/components/AddressAutocomplete';
 import {
 	Avatar,
 	Card,
@@ -26,7 +29,7 @@ import { colors, font, radii, SIDEBAR_BREAKPOINT, SIDEBAR_WIDTH } from '@/src/th
 
 const COLS = {
 	customer: 2.2,
-	area: 1.3,
+	address: 1.3,
 	channel: 1,
 	lifetime: 1,
 	balance: 1.2,
@@ -112,7 +115,7 @@ export default function CustomersScreen() {
 	const [name, setName] = useState('');
 	const [email, setEmail] = useState('');
 	const [phone, setPhone] = useState('');
-	const [area, setArea] = useState('');
+	const [address, setAddress] = useState('');
 	const [channel, setChannel] = useState<CustomerChannel>('phone');
 	const [status, setStatus] = useState<CustomerStatus>('lead');
 	const [lifetime, setLifetime] = useState('');
@@ -121,6 +124,11 @@ export default function CustomersScreen() {
 	const [formError, setFormError] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
 	const [deleting, setDeleting] = useState(false);
+
+	// The Google Maps key is HTTP-referrer restricted, which only authorizes web
+	// origins, so gate address autocomplete to web and let the field fall back to a
+	// plain text input on native — same as the signup form and account settings.
+	const mapsApiKey = useMemo(() => (Platform.OS === 'web' ? getGoogleMapsApiKey() : null), []);
 
 	const load = useCallback(
 		async (isActive: () => boolean = () => true) => {
@@ -175,7 +183,7 @@ export default function CustomersScreen() {
 		setName('');
 		setEmail('');
 		setPhone('');
-		setArea('');
+		setAddress('');
 		setChannel('phone');
 		setStatus('lead');
 		setLifetime('');
@@ -195,7 +203,7 @@ export default function CustomersScreen() {
 		setName(customer.name);
 		setEmail(customer.email);
 		setPhone(customer.phone);
-		setArea(customer.area);
+		setAddress(customer.address);
 		setChannel(customer.channel);
 		setStatus(customer.status);
 		setLifetime(centsToInput(customer.lifetimeValue));
@@ -228,7 +236,7 @@ export default function CustomersScreen() {
 				name: name.trim(),
 				email: email.trim(),
 				phone: phone.trim(),
-				area: area.trim(),
+				address: address.trim(),
 				channel,
 				status,
 				lifetimeValue,
@@ -322,12 +330,12 @@ export default function CustomersScreen() {
 								/>
 							</View>
 						</View>
-						<TextField
-							label="Area"
-							value={area}
-							onChangeText={setArea}
-							placeholder="Fremont"
-							autoCapitalize="words"
+						<AddressAutocomplete
+							label="Address"
+							value={address}
+							onChangeText={setAddress}
+							placeholder="1 Main St, Seattle, WA"
+							apiKey={mapsApiKey}
 						/>
 						<View style={styles.fieldWrap}>
 							<Txt style={styles.fieldLabel}>Channel</Txt>
@@ -400,7 +408,7 @@ export default function CustomersScreen() {
 						<View style={[styles.table, { width: tableWidth }]}>
 							<View style={styles.tableHead}>
 								<Txt style={[styles.th, { flex: COLS.customer }]}>Customer</Txt>
-								<Txt style={[styles.th, { flex: COLS.area }]}>Area</Txt>
+								<Txt style={[styles.th, { flex: COLS.address }]}>Address</Txt>
 								<Txt style={[styles.th, { flex: COLS.channel }]}>Channel</Txt>
 								<Txt style={[styles.th, styles.right, { flex: COLS.lifetime }]}>Lifetime</Txt>
 								<Txt style={[styles.th, styles.right, { flex: COLS.balance }]}>Balance</Txt>
@@ -426,8 +434,8 @@ export default function CustomersScreen() {
 												{customer.name}
 											</Txt>
 										</View>
-										<Txt style={[styles.td, { flex: COLS.area }]} numberOfLines={1}>
-											{customer.area || '—'}
+										<Txt style={[styles.td, { flex: COLS.address }]} numberOfLines={1}>
+											{customer.address || '—'}
 										</Txt>
 										<Txt style={[styles.td, { flex: COLS.channel }]}>
 											{CHANNEL_LABEL[customer.channel]}
@@ -494,7 +502,7 @@ function AccountPanel({ customer, onEdit }: { customer: Customer; onEdit: () => 
 				<View style={{ flex: 1 }}>
 					<Txt style={styles.acctName}>{customer.name}</Txt>
 					<Txt style={styles.acctSub}>
-						{customer.area ? `${customer.area} · ` : ''}Customer since {since}
+						{customer.address ? `${customer.address} · ` : ''}Customer since {since}
 					</Txt>
 				</View>
 			</View>

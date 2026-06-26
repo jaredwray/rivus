@@ -266,7 +266,7 @@ const customerResponseSchema = z.object({
 	name: z.string(),
 	email: z.string(),
 	phone: z.string(),
-	area: z.string(),
+	address: z.string(),
 	channel: customerChannelSchema,
 	status: customerStatusSchema,
 	lifetimeValue: z.number().int(),

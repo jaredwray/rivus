@@ -156,7 +156,7 @@ function mapCustomer(doc: HydratedDocument<CustomerDocument>): Customer {
 		name: doc.name,
 		email: doc.email,
 		phone: doc.phone,
-		area: doc.area,
+		address: doc.address,
 		channel: doc.channel,
 		status: doc.status,
 		lifetimeValue: doc.lifetimeValue,

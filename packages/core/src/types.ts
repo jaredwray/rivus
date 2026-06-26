@@ -138,8 +138,8 @@ export interface Customer {
 	email: string;
 	/** Empty string when not provided. */
 	phone: string;
-	/** Service area / neighborhood; empty string when not provided. */
-	area: string;
+	/** Street address; empty string when not provided. */
+	address: string;
 	channel: CustomerChannel;
 	status: CustomerStatus;
 	/** Lifetime value in integer cents. */
