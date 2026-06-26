@@ -4,6 +4,7 @@ import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createInMemoryRepositories } from './repositories/memory';
 import { NoopMailer } from './services/email';
+import { NoopFaqSimilarityService } from './services/faq-similarity';
 
 /**
  * Boot the app with in-memory repositories (no database needed) purely to read
@@ -25,6 +26,7 @@ async function main(): Promise<void> {
 		faqs,
 		verificationCodes,
 		mailer: new NoopMailer(),
+		faqSimilarity: new NoopFaqSimilarityService(),
 		ping: async () => ({ ready: true }),
 	});
 

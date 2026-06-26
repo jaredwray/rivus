@@ -153,6 +153,19 @@ export const faqListResponseSchema = z
 	})
 	.meta({ id: 'FaqList' });
 
+/**
+ * Result of the AI duplicate check run before creating an FAQ. `match` is the
+ * existing FAQ a new one would duplicate (or null when none is similar), and
+ * `merged` is the AI-combined question/answer the client offers as an update.
+ */
+export const faqSimilarityResponseSchema = z
+	.object({
+		match: faqResponseSchema.nullable(),
+		reason: z.string(),
+		merged: z.object({ question: z.string(), answer: z.string() }).nullable(),
+	})
+	.meta({ id: 'FaqSimilarity' });
+
 /** A page of companies (accounts) for the staff company switcher. */
 export const accountListResponseSchema = z
 	.object({

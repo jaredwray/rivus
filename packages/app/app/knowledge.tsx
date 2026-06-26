@@ -1,9 +1,10 @@
 import type { FaqStatus } from '@rivus/core';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { ApiError, type Faq } from '@/src/api/client';
+import { ApiError, type Faq, type FaqSimilarityResult } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { RivusSymbol } from '@/src/brand/RivusLogo';
+import { FaqDuplicateModal } from '@/src/components/FaqDuplicateModal';
 import { BrandGradient } from '@/src/components/Gradient';
 import {
 	Card,
@@ -39,6 +40,12 @@ export default function KnowledgeScreen() {
 	const [formError, setFormError] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
 	const [deleting, setDeleting] = useState(false);
+
+	// Duplicate-FAQ modal: a similar existing FAQ the AI found while adding a new one,
+	// plus its combined-text suggestion.
+	const [dupMatch, setDupMatch] = useState<Faq | null>(null);
+	const [dupReason, setDupReason] = useState('');
+	const [dupMerged, setDupMerged] = useState<{ question: string; answer: string } | null>(null);
 
 	const load = useCallback(async () => {
 		if (!session) {
@@ -111,9 +118,29 @@ export default function KnowledgeScreen() {
 			};
 			if (editing) {
 				await client.updateFaq(session.token, editing.id, input);
-			} else {
-				await client.createFaq(session.token, input);
+				closeForm();
+				await load();
+				return;
 			}
+			// Creating a new FAQ: first ask the API whether a near-duplicate already
+			// exists. A failure here must never block the user, so fall through to a
+			// normal create if the check can't run.
+			let similar: FaqSimilarityResult = { match: null, reason: '', merged: null };
+			try {
+				similar = await client.findSimilarFaq(session.token, {
+					question: input.question,
+					answer: input.answer,
+				});
+			} catch {
+				// Best-effort — ignore and create as usual.
+			}
+			if (similar.match) {
+				setDupMatch(similar.match);
+				setDupReason(similar.reason);
+				setDupMerged(similar.merged);
+				return; // The duplicate modal drives the next action.
+			}
+			await client.createFaq(session.token, input);
 			closeForm();
 			await load();
 		} catch (caught) {
@@ -121,6 +148,53 @@ export default function KnowledgeScreen() {
 		} finally {
 			setSaving(false);
 		}
+	}
+
+	function dismissDuplicate() {
+		setDupMatch(null);
+		setDupReason('');
+		setDupMerged(null);
+	}
+
+	/** "Add as new FAQ": create the FAQ as typed, bypassing the duplicate check. */
+	async function proceedCreate() {
+		if (!session || saving) {
+			return;
+		}
+		dismissDuplicate();
+		setFormError(null);
+		setSaving(true);
+		try {
+			await client.createFaq(session.token, {
+				question: question.trim(),
+				answer: answer.trim(),
+				category: category.trim(),
+				status,
+			});
+			closeForm();
+			await load();
+		} catch (caught) {
+			setFormError(caught instanceof Error ? caught.message : 'Could not save the FAQ.');
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	/** "Update existing FAQ": edit the matched FAQ, pre-filled with the merged text. */
+	function updateExistingFaq() {
+		const match = dupMatch;
+		const merged = dupMerged;
+		dismissDuplicate();
+		if (!match) {
+			return;
+		}
+		setEditing(match);
+		setQuestion(merged?.question ?? match.question);
+		setAnswer(merged?.answer ?? match.answer);
+		setCategory(match.category);
+		setStatus(match.status);
+		setFormError(null);
+		setFormOpen(true);
 	}
 
 	async function onDelete() {
@@ -310,6 +384,14 @@ export default function KnowledgeScreen() {
 					</View>
 				)}
 			</View>
+
+			<FaqDuplicateModal
+				match={dupMatch}
+				reason={dupReason}
+				onUpdateExisting={updateExistingFaq}
+				onCreateAnyway={proceedCreate}
+				onClose={dismissDuplicate}
+			/>
 		</ScrollView>
 	);
 }

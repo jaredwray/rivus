@@ -25,6 +25,20 @@ const envSchema = z
 		EMAIL_FROM: z.string().min(3).default('Rivus <hello@rivus.ai>'),
 		// Base URL of the app, used to build the link in invitation emails.
 		APP_URL: z.string().url().default('https://app.rivus.ai'),
+		// --- AI (duplicate-FAQ detection) ---
+		// The knowledge base's "is this a duplicate?" check runs through the AI SDK,
+		// so any provider whose key is set can serve it. OpenAI is the primary; the
+		// rest act as backups (tried in order when an earlier provider errors). When
+		// no key is set the check is a no-op (the "Add FAQ" flow never reports a
+		// duplicate), so none of these are required and none gate production boot.
+		OPENAI_API_KEY: z.string().min(1).optional(),
+		OPENAI_MODEL: z.string().min(1).default('gpt-5.4-mini'),
+		GOOGLE_GENERATIVE_AI_API_KEY: z.string().min(1).optional(),
+		GEMINI_MODEL: z.string().min(1).default('gemini-2.5-flash'),
+		XAI_API_KEY: z.string().min(1).optional(),
+		XAI_MODEL: z.string().min(1).default('grok-4-fast'),
+		ANTHROPIC_API_KEY: z.string().min(1).optional(),
+		ANTHROPIC_MODEL: z.string().min(1).default('claude-haiku-4-5'),
 	})
 	.superRefine((env, ctx) => {
 		// In production, refuse to boot with the well-known dev secret or a weak one.

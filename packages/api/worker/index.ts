@@ -9,6 +9,16 @@ export interface Env {
 	RESEND_API_KEY: string;
 	EMAIL_FROM: string;
 	APP_URL: string;
+	// AI provider keys + model overrides for duplicate-FAQ detection (all optional;
+	// when none is set the check degrades to a no-op).
+	OPENAI_API_KEY?: string;
+	OPENAI_MODEL?: string;
+	GOOGLE_GENERATIVE_AI_API_KEY?: string;
+	GEMINI_MODEL?: string;
+	XAI_API_KEY?: string;
+	XAI_MODEL?: string;
+	ANTHROPIC_API_KEY?: string;
+	ANTHROPIC_MODEL?: string;
 }
 
 /**
@@ -33,6 +43,16 @@ export class ApiContainer extends Container<Env> {
 		...(this.env.RESEND_API_KEY ? { RESEND_API_KEY: this.env.RESEND_API_KEY } : {}),
 		...(this.env.EMAIL_FROM ? { EMAIL_FROM: this.env.EMAIL_FROM } : {}),
 		...(this.env.APP_URL ? { APP_URL: this.env.APP_URL } : {}),
+		...(this.env.OPENAI_API_KEY ? { OPENAI_API_KEY: this.env.OPENAI_API_KEY } : {}),
+		...(this.env.OPENAI_MODEL ? { OPENAI_MODEL: this.env.OPENAI_MODEL } : {}),
+		...(this.env.GOOGLE_GENERATIVE_AI_API_KEY
+			? { GOOGLE_GENERATIVE_AI_API_KEY: this.env.GOOGLE_GENERATIVE_AI_API_KEY }
+			: {}),
+		...(this.env.GEMINI_MODEL ? { GEMINI_MODEL: this.env.GEMINI_MODEL } : {}),
+		...(this.env.XAI_API_KEY ? { XAI_API_KEY: this.env.XAI_API_KEY } : {}),
+		...(this.env.XAI_MODEL ? { XAI_MODEL: this.env.XAI_MODEL } : {}),
+		...(this.env.ANTHROPIC_API_KEY ? { ANTHROPIC_API_KEY: this.env.ANTHROPIC_API_KEY } : {}),
+		...(this.env.ANTHROPIC_MODEL ? { ANTHROPIC_MODEL: this.env.ANTHROPIC_MODEL } : {}),
 	};
 }
 

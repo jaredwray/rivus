@@ -1,5 +1,7 @@
+import type { FaqId } from '@rivus/core';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { FaqSimilarityService } from '../src/services/faq-similarity';
 import { authHeader, buildTestApp, signupOwner } from './helpers';
 
 describe('faqs', () => {
@@ -212,5 +214,120 @@ describe('faqs', () => {
 		});
 
 		expect(response.statusCode).toBe(404);
+	});
+});
+
+describe('POST /v1/faqs/similar', () => {
+	it('requires authentication', async () => {
+		const app = await buildTestApp();
+		const response = await app.inject({
+			method: 'POST',
+			url: '/v1/faqs/similar',
+			payload: { question: 'Anything?' },
+		});
+		expect(response.statusCode).toBe(401);
+		await app.close();
+	});
+
+	it('rejects a check with no question (400)', async () => {
+		const app = await buildTestApp();
+		const token = (await signupOwner(app)).token;
+		const response = await app.inject({
+			method: 'POST',
+			url: '/v1/faqs/similar',
+			headers: authHeader(token),
+			payload: { question: '' },
+		});
+		expect(response.statusCode).toBe(400);
+		await app.close();
+	});
+
+	it('reports no duplicate with the default (no-op) service', async () => {
+		const app = await buildTestApp();
+		const token = (await signupOwner(app)).token;
+		await app.inject({
+			method: 'POST',
+			url: '/v1/faqs',
+			headers: authHeader(token),
+			payload: { question: 'How much is a service call?', answer: 'It is $89.' },
+		});
+
+		const response = await app.inject({
+			method: 'POST',
+			url: '/v1/faqs/similar',
+			headers: authHeader(token),
+			payload: { question: 'What does a service call cost?', answer: 'It costs $89.' },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({ match: null, reason: '', merged: null });
+		await app.close();
+	});
+
+	it('returns the matched FAQ and merged suggestion when the AI finds a duplicate', async () => {
+		let matchId: string | null = null;
+		const stub: FaqSimilarityService = {
+			async findSimilar() {
+				return matchId
+					? { faqId: matchId as FaqId, confidence: 0.9, reason: 'Same pricing question.' }
+					: null;
+			},
+			async mergeSuggestion() {
+				return { question: 'Merged question?', answer: 'Merged answer.' };
+			},
+		};
+		const app = await buildTestApp({ faqSimilarity: stub });
+		const token = (await signupOwner(app)).token;
+		const created = await app.inject({
+			method: 'POST',
+			url: '/v1/faqs',
+			headers: authHeader(token),
+			payload: { question: 'How much is a service call?', answer: 'It is $89.' },
+		});
+		matchId = created.json().id;
+
+		const response = await app.inject({
+			method: 'POST',
+			url: '/v1/faqs/similar',
+			headers: authHeader(token),
+			payload: { question: 'What does a service call cost?', answer: 'It costs $89.' },
+		});
+
+		expect(response.statusCode).toBe(200);
+		const body = response.json();
+		expect(body.match.id).toBe(matchId);
+		expect(body.reason).toBe('Same pricing question.');
+		expect(body.merged).toEqual({ question: 'Merged question?', answer: 'Merged answer.' });
+		await app.close();
+	});
+
+	it('drops a match whose id does not belong to the account', async () => {
+		const stub: FaqSimilarityService = {
+			async findSimilar() {
+				return { faqId: 'ghost-id' as FaqId, confidence: 0.99, reason: 'hallucinated' };
+			},
+			async mergeSuggestion() {
+				return { question: '', answer: '' };
+			},
+		};
+		const app = await buildTestApp({ faqSimilarity: stub });
+		const token = (await signupOwner(app)).token;
+		await app.inject({
+			method: 'POST',
+			url: '/v1/faqs',
+			headers: authHeader(token),
+			payload: { question: 'How much is a service call?', answer: 'It is $89.' },
+		});
+
+		const response = await app.inject({
+			method: 'POST',
+			url: '/v1/faqs/similar',
+			headers: authHeader(token),
+			payload: { question: 'What does a service call cost?' },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({ match: null, reason: '', merged: null });
+		await app.close();
 	});
 });
