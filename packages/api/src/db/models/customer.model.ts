@@ -31,4 +31,10 @@ const customerSchema = new Schema<CustomerDocument>(
 	{ timestamps: true },
 );
 
+// The account-scoped list query filters by `accountId` and sorts by
+// `{ createdAt: -1, _id: -1 }`; a matching compound index lets Mongo serve it
+// from the index instead of an in-memory sort (which fails past the 32MB limit
+// once an account has many customers).
+customerSchema.index({ accountId: 1, createdAt: -1, _id: -1 });
+
 export const CustomerModel = model<CustomerDocument>('Customer', customerSchema);

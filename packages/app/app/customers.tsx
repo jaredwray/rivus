@@ -75,11 +75,14 @@ function dollarsToCents(text: string): number | null {
 	if (trimmed === '') {
 		return 0;
 	}
-	const value = Number(trimmed.replace(/[$,\s]/g, ''));
-	if (!Number.isFinite(value) || value < 0) {
+	// Accept digits with optional thousands separators and up to two decimals
+	// (e.g. "1,234.56"); reject anything else so stray formatting like "$" isn't
+	// coerced to 0 and "12.999" isn't silently rounded into a different amount.
+	const cleaned = trimmed.replace(/[$,]/g, '');
+	if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) {
 		return null;
 	}
-	return Math.round(value * 100);
+	return Math.round(Number(cleaned) * 100);
 }
 
 /** Pre-fill the dollar input when editing (0 shows blank so the placeholder shows). */
@@ -119,35 +122,53 @@ export default function CustomersScreen() {
 	const [saving, setSaving] = useState(false);
 	const [deleting, setDeleting] = useState(false);
 
-	const load = useCallback(async () => {
-		if (!session) {
-			return;
-		}
-		setLoading(true);
-		setError(null);
-		try {
-			// The API caps pageSize at 100 and this screen has no pagination UI, so
-			// page through everything — otherwise customers past the first 100 would
-			// vanish from the list with no way to view or edit them.
-			const all: Customer[] = [];
-			let page = 1;
-			let hasNext = true;
-			while (hasNext) {
-				const { data, meta } = await client.listCustomers(session.token, { page, pageSize: 100 });
-				all.push(...data);
-				hasNext = meta.hasNextPage;
-				page += 1;
+	const load = useCallback(
+		async (isActive: () => boolean = () => true) => {
+			if (!session) {
+				return;
 			}
-			setList(all);
-		} catch (caught) {
-			setError(caught instanceof ApiError ? caught.message : 'Could not load your customers.');
-		} finally {
-			setLoading(false);
-		}
-	}, [client, session]);
+			setLoading(true);
+			setError(null);
+			try {
+				// The API caps pageSize at 100 and this screen has no pagination UI, so
+				// page through everything — otherwise customers past the first 100 would
+				// vanish from the list with no way to view or edit them. MAX_PAGES is a
+				// backstop against an API that returns hasNextPage forever (far more than
+				// this un-virtualized list will ever render).
+				const all: Customer[] = [];
+				const MAX_PAGES = 100;
+				let page = 1;
+				let hasNext = true;
+				while (hasNext && page <= MAX_PAGES) {
+					const { data, meta } = await client.listCustomers(session.token, { page, pageSize: 100 });
+					all.push(...data);
+					hasNext = meta.hasNextPage;
+					page += 1;
+				}
+				// Ignore the result if the session/account changed mid-load (e.g. a staff
+				// company switch) so we never paint one account's customers over another's.
+				if (isActive()) {
+					setList(all);
+				}
+			} catch (caught) {
+				if (isActive()) {
+					setError(caught instanceof ApiError ? caught.message : 'Could not load your customers.');
+				}
+			} finally {
+				if (isActive()) {
+					setLoading(false);
+				}
+			}
+		},
+		[client, session],
+	);
 
 	useEffect(() => {
-		load();
+		let active = true;
+		load(() => active);
+		return () => {
+			active = false;
+		};
 	}, [load]);
 
 	function resetForm() {
