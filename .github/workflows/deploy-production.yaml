@@ -125,6 +125,8 @@ jobs:
       PROD_MONGODB_URI: ${{ secrets.PROD_MONGODB_URI }}
       PROD_JWT_SECRET: ${{ secrets.PROD_JWT_SECRET }}
       PROD_RESEND_API_KEY: ${{ secrets.PROD_RESEND_API_KEY }}
+      # Optional: enables the AI duplicate-FAQ check. Unset → the check is a no-op.
+      PROD_OPENAI_API_KEY: ${{ secrets.PROD_OPENAI_API_KEY }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup
@@ -147,3 +149,9 @@ jobs:
           printf '%s' "$PROD_MONGODB_URI" | pnpm --filter @rivus/api exec wrangler secret put MONGODB_URI --env production
           printf '%s' "$PROD_JWT_SECRET" | pnpm --filter @rivus/api exec wrangler secret put JWT_SECRET --env production
           printf '%s' "$PROD_RESEND_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put RESEND_API_KEY --env production
+      # Optional AI key — pushed only when set, so an unset secret never reaches the
+      # container as an empty value (which would fail loadConfig's min(1) and crash-loop it).
+      - name: Sync optional AI secret
+        if: ${{ env.PROD_OPENAI_API_KEY != '' }}
+        run: |
+          printf '%s' "$PROD_OPENAI_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put OPENAI_API_KEY --env production
