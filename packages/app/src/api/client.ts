@@ -4,7 +4,6 @@ import {
 	type AccountId,
 	acceptInviteSchema,
 	accountStatusSchema,
-	type CreateFaqInput,
 	createFaqSchema,
 	type Faq,
 	type FaqId,
@@ -35,6 +34,13 @@ import { z } from 'zod';
 
 /** Signup accepts the schema's *input* (business defaults like timezone optional). */
 export type SignupBody = z.input<typeof signupSchema>;
+
+/**
+ * createFaq accepts the schema's *input*: `category` and `status` have schema
+ * defaults the API fills, so callers may omit them (don't force the parsed
+ * *output* type, which would make them required).
+ */
+export type CreateFaqBody = z.input<typeof createFaqSchema>;
 
 // `@rivus/core` brands its ids so a user id can't be passed where an item id is
 // expected. The wire format is a plain string; these helpers validate as strings
@@ -303,7 +309,7 @@ export interface RivusApiClient {
 	/** List the account's FAQs (the knowledge base Rivus answers from). */
 	listFaqs(token: string, query?: Partial<PaginationQuery>): Promise<FaqListResponse>;
 	/** Create an FAQ for the account. */
-	createFaq(token: string, input: CreateFaqInput): Promise<Faq>;
+	createFaq(token: string, input: CreateFaqBody): Promise<Faq>;
 	/** Update one of the account's FAQs. */
 	updateFaq(token: string, id: FaqId, input: UpdateFaqInput): Promise<Faq>;
 	/** Delete one of the account's FAQs. */
@@ -477,7 +483,7 @@ export function createApiClient(
 			});
 		},
 
-		async createFaq(token: string, input: CreateFaqInput) {
+		async createFaq(token: string, input: CreateFaqBody) {
 			const payload = parseInput(createFaqSchema, input);
 			return request('/v1/faqs', faqResponseSchema, jsonInit('POST', payload, token));
 		},

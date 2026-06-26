@@ -47,10 +47,19 @@ export default function KnowledgeScreen() {
 		setLoading(true);
 		setError(null);
 		try {
-			// One page of 100 is plenty for an account's FAQ set; pagination metadata is
-			// returned but the knowledge base is small enough to show in full.
-			const data = await client.listFaqs(session.token, { pageSize: 100 });
-			setList(data.data);
+			// The API caps pageSize at 100 and this screen has no pagination/search UI,
+			// so page through everything — otherwise FAQs past the first 100 would vanish
+			// from the list with no way to edit or delete them.
+			const all: Faq[] = [];
+			let page = 1;
+			let hasNext = true;
+			while (hasNext) {
+				const { data, meta } = await client.listFaqs(session.token, { page, pageSize: 100 });
+				all.push(...data);
+				hasNext = meta.hasNextPage;
+				page += 1;
+			}
+			setList(all);
 		} catch (caught) {
 			setError(caught instanceof ApiError ? caught.message : 'Could not load your FAQs.');
 		} finally {

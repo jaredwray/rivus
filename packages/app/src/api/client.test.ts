@@ -552,6 +552,24 @@ describe('createApiClient', () => {
 			).rejects.toThrow();
 			expect(fetchMock).not.toHaveBeenCalled();
 		});
+
+		it('accepts just a question and answer, filling category/status defaults', async () => {
+			const faq = makeFaq();
+			fetchMock.mockResolvedValueOnce(jsonResponse(faq, { status: 201 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			// category/status omitted — the schema defaults them, so the client must not
+			// require them at the type level and must send the defaulted values.
+			await client.createFaq('tok', { question: faq.question, answer: faq.answer });
+
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(JSON.parse(init.body as string)).toMatchObject({
+				question: faq.question,
+				answer: faq.answer,
+				category: '',
+				status: 'published',
+			});
+		});
 	});
 
 	describe('updateFaq', () => {
