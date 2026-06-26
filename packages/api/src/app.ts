@@ -119,6 +119,14 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 		// the configured allowlist.
 		origin: corsOrigin === '*' ? true : corsOrigin,
 		credentials: true,
+		// `@fastify/cors` v11 narrowed its default `methods` to `GET,HEAD,POST`, so
+		// preflight for any other verb answers without it in
+		// `Access-Control-Allow-Methods` — the browser then blocks the real request
+		// and `fetch` rejects with "Failed to fetch". The web app's writes are
+		// cross-origin (app.rivus.ai → api.rivus.ai) and preflighted, so without
+		// this every PATCH (edit FAQ, update account) and DELETE (remove FAQ) fails.
+		// Advertise exactly the verbs the API serves.
+		methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE'],
 	});
 
 	// CSRF defense for cookie-authenticated writes. The session cookie rides along

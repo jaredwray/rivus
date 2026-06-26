@@ -66,6 +66,27 @@ describe('CORS', () => {
 		expect(res.headers['access-control-allow-credentials']).toBe('true');
 	});
 
+	it('advertises the write verbs the API serves (PATCH, DELETE) in preflight', async () => {
+		// `@fastify/cors` v11 narrowed its default `methods` to `GET,HEAD,POST`. Without
+		// an explicit list, a cross-origin PATCH/DELETE preflight (editing or deleting an
+		// FAQ, updating account settings) is answered without that verb in
+		// `Access-Control-Allow-Methods`, so the browser blocks the real request and
+		// `fetch` rejects with "Failed to fetch". Preflight an authenticated route — the
+		// FAQ edit path — to mirror where that surfaced.
+		app = buildAppWithCors('https://app.rivus.ai');
+		const res = await app.inject({
+			method: 'OPTIONS',
+			url: '/v1/faqs/some-id',
+			headers: {
+				origin: 'https://app.rivus.ai',
+				'access-control-request-method': 'PATCH',
+			},
+		});
+		const allowed = String(res.headers['access-control-allow-methods'] ?? '');
+		expect(allowed).toContain('PATCH');
+		expect(allowed).toContain('DELETE');
+	});
+
 	it('does not authorize an origin outside the allowlist', async () => {
 		app = buildAppWithCors('https://app.rivus.ai,https://www.rivus.ai');
 		const res = await preflight(app, 'https://evil.example');
