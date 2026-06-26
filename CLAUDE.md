@@ -16,5 +16,7 @@ essentials:
 - `@rivus/core` is imported as source; apps bundle it.
 - Keep tests hermetic (the API uses in-memory repositories; the worker and app
   mock `fetch`). Don't lower coverage thresholds to pass.
+- All user-facing UI must follow **[DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md)** — use
+  its tokens and components, never ad-hoc styles.
 
 Use Conventional Commit messages.
