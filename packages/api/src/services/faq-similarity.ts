@@ -43,6 +43,11 @@ export interface FaqMergeSuggestion {
 	answer: string;
 }
 
+/** Minimal logger surface — compatible with `console` and Fastify's pino logger. */
+export interface FaqSimilarityLogger {
+	warn(message: string): void;
+}
+
 export interface FaqSimilarityService {
 	/**
 	 * Return the existing FAQ that is the closest semantic duplicate of `input`,
@@ -110,10 +115,16 @@ const MERGE_SYSTEM =
 export class AiFaqSimilarityService implements FaqSimilarityService {
 	private readonly models: LanguageModel[];
 	private readonly generate: GenerateObjectFn;
+	private readonly logger?: FaqSimilarityLogger;
 
-	constructor(options: { models: LanguageModel[]; generate?: GenerateObjectFn }) {
+	constructor(options: {
+		models: LanguageModel[];
+		generate?: GenerateObjectFn;
+		logger?: FaqSimilarityLogger;
+	}) {
 		this.models = options.models;
 		this.generate = options.generate ?? defaultGenerateObject;
+		this.logger = options.logger;
 	}
 
 	/** Try each model in turn; return the first success, or null if all fail. */
@@ -134,8 +145,12 @@ export class AiFaqSimilarityService implements FaqSimilarityService {
 					maxOutputTokens: MAX_OUTPUT_TOKENS,
 				});
 				return object;
-			} catch {
-				// This provider failed — fall through to the next backup model.
+			} catch (error) {
+				// This provider failed — log it (so a misconfigured primary is visible
+				// in production) and fall through to the next backup model.
+				this.logger?.warn(
+					`FAQ duplicate check: ${options.schemaName} request failed, trying next provider — ${String(error)}`,
+				);
 			}
 		}
 		return null;
@@ -195,8 +210,12 @@ export class AiFaqSimilarityService implements FaqSimilarityService {
 				`New FAQ the user just wrote:\nQuestion: ${input.question}\nAnswer: ${input.answer}`,
 		});
 
-		if (result?.question.trim() && result.answer.trim()) {
-			return { question: result.question.trim(), answer: result.answer.trim() };
+		if (result) {
+			const question = result.question.trim();
+			const answer = result.answer.trim();
+			if (question && answer) {
+				return { question, answer };
+			}
 		}
 		return fallbackMerge(input, existing);
 	}
@@ -270,5 +289,7 @@ export function createFaqSimilarityService(
 	if (models.length === 0) {
 		return new NoopFaqSimilarityService();
 	}
-	return new AiFaqSimilarityService({ models });
+	// `console` is captured by the platform's log pipeline; provider failures on
+	// this best-effort path shouldn't be silent in production.
+	return new AiFaqSimilarityService({ models, logger: console });
 }

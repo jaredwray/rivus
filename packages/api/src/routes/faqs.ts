@@ -2,7 +2,6 @@ import {
 	type AccountId,
 	buildPaginationMeta,
 	createFaqSchema,
-	type Faq,
 	type FaqId,
 	faqSimilarityQuerySchema,
 	paginationQuerySchema,
@@ -19,8 +18,10 @@ import {
 	idParamsSchema,
 } from '../http-schemas';
 
-/** Cap how many of the account's FAQs we feed the duplicate check. */
-const SIMILARITY_CANDIDATE_LIMIT = 200;
+// Matches the service's own candidate cap and the list is newest-first, so a
+// single page covers exactly what the duplicate check will consider — fetching
+// more would only load rows the service discards.
+const SIMILARITY_CANDIDATE_LIMIT = 50;
 
 export const faqRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
@@ -85,18 +86,12 @@ export const faqRoutes: FastifyPluginAsync = async (fastify) => {
 			const accountId = request.user.accountId as AccountId;
 			const { question, answer } = request.body;
 
-			// Gather the account's FAQs as candidates (paging the 100-capped list),
-			// bounded so the prompt stays small.
-			const candidates: Faq[] = [];
-			let page = 1;
-			while (candidates.length < SIMILARITY_CANDIDATE_LIMIT) {
-				const { faqs: data, total } = await faqs.list({ accountId, page, pageSize: 100 });
-				candidates.push(...data);
-				if (data.length === 0 || candidates.length >= total) {
-					break;
-				}
-				page += 1;
-			}
+			// The newest page of FAQs is the candidate set the duplicate check scores.
+			const { faqs: candidates } = await faqs.list({
+				accountId,
+				page: 1,
+				pageSize: SIMILARITY_CANDIDATE_LIMIT,
+			});
 
 			const match = await faqSimilarity.findSimilar({ question, answer }, candidates);
 			if (!match) {
