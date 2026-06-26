@@ -4,8 +4,7 @@
 #   pnpm services:down    # stop them
 #
 # MongoDB runs as a single-node replica set so it behaves like MongoDB Atlas
-# (transactions, change streams). The Cloudflare Worker runs locally through
-# `wrangler dev` (workerd) from the @rivus/worker package — see its README.
+# (transactions, change streams).
 services:
   mongo:
     image: mongo:8.0.26

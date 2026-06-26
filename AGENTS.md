@@ -10,7 +10,6 @@ packages/
   core/      # @rivus/core   — shared types, Zod schemas, utilities (tsdown lib)
   api/       # @rivus/api    — Fastify REST API on MongoDB Atlas (Mongoose) + JWT
   website/   # @rivus/website— Next.js 16 marketing site
-  worker/    # @rivus/worker — Cloudflare Worker (cron + on-demand tasks)
   docs/      # @rivus/docs   — Docula site (docs, changelog, API reference)
   app/       # @rivus/app    — Expo app (iOS / Android / Web)
 ```
@@ -82,8 +81,8 @@ Tests are an inventory of failure modes, not a coverage ritual.
 - Test what breaks: boundaries (zero/one/max/empty), invalid input, dependency
   failures (timeouts, non-2xx), and regressions — not just the happy path.
 - Keep tests **hermetic**. The API is tested via `app.inject` against in-memory
-  repositories (no live MongoDB); the worker and app test pure handlers/clients
-  with a mocked `fetch`. Use `@faker-js/faker` for incidental data.
+  repositories (no live MongoDB); the app tests pure clients with a mocked
+  `fetch`. Use `@faker-js/faker` for incidental data.
 - Coverage thresholds are enforced per package in its `vitest.config.ts`. Do not
   lower a threshold to make a change pass.
 
@@ -97,15 +96,13 @@ Tests are an inventory of failure modes, not a coverage ritual.
   generated, not committed. All UI follows [`DESIGN_SYSTEM.md`](./DESIGN_SYSTEM.md).
 - **docs** — `scripts/sync-openapi.mjs` copies the API spec into the site on
   build. `githubPath` is gated on `GITHUB_TOKEN` so builds stay green offline.
-- **worker** — Handler logic is pure and injectable; `src/index.ts` is the only
-  Workers-runtime adapter. Build validates with `wrangler deploy --dry-run`.
 - **app** — The API client (`src/api`) is RN-free so it is unit-tested under
   Node. Native builds need Expo tooling/devices and are not run in CI. All UI
   follows [`DESIGN_SYSTEM.md`](./DESIGN_SYSTEM.md).
 
 ## Commits & CI
 
-- Conventional commits (`feat(api): …`, `fix(worker): …`, `chore: …`).
+- Conventional commits (`feat(api): …`, `fix(app): …`, `chore: …`).
 - GitHub Actions are pinned to full commit SHAs and default to
   `permissions: contents: read`. CI runs lint, type-check, test (with coverage),
   and build on Node 22 and 24, plus CodeQL.

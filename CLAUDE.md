@@ -14,8 +14,8 @@ essentials:
 - A strict 7-day `minimumReleaseAge` gate blocks brand-new dependency versions —
   add deps with `^`/`~` ranges, never `@latest`.
 - `@rivus/core` is imported as source; apps bundle it.
-- Keep tests hermetic (the API uses in-memory repositories; the worker and app
-  mock `fetch`). Don't lower coverage thresholds to pass.
+- Keep tests hermetic (the API uses in-memory repositories; the app mocks
+  `fetch`). Don't lower coverage thresholds to pass.
 - All user-facing UI must follow **[DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md)** — use
   its tokens and components, never ad-hoc styles.
 
