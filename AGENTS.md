@@ -41,6 +41,27 @@ Before committing, the three gates that CI runs must pass locally:
   `src`). Apps bundle it: tsdown `deps.alwaysBundle`, Next `transpilePackages`,
   Metro/esbuild inline it. There is no build-order dependency on it.
 
+## Design system
+
+**[`DESIGN_SYSTEM.md`](./DESIGN_SYSTEM.md) is the single source of truth for all
+user-facing visual design.** Always follow it when building or changing any UI —
+the marketing site (`website`), the app (`app`), the docs (`docs`), and any other
+visible surface (emails, screenshots, marketing artifacts).
+
+- Use the documented **tokens** (color, typography, radius) instead of inventing
+  new hex values, font sizes, or one-off styles. The typeface is **Montserrat**
+  (weights 400/500/600).
+- Reserve the **signature gradient** (`linear-gradient(135deg, #1ebefa, #6e1ec8)`)
+  for Rivus-the-agent (primary buttons, AI status, active nav) — never as a page
+  or card background.
+- Reuse the documented **components** (`BriefingBanner`, `RivusPill`,
+  `StatusBadge`, `MetricCard`, `Avatar`, primary/secondary buttons) and match
+  their props.
+- If you need a value or component the system doesn't cover, **add it to
+  `DESIGN_SYSTEM.md` first**, then implement it — don't hard-code a new literal.
+- The original interactive reference is `Rivus-Design-System.mhtml` (open in a
+  browser); `DESIGN_SYSTEM.md` is the canonical, editable spec.
+
 ## Adding a dependency (mind the supply-chain gate)
 
 `pnpm-workspace.yaml` enforces `minimumReleaseAge: 10080` (strict): pnpm refuses
@@ -72,11 +93,12 @@ Tests are an inventory of failure modes, not a coverage ritual.
   (`memory.ts`, `mongo.ts`), and the route. Regenerate the OpenAPI doc with
   `pnpm --filter @rivus/api openapi`.
 - **website** — `type-check` runs `next typegen` first; `next-env.d.ts` is
-  generated, not committed.
+  generated, not committed. All UI follows [`DESIGN_SYSTEM.md`](./DESIGN_SYSTEM.md).
 - **docs** — `scripts/sync-openapi.mjs` copies the API spec into the site on
   build. `githubPath` is gated on `GITHUB_TOKEN` so builds stay green offline.
 - **app** — The API client (`src/api`) is RN-free so it is unit-tested under
-  Node. Native builds need Expo tooling/devices and are not run in CI.
+  Node. Native builds need Expo tooling/devices and are not run in CI. All UI
+  follows [`DESIGN_SYSTEM.md`](./DESIGN_SYSTEM.md).
 
 ## Commits & CI
 

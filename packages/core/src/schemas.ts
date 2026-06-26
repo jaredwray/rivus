@@ -226,6 +226,76 @@ export const faqSimilarityQuerySchema = z.object({
 });
 export type FaqSimilarityQueryInput = z.infer<typeof faqSimilarityQuerySchema>;
 
+// --- Customers ----------------------------------------------------------------
+
+/**
+ * An optional email: either an empty string or a valid address. Built like
+ * {@link websiteSchema} (a plain `z.string()` refined to `'' || valid`) rather
+ * than reusing the required {@link emailSchema}, so a customer with no email on
+ * file is allowed while a non-empty value is still validated and normalized.
+ */
+export const optionalEmailSchema = z
+	.string()
+	.trim()
+	.toLowerCase()
+	.max(254, { error: 'That email address is too long.' })
+	.refine((value) => value === '' || z.email().safeParse(value).success, {
+		error: 'Enter a valid email address.',
+	});
+
+/** A money amount stored as a non-negative whole number of cents. */
+function moneyCents(label: string) {
+	return z
+		.number({ error: `${label} must be a number.` })
+		.int({ error: `${label} must be a whole number of cents.` })
+		.min(0, { error: `${label} can't be negative.` });
+}
+
+/** The preferred channel a customer is reached on. */
+export const customerChannelSchema = z.enum(['whatsapp', 'phone', 'email', 'sms'], {
+	error: 'Choose a valid contact channel.',
+});
+
+/** Where a customer sits in the sales/billing lifecycle. */
+export const customerStatusSchema = z.enum(['lead', 'quote', 'paid', 'due'], {
+	error: 'Choose a valid status.',
+});
+
+export const createCustomerSchema = z.object({
+	name: nameSchema,
+	email: optionalEmailSchema.default(''),
+	phone: phoneSchema.default(''),
+	area: optionalText('Area', 120).default(''),
+	channel: customerChannelSchema.default('phone'),
+	status: customerStatusSchema.default('lead'),
+	lifetimeValue: moneyCents('Lifetime value').default(0),
+	balance: moneyCents('Balance').default(0),
+	notes: optionalText('Notes', 2000).default(''),
+});
+export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
+
+/**
+ * Every field optional, but at least one must be present — mirrors
+ * {@link updateItemSchema}. No `.default()`s (unlike create) so a partial update
+ * only touches the fields the caller actually sent.
+ */
+export const updateCustomerSchema = z
+	.object({
+		name: nameSchema.optional(),
+		email: optionalEmailSchema.optional(),
+		phone: phoneSchema.optional(),
+		area: optionalText('Area', 120).optional(),
+		channel: customerChannelSchema.optional(),
+		status: customerStatusSchema.optional(),
+		lifetimeValue: moneyCents('Lifetime value').optional(),
+		balance: moneyCents('Balance').optional(),
+		notes: optionalText('Notes', 2000).optional(),
+	})
+	.refine((value) => Object.values(value).some((field) => field !== undefined), {
+		error: 'Provide at least one field to update.',
+	});
+export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
+
 /** Query string for list endpoints; coerces `?page=2&pageSize=50`. */
 export const paginationQuerySchema = z.object({
 	page: z.coerce.number().int().min(1, { error: 'Page must be 1 or greater.' }).default(1),
