@@ -8,6 +8,7 @@ export type UserId = Id<'User'>;
 export type ItemId = Id<'Item'>;
 export type FaqId = Id<'Faq'>;
 export type CustomerId = Id<'Customer'>;
+export type JobId = Id<'Job'>;
 export type AccountId = Id<'Account'>;
 export type MembershipId = Id<'Membership'>;
 export type InviteId = Id<'Invite'>;
@@ -137,6 +138,55 @@ export interface Customer {
 	balance: number;
 	/** Free-text notes; empty string when none. */
 	notes: string;
+	createdAt: IsoDateString;
+	updatedAt: IsoDateString;
+}
+
+/**
+ * Lifecycle of a scheduled job, in the order it typically advances:
+ * - `scheduled` — booked but not yet confirmed with the customer.
+ * - `confirmed` — the customer confirmed the appointment.
+ * - `in_progress` — a technician is on site / actively working.
+ * - `completed` — the work is finished.
+ * - `canceled` — called off; retained for history but ignored by conflict checks.
+ */
+export type JobStatus = 'scheduled' | 'confirmed' | 'in_progress' | 'completed' | 'canceled';
+
+/**
+ * A scheduled job (appointment) on an account's calendar — the unit the
+ * scheduling system books, assigns, and tracks. Owned by an account; all members
+ * share the account's jobs.
+ */
+export interface Job {
+	id: JobId;
+	accountId: AccountId;
+	/**
+	 * The customer this job is for, or an empty string for a job not tied to a
+	 * customer (e.g. a "hold" block kept open for emergencies). Referential
+	 * integrity (the customer exists in this account) is enforced on write.
+	 */
+	customerId: string;
+	/**
+	 * The team member assigned to the job (a user id), or an empty string when
+	 * unassigned. Enforced on write to be a current member of the account.
+	 */
+	assignedUserId: string;
+	/** Service title, e.g. "Water heater install". */
+	title: string;
+	status: JobStatus;
+	/** Scheduled start as an ISO-8601 UTC instant, e.g. `2026-06-24T21:00:00.000Z`. */
+	startAt: IsoDateString;
+	/** Duration in whole minutes; the end is `startAt + durationMinutes`. */
+	durationMinutes: number;
+	/**
+	 * Service address for this specific job; an empty string means "use the
+	 * customer's address on file" (the UI falls back to it).
+	 */
+	address: string;
+	/** Free-text notes; empty string when none. */
+	notes: string;
+	/** Estimated value of the job in integer cents (for pipeline totals). */
+	estimatedValue: number;
 	createdAt: IsoDateString;
 	updatedAt: IsoDateString;
 }

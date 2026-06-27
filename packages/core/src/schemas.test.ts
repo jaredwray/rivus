@@ -7,7 +7,11 @@ import {
 	createCustomerSchema,
 	createFaqSchema,
 	createItemSchema,
+	createJobSchema,
 	inviteMemberSchema,
+	jobConflictQuerySchema,
+	jobListQuerySchema,
+	jobStatusSchema,
 	loginSchema,
 	paginationQuerySchema,
 	signupSchema,
@@ -15,9 +19,12 @@ import {
 	updateCustomerSchema,
 	updateFaqSchema,
 	updateItemSchema,
+	updateJobSchema,
 	updateMemberRoleSchema,
 	verifyCodeSchema,
 } from './schemas';
+
+const FUTURE_ISO = '2026-06-24T21:00:00.000Z';
 
 describe('loginSchema', () => {
 	it('accepts an email and lowercases it (passwordless — no password field)', () => {
@@ -329,5 +336,174 @@ describe('paginationQuerySchema', () => {
 
 	it('rejects a pageSize over the maximum', () => {
 		expect(() => paginationQuerySchema.parse({ pageSize: '500' })).toThrow();
+	});
+});
+
+describe('jobStatusSchema', () => {
+	it('accepts every lifecycle state', () => {
+		for (const status of ['scheduled', 'confirmed', 'in_progress', 'completed', 'canceled']) {
+			expect(jobStatusSchema.parse(status)).toBe(status);
+		}
+	});
+
+	it('rejects an unknown status', () => {
+		const result = jobStatusSchema.safeParse('done');
+		expect(result.success).toBe(false);
+		expect(result.error?.issues[0]?.message).toBe('Choose a valid job status.');
+	});
+});
+
+describe('createJobSchema', () => {
+	it('fills defaults from just a title and start time', () => {
+		expect(createJobSchema.parse({ title: 'Water heater install', startAt: FUTURE_ISO })).toEqual({
+			title: 'Water heater install',
+			customerId: '',
+			assignedUserId: '',
+			startAt: FUTURE_ISO,
+			durationMinutes: 60,
+			status: 'scheduled',
+			address: '',
+			notes: '',
+			estimatedValue: 0,
+		});
+	});
+
+	it('accepts a full job record', () => {
+		const parsed = createJobSchema.parse({
+			title: 'Drain cleaning',
+			customerId: 'cust_1',
+			assignedUserId: 'user_1',
+			startAt: FUTURE_ISO,
+			durationMinutes: 90,
+			status: 'confirmed',
+			address: 'Queen Anne, Seattle',
+			notes: 'Bring the auger',
+			estimatedValue: 18_000,
+		});
+		expect(parsed).toMatchObject({
+			title: 'Drain cleaning',
+			customerId: 'cust_1',
+			assignedUserId: 'user_1',
+			durationMinutes: 90,
+			status: 'confirmed',
+			estimatedValue: 18_000,
+		});
+	});
+
+	it('requires a title', () => {
+		const result = createJobSchema.safeParse({ startAt: FUTURE_ISO });
+		expect(result.success).toBe(false);
+		expect(result.error?.issues[0]?.message).toBe('Service is required.');
+	});
+
+	it('requires a start time', () => {
+		expect(() => createJobSchema.parse({ title: 'No when' })).toThrow();
+	});
+
+	it('rejects a non-UTC or malformed start time', () => {
+		for (const startAt of ['2026-06-24T21:00:00+02:00', 'tomorrow', '']) {
+			expect(createJobSchema.safeParse({ title: 'X', startAt }).success).toBe(false);
+		}
+	});
+
+	it('rejects a fractional, zero, or too-long duration', () => {
+		for (const durationMinutes of [1.5, 0, 1441]) {
+			expect(
+				createJobSchema.safeParse({ title: 'X', startAt: FUTURE_ISO, durationMinutes }).success,
+			).toBe(false);
+		}
+	});
+
+	it('rejects a negative estimated value', () => {
+		expect(
+			createJobSchema.safeParse({ title: 'X', startAt: FUTURE_ISO, estimatedValue: -1 }).success,
+		).toBe(false);
+	});
+
+	it('rejects an invalid status', () => {
+		expect(
+			createJobSchema.safeParse({ title: 'X', startAt: FUTURE_ISO, status: 'pending' }).success,
+		).toBe(false);
+	});
+});
+
+describe('updateJobSchema', () => {
+	it('accepts a partial update of one field', () => {
+		expect(updateJobSchema.parse({ status: 'completed' })).toEqual({ status: 'completed' });
+	});
+
+	it('accepts rescheduling by start time alone', () => {
+		expect(updateJobSchema.parse({ startAt: FUTURE_ISO })).toEqual({ startAt: FUTURE_ISO });
+	});
+
+	it('rejects an empty update', () => {
+		expect(() => updateJobSchema.parse({})).toThrow();
+	});
+
+	it('rejects an invalid field even within a partial update', () => {
+		expect(updateJobSchema.safeParse({ durationMinutes: 0 }).success).toBe(false);
+	});
+});
+
+describe('jobListQuerySchema', () => {
+	it('applies pagination defaults and omits absent filters', () => {
+		expect(jobListQuerySchema.parse({})).toEqual({ page: 1, pageSize: 20 });
+	});
+
+	it('coerces pagination and keeps the supplied filters', () => {
+		const parsed = jobListQuerySchema.parse({
+			page: '2',
+			pageSize: '50',
+			from: '2026-06-22T00:00:00.000Z',
+			to: '2026-06-29T00:00:00.000Z',
+			assignedUserId: 'user_1',
+			status: 'scheduled',
+			customerId: 'cust_1',
+		});
+		expect(parsed).toMatchObject({
+			page: 2,
+			pageSize: 50,
+			from: '2026-06-22T00:00:00.000Z',
+			assignedUserId: 'user_1',
+			status: 'scheduled',
+		});
+	});
+
+	it('rejects a malformed date bound', () => {
+		expect(jobListQuerySchema.safeParse({ from: 'last week' }).success).toBe(false);
+	});
+});
+
+describe('jobConflictQuerySchema', () => {
+	it('requires an assignee', () => {
+		const result = jobConflictQuerySchema.safeParse({ startAt: FUTURE_ISO });
+		expect(result.success).toBe(false);
+		expect(result.error?.issues[0]?.message).toBe('Assignee is required.');
+	});
+
+	it('requires a start time', () => {
+		expect(jobConflictQuerySchema.safeParse({ assignedUserId: 'user_1' }).success).toBe(false);
+	});
+
+	it('coerces the duration from its string form and defaults it', () => {
+		expect(
+			jobConflictQuerySchema.parse({
+				assignedUserId: 'user_1',
+				startAt: FUTURE_ISO,
+				durationMinutes: '90',
+			}),
+		).toMatchObject({ durationMinutes: 90 });
+		expect(
+			jobConflictQuerySchema.parse({ assignedUserId: 'user_1', startAt: FUTURE_ISO }),
+		).toMatchObject({ durationMinutes: 60 });
+	});
+
+	it('carries an optional excludeJobId', () => {
+		const parsed = jobConflictQuerySchema.parse({
+			assignedUserId: 'user_1',
+			startAt: FUTURE_ISO,
+			excludeJobId: 'job_1',
+		});
+		expect(parsed.excludeJobId).toBe('job_1');
 	});
 });

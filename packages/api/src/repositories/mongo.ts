@@ -4,6 +4,7 @@ import {
 	type CreateCustomerInput,
 	type CreateFaqInput,
 	type CreateItemInput,
+	type CreateJobInput,
 	type Customer,
 	type CustomerId,
 	type Faq,
@@ -12,6 +13,8 @@ import {
 	type InviteId,
 	type Item,
 	type ItemId,
+	type Job,
+	type JobId,
 	type Membership,
 	type MembershipId,
 	normalizePagination,
@@ -20,6 +23,7 @@ import {
 	type UpdateCustomerInput,
 	type UpdateFaqInput,
 	type UpdateItemInput,
+	type UpdateJobInput,
 	type UserId,
 } from '@rivus/core';
 import mongoose, { type ClientSession, type HydratedDocument, Types } from 'mongoose';
@@ -28,6 +32,7 @@ import { type CustomerDocument, CustomerModel } from '../db/models/customer.mode
 import { type FaqDocument, FaqModel } from '../db/models/faq.model';
 import { type InviteDocument, InviteModel } from '../db/models/invite.model';
 import { type ItemDocument, ItemModel } from '../db/models/item.model';
+import { type JobDocument, JobModel } from '../db/models/job.model';
 import { type MembershipDocument, MembershipModel } from '../db/models/membership.model';
 import { type UserDocument, UserModel } from '../db/models/user.model';
 import {
@@ -41,12 +46,15 @@ import type {
 	AccountRepository,
 	CustomerRepository,
 	FaqRepository,
+	FindOverlappingJobsOptions,
 	InviteRepository,
 	ItemRepository,
+	JobRepository,
 	ListAccountsOptions,
 	ListCustomersOptions,
 	ListFaqsOptions,
 	ListItemsOptions,
+	ListJobsOptions,
 	MembershipRepository,
 	NewAccount,
 	NewInvite,
@@ -175,6 +183,24 @@ function mapFaq(doc: HydratedDocument<FaqDocument>): Faq {
 		answer: doc.answer,
 		category: doc.category,
 		status: doc.status,
+		createdAt: doc.createdAt.toISOString(),
+		updatedAt: doc.updatedAt.toISOString(),
+	};
+}
+
+function mapJob(doc: HydratedDocument<JobDocument>): Job {
+	return {
+		id: doc._id.toString() as JobId,
+		accountId: doc.accountId.toString() as AccountId,
+		customerId: doc.customerId,
+		assignedUserId: doc.assignedUserId,
+		title: doc.title,
+		status: doc.status,
+		startAt: doc.startAt.toISOString(),
+		durationMinutes: doc.durationMinutes,
+		address: doc.address,
+		notes: doc.notes,
+		estimatedValue: doc.estimatedValue,
 		createdAt: doc.createdAt.toISOString(),
 		updatedAt: doc.updatedAt.toISOString(),
 	};
@@ -796,5 +822,117 @@ export class MongoFaqRepository implements FaqRepository {
 			accountId: new Types.ObjectId(accountId),
 		}).exec();
 		return result.deletedCount === 1;
+	}
+}
+
+export class MongoJobRepository implements JobRepository {
+	async create(accountId: AccountId, input: CreateJobInput): Promise<Job> {
+		const doc = await JobModel.create({
+			accountId: new Types.ObjectId(accountId),
+			...input,
+			// Stored as a Date so range/overlap queries can use the index.
+			startAt: new Date(input.startAt),
+		});
+		return mapJob(doc);
+	}
+
+	async list(options: ListJobsOptions): Promise<{ jobs: Job[]; total: number }> {
+		if (!Types.ObjectId.isValid(options.accountId)) {
+			return { jobs: [], total: 0 };
+		}
+		const { pageSize } = normalizePagination(options.page, options.pageSize);
+		const skip = pageToSkip(options.page, options.pageSize);
+		const filter: Record<string, unknown> = {
+			accountId: new Types.ObjectId(options.accountId),
+		};
+		if (options.from || options.to) {
+			const range: Record<string, Date> = {};
+			if (options.from) {
+				range.$gte = new Date(options.from);
+			}
+			if (options.to) {
+				range.$lt = new Date(options.to);
+			}
+			filter.startAt = range;
+		}
+		if (options.assignedUserId) {
+			filter.assignedUserId = options.assignedUserId;
+		}
+		if (options.status) {
+			filter.status = options.status;
+		}
+		if (options.customerId) {
+			filter.customerId = options.customerId;
+		}
+		const [docs, total] = await Promise.all([
+			JobModel.find(filter).sort({ startAt: 1, _id: 1 }).skip(skip).limit(pageSize).exec(),
+			JobModel.countDocuments(filter).exec(),
+		]);
+		return { jobs: docs.map(mapJob), total };
+	}
+
+	async findById(accountId: AccountId, id: JobId): Promise<Job | null> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return null;
+		}
+		const doc = await JobModel.findOne({
+			_id: id,
+			accountId: new Types.ObjectId(accountId),
+		}).exec();
+		return doc ? mapJob(doc) : null;
+	}
+
+	async update(accountId: AccountId, id: JobId, input: UpdateJobInput): Promise<Job | null> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return null;
+		}
+		// Convert the ISO start to a Date for storage; leave every other field as-is.
+		const set: Record<string, unknown> = { ...input };
+		if (input.startAt !== undefined) {
+			set.startAt = new Date(input.startAt);
+		}
+		const doc = await JobModel.findOneAndUpdate(
+			{ _id: id, accountId: new Types.ObjectId(accountId) },
+			{ $set: set },
+			{ new: true },
+		).exec();
+		return doc ? mapJob(doc) : null;
+	}
+
+	async delete(accountId: AccountId, id: JobId): Promise<boolean> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return false;
+		}
+		const result = await JobModel.deleteOne({
+			_id: id,
+			accountId: new Types.ObjectId(accountId),
+		}).exec();
+		return result.deletedCount === 1;
+	}
+
+	async findOverlapping(options: FindOverlappingJobsOptions): Promise<Job[]> {
+		// An empty assignee never conflicts; also skip a malformed account id.
+		if (!options.assignedUserId || !Types.ObjectId.isValid(options.accountId)) {
+			return [];
+		}
+		const windowStart = new Date(options.startAt);
+		const windowEnd = new Date(options.endAt);
+		const filter: Record<string, unknown> = {
+			accountId: new Types.ObjectId(options.accountId),
+			assignedUserId: options.assignedUserId,
+			status: { $ne: 'canceled' },
+			// Existing job must start before the window ends; the index serves this.
+			startAt: { $lt: windowEnd },
+		};
+		if (options.excludeJobId && Types.ObjectId.isValid(options.excludeJobId)) {
+			filter._id = { $ne: new Types.ObjectId(options.excludeJobId) };
+		}
+		const docs = await JobModel.find(filter).sort({ startAt: 1, _id: 1 }).exec();
+		// The index can't express `startAt + duration > windowStart`, so finish the
+		// half-open overlap test in memory over the (small) per-member candidate set.
+		const windowStartMs = windowStart.getTime();
+		return docs
+			.filter((doc) => doc.startAt.getTime() + doc.durationMinutes * 60_000 > windowStartMs)
+			.map(mapJob);
 	}
 }

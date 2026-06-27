@@ -7,6 +7,7 @@ import type {
 	FaqRepository,
 	InviteRepository,
 	ItemRepository,
+	JobRepository,
 	MembershipRepository,
 	OnboardingRepository,
 	UserRepository,
@@ -34,6 +35,8 @@ export interface AppDeps {
 	items: ItemRepository;
 	faqs: FaqRepository;
 	customers: CustomerRepository;
+	/** Scheduled jobs (appointments) on the account's calendar. */
+	jobs: JobRepository;
 	/** Stores one-time sign-in codes for passwordless auth. */
 	verificationCodes: VerificationCodeRepository;
 	/** Sends transactional email (invitations and sign-in codes). */

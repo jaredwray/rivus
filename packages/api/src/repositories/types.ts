@@ -5,6 +5,7 @@ import type {
 	CreateCustomerInput,
 	CreateFaqInput,
 	CreateItemInput,
+	CreateJobInput,
 	Customer,
 	CustomerId,
 	Faq,
@@ -13,11 +14,15 @@ import type {
 	InviteId,
 	Item,
 	ItemId,
+	Job,
+	JobId,
+	JobStatus,
 	Membership,
 	Role,
 	UpdateCustomerInput,
 	UpdateFaqInput,
 	UpdateItemInput,
+	UpdateJobInput,
 	User,
 	UserId,
 } from '@rivus/core';
@@ -240,4 +245,47 @@ export interface CustomerRepository {
 		input: UpdateCustomerInput,
 	): Promise<Customer | null>;
 	delete(accountId: AccountId, id: CustomerId): Promise<boolean>;
+}
+
+/**
+ * Options for {@link JobRepository.list}: a page of an account's jobs, optionally
+ * narrowed to a `startAt` window (`from` inclusive, `to` exclusive) and/or a
+ * single assignee, status, or customer. Results are ordered by `startAt` ascending.
+ */
+export interface ListJobsOptions {
+	accountId: AccountId;
+	page: number;
+	pageSize: number;
+	/** Inclusive lower bound on `startAt` (ISO-8601). */
+	from?: string;
+	/** Exclusive upper bound on `startAt` (ISO-8601). */
+	to?: string;
+	assignedUserId?: string;
+	status?: JobStatus;
+	customerId?: string;
+}
+
+/**
+ * Options for {@link JobRepository.findOverlapping}: the would-be job's assignee
+ * and `[startAt, endAt)` window. Returns that member's non-canceled jobs that
+ * overlap the window, excluding `excludeJobId` (the job being edited).
+ */
+export interface FindOverlappingJobsOptions {
+	accountId: AccountId;
+	assignedUserId: string;
+	/** ISO-8601 start of the window (inclusive). */
+	startAt: string;
+	/** ISO-8601 end of the window (exclusive). */
+	endAt: string;
+	excludeJobId?: JobId;
+}
+
+export interface JobRepository {
+	create(accountId: AccountId, input: CreateJobInput): Promise<Job>;
+	list(options: ListJobsOptions): Promise<{ jobs: Job[]; total: number }>;
+	findById(accountId: AccountId, id: JobId): Promise<Job | null>;
+	update(accountId: AccountId, id: JobId, input: UpdateJobInput): Promise<Job | null>;
+	delete(accountId: AccountId, id: JobId): Promise<boolean>;
+	/** Jobs overlapping a window for one assignee (for double-booking checks). */
+	findOverlapping(options: FindOverlappingJobsOptions): Promise<Job[]>;
 }

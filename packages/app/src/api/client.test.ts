@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import type { AccountId, CustomerId, FaqId } from '@rivus/core';
+import type { AccountId, CustomerId, FaqId, JobId } from '@rivus/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, createApiClient, ValidationError } from './client';
 
@@ -92,6 +92,43 @@ function makeCustomer() {
 		notes: faker.lorem.sentence(),
 		createdAt: now,
 		updatedAt: now,
+	};
+}
+
+function makeJob() {
+	const now = new Date().toISOString();
+	return {
+		id: faker.string.uuid(),
+		accountId: faker.string.uuid(),
+		customerId: faker.string.uuid(),
+		assignedUserId: faker.string.uuid(),
+		title: faker.helpers.arrayElement([
+			'Water heater install',
+			'Drain cleaning',
+			'Leak inspection',
+		]),
+		status: 'scheduled' as const,
+		startAt: '2026-06-24T17:00:00.000Z',
+		durationMinutes: 60,
+		address: faker.location.streetAddress(),
+		notes: faker.lorem.sentence(),
+		estimatedValue: faker.number.int({ min: 0, max: 500_000 }),
+		createdAt: now,
+		updatedAt: now,
+	};
+}
+
+function jobPage(jobs: ReturnType<typeof makeJob>[]) {
+	return {
+		data: jobs,
+		meta: {
+			page: 1,
+			pageSize: 20,
+			total: jobs.length,
+			totalPages: 1,
+			hasNextPage: false,
+			hasPreviousPage: false,
+		},
 	};
 }
 
@@ -888,6 +925,218 @@ describe('createApiClient', () => {
 			const error = await client.deleteCustomer('tok', 'missing' as CustomerId).catch((e) => e);
 			expect(error).toBeInstanceOf(ApiError);
 			expect(error.status).toBe(404);
+		});
+	});
+
+	describe('listJobs', () => {
+		it('returns parsed jobs and sends the bearer auth header (no filters)', async () => {
+			const jobs = [makeJob(), makeJob()];
+			fetchMock.mockResolvedValueOnce(jsonResponse(jobPage(jobs)));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.listJobs('tok');
+
+			expect(result.data).toEqual(jobs);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/jobs?page=1&pageSize=20`);
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer tok' });
+		});
+
+		it('appends every supplied calendar filter to the query', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(jobPage([])));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.listJobs('tok', {
+				page: 2,
+				pageSize: 100,
+				from: '2026-06-22T00:00:00.000Z',
+				to: '2026-06-29T00:00:00.000Z',
+				assignedUserId: 'user-1',
+				status: 'confirmed',
+				customerId: 'cust-1',
+			});
+
+			const [url] = fetchMock.mock.calls[0] as [string];
+			const params = new URL(url).searchParams;
+			expect(params.get('page')).toBe('2');
+			expect(params.get('pageSize')).toBe('100');
+			expect(params.get('from')).toBe('2026-06-22T00:00:00.000Z');
+			expect(params.get('to')).toBe('2026-06-29T00:00:00.000Z');
+			expect(params.get('assignedUserId')).toBe('user-1');
+			expect(params.get('status')).toBe('confirmed');
+			expect(params.get('customerId')).toBe('cust-1');
+		});
+
+		it('rejects a malformed date filter before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.listJobs('tok', { from: 'whenever' })).rejects.toThrow(ValidationError);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('createJob', () => {
+		it('posts a job and returns it', async () => {
+			const job = makeJob();
+			fetchMock.mockResolvedValueOnce(jsonResponse(job, { status: 201 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.createJob('owner-token', {
+				title: job.title,
+				startAt: job.startAt,
+				customerId: job.customerId,
+				estimatedValue: job.estimatedValue,
+			});
+
+			expect(result).toEqual(job);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/jobs`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({
+				Authorization: 'Bearer owner-token',
+				'Content-Type': 'application/json',
+			});
+			expect(JSON.parse(init.body as string)).toMatchObject({ title: job.title });
+		});
+
+		it('accepts just a title and start time, filling every other default', async () => {
+			const job = makeJob();
+			fetchMock.mockResolvedValueOnce(jsonResponse(job, { status: 201 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.createJob('tok', { title: 'Faucet', startAt: '2026-06-24T17:00:00.000Z' });
+
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(JSON.parse(init.body as string)).toMatchObject({
+				title: 'Faucet',
+				customerId: '',
+				assignedUserId: '',
+				durationMinutes: 60,
+				status: 'scheduled',
+				estimatedValue: 0,
+			});
+		});
+
+		it('rejects a job with no title before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.createJob('tok', { title: '', startAt: '2026-06-24T17:00:00.000Z' }),
+			).rejects.toThrow(ValidationError);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it('rejects a non-UTC start time before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.createJob('tok', { title: 'X', startAt: '2026-06-24T17:00:00+02:00' }),
+			).rejects.toThrow(ValidationError);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('getJob', () => {
+		it('fetches a job by id and url-encodes it', async () => {
+			const job = makeJob();
+			fetchMock.mockResolvedValueOnce(jsonResponse(job));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.getJob('tok', 'a/b c' as JobId);
+
+			expect(result).toEqual(job);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/jobs/a%2Fb%20c`);
+			expect(init.method).toBe('GET');
+		});
+	});
+
+	describe('updateJob', () => {
+		it('PATCHes the job (e.g. a reschedule) and returns it', async () => {
+			const job = { ...makeJob(), startAt: '2026-06-25T18:00:00.000Z' };
+			fetchMock.mockResolvedValueOnce(jsonResponse(job));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.updateJob('owner-token', job.id as JobId, {
+				startAt: '2026-06-25T18:00:00.000Z',
+				status: 'confirmed',
+			});
+
+			expect(result.startAt).toBe('2026-06-25T18:00:00.000Z');
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/jobs/${job.id}`);
+			expect(init.method).toBe('PATCH');
+			expect(JSON.parse(init.body as string)).toEqual({
+				startAt: '2026-06-25T18:00:00.000Z',
+				status: 'confirmed',
+			});
+		});
+
+		it('rejects an empty update before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.updateJob('tok', 'id' as JobId, {})).rejects.toThrow();
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('deleteJob', () => {
+		it('DELETEs the job and resolves on 204', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(undefined, { status: 204 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.deleteJob('owner-token', 'job-1' as JobId)).resolves.toBeUndefined();
+
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/jobs/job-1`);
+			expect(init.method).toBe('DELETE');
+		});
+	});
+
+	describe('getJobConflicts', () => {
+		it('builds the conflict query and returns overlapping jobs', async () => {
+			const overlap = makeJob();
+			fetchMock.mockResolvedValueOnce(jsonResponse({ conflicts: [overlap] }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.getJobConflicts('tok', {
+				assignedUserId: 'user-1',
+				startAt: '2026-06-24T17:00:00.000Z',
+				durationMinutes: 90,
+				excludeJobId: 'job-9',
+			});
+
+			expect(result.conflicts).toEqual([overlap]);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			const params = new URL(url).searchParams;
+			expect(params.get('assignedUserId')).toBe('user-1');
+			expect(params.get('startAt')).toBe('2026-06-24T17:00:00.000Z');
+			expect(params.get('durationMinutes')).toBe('90');
+			expect(params.get('excludeJobId')).toBe('job-9');
+			expect(init.method).toBe('GET');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer tok' });
+		});
+
+		it('defaults the duration and omits excludeJobId when absent', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ conflicts: [] }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.getJobConflicts('tok', {
+				assignedUserId: 'user-1',
+				startAt: '2026-06-24T17:00:00.000Z',
+			});
+
+			const [url] = fetchMock.mock.calls[0] as [string];
+			const params = new URL(url).searchParams;
+			expect(params.get('durationMinutes')).toBe('60');
+			expect(params.has('excludeJobId')).toBe(false);
+		});
+
+		it('rejects a conflict check with no assignee before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.getJobConflicts('tok', {
+					assignedUserId: '',
+					startAt: '2026-06-24T17:00:00.000Z',
+				}),
+			).rejects.toThrow(ValidationError);
+			expect(fetchMock).not.toHaveBeenCalled();
 		});
 	});
 

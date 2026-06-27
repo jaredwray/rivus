@@ -5,6 +5,7 @@ import {
 	type CreateCustomerInput,
 	type CreateFaqInput,
 	type CreateItemInput,
+	type CreateJobInput,
 	type Customer,
 	type CustomerId,
 	type Faq,
@@ -13,6 +14,8 @@ import {
 	type InviteId,
 	type Item,
 	type ItemId,
+	type Job,
+	type JobId,
 	type Membership,
 	type MembershipId,
 	normalizePagination,
@@ -21,6 +24,7 @@ import {
 	type UpdateCustomerInput,
 	type UpdateFaqInput,
 	type UpdateItemInput,
+	type UpdateJobInput,
 	type UserId,
 } from '@rivus/core';
 import { ConflictError, InviteNotPendingError, LastOwnerError } from './errors';
@@ -30,12 +34,15 @@ import type {
 	AccountRepository,
 	CustomerRepository,
 	FaqRepository,
+	FindOverlappingJobsOptions,
 	InviteRepository,
 	ItemRepository,
+	JobRepository,
 	ListAccountsOptions,
 	ListCustomersOptions,
 	ListFaqsOptions,
 	ListItemsOptions,
+	ListJobsOptions,
 	MembershipRepository,
 	NewAccount,
 	NewInvite,
@@ -67,6 +74,7 @@ export interface InMemoryData {
 	items: Map<string, Item>;
 	faqs: Map<string, Faq>;
 	customers: Map<string, Customer>;
+	jobs: Map<string, Job>;
 	/** Active one-time codes, keyed by normalized email (one per email). */
 	verificationCodes: Map<string, StoredVerificationCode>;
 }
@@ -80,6 +88,7 @@ export function createInMemoryData(): InMemoryData {
 		items: new Map(),
 		faqs: new Map(),
 		customers: new Map(),
+		jobs: new Map(),
 		verificationCodes: new Map(),
 	};
 }
@@ -644,6 +653,108 @@ export class InMemoryCustomerRepository implements CustomerRepository {
 	}
 }
 
+/** End of a job's window, in epoch ms (start + duration). */
+function jobEndMs(job: Job): number {
+	return Date.parse(job.startAt) + job.durationMinutes * 60_000;
+}
+
+/** In-memory job (appointment) store, scoped by account. */
+export class InMemoryJobRepository implements JobRepository {
+	constructor(private readonly data: InMemoryData) {}
+
+	async create(accountId: AccountId, input: CreateJobInput): Promise<Job> {
+		const timestamp = now();
+		const job: Job = {
+			id: randomUUID() as JobId,
+			accountId,
+			customerId: input.customerId,
+			assignedUserId: input.assignedUserId,
+			title: input.title,
+			status: input.status,
+			startAt: input.startAt,
+			durationMinutes: input.durationMinutes,
+			address: input.address,
+			notes: input.notes,
+			estimatedValue: input.estimatedValue,
+			createdAt: timestamp,
+			updatedAt: timestamp,
+		};
+		this.data.jobs.set(job.id, job);
+		return structuredClone(job);
+	}
+
+	async list(options: ListJobsOptions): Promise<{ jobs: Job[]; total: number }> {
+		const fromMs = options.from ? Date.parse(options.from) : undefined;
+		const toMs = options.to ? Date.parse(options.to) : undefined;
+		const matched = [...this.data.jobs.values()]
+			.filter((job) => job.accountId === options.accountId)
+			.filter((job) => fromMs === undefined || Date.parse(job.startAt) >= fromMs)
+			.filter((job) => toMs === undefined || Date.parse(job.startAt) < toMs)
+			.filter((job) => !options.assignedUserId || job.assignedUserId === options.assignedUserId)
+			.filter((job) => !options.status || job.status === options.status)
+			.filter((job) => !options.customerId || job.customerId === options.customerId)
+			// A schedule reads earliest-first; tie-break on creation order so jobs that
+			// share a start time stay deterministically ordered.
+			.sort(
+				(a, b) =>
+					Date.parse(a.startAt) - Date.parse(b.startAt) || a.createdAt.localeCompare(b.createdAt),
+			);
+		const { pageSize } = normalizePagination(options.page, options.pageSize);
+		const skip = pageToSkip(options.page, options.pageSize);
+		return {
+			jobs: matched.slice(skip, skip + pageSize).map((job) => structuredClone(job)),
+			total: matched.length,
+		};
+	}
+
+	async findById(accountId: AccountId, id: JobId): Promise<Job | null> {
+		const job = this.data.jobs.get(id);
+		return job && job.accountId === accountId ? structuredClone(job) : null;
+	}
+
+	async update(accountId: AccountId, id: JobId, input: UpdateJobInput): Promise<Job | null> {
+		const job = this.data.jobs.get(id);
+		if (!job || job.accountId !== accountId) {
+			return null;
+		}
+		const updated: Job = { ...job, ...input, updatedAt: now() };
+		this.data.jobs.set(id, updated);
+		return structuredClone(updated);
+	}
+
+	async delete(accountId: AccountId, id: JobId): Promise<boolean> {
+		const job = this.data.jobs.get(id);
+		if (!job || job.accountId !== accountId) {
+			return false;
+		}
+		return this.data.jobs.delete(id);
+	}
+
+	async findOverlapping(options: FindOverlappingJobsOptions): Promise<Job[]> {
+		// Only an assigned member can be double-booked; an empty assignee never conflicts.
+		if (!options.assignedUserId) {
+			return [];
+		}
+		const windowStart = Date.parse(options.startAt);
+		const windowEnd = Date.parse(options.endAt);
+		return [...this.data.jobs.values()]
+			.filter(
+				(job) =>
+					job.accountId === options.accountId &&
+					job.assignedUserId === options.assignedUserId &&
+					// Canceled jobs free up the slot, so they never conflict.
+					job.status !== 'canceled' &&
+					job.id !== options.excludeJobId &&
+					// Half-open overlap: existing starts before the window ends and ends after
+					// it starts. Touching edges (back-to-back jobs) don't count as a conflict.
+					Date.parse(job.startAt) < windowEnd &&
+					jobEndMs(job) > windowStart,
+			)
+			.sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt))
+			.map((job) => structuredClone(job));
+	}
+}
+
 export interface InMemoryRepositories {
 	data: InMemoryData;
 	users: InMemoryUserRepository;
@@ -653,6 +764,7 @@ export interface InMemoryRepositories {
 	items: InMemoryItemRepository;
 	faqs: InMemoryFaqRepository;
 	customers: InMemoryCustomerRepository;
+	jobs: InMemoryJobRepository;
 	verificationCodes: InMemoryVerificationCodeRepository;
 	onboarding: InMemoryOnboardingRepository;
 }
@@ -668,6 +780,7 @@ export function createInMemoryRepositories(
 	const items = new InMemoryItemRepository(data);
 	const faqs = new InMemoryFaqRepository(data);
 	const customers = new InMemoryCustomerRepository(data);
+	const jobs = new InMemoryJobRepository(data);
 	const verificationCodes = new InMemoryVerificationCodeRepository(data);
 	const onboarding = new InMemoryOnboardingRepository(users, accounts, memberships, invites);
 	return {
@@ -679,6 +792,7 @@ export function createInMemoryRepositories(
 		items,
 		faqs,
 		customers,
+		jobs,
 		verificationCodes,
 		onboarding,
 	};
