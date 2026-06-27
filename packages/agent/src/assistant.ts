@@ -314,6 +314,16 @@ async function faqCreateReply(
 	if (!parsed.success) {
 		return parsed.error.issues[0]?.message ?? 'That FAQ doesn’t look valid — please try again.';
 	}
+	// Mirror the app's pre-create flow: surface a near-duplicate (AI-assisted) and
+	// steer the user toward updating it instead of polluting the knowledge base.
+	// The check is a no-op when the API has no AI provider configured.
+	const similar = await api.findSimilarFaq({
+		question: parsed.data.question,
+		answer: parsed.data.answer,
+	});
+	if (similar.match) {
+		return `That looks a lot like an existing FAQ — “${similar.match.question}”. I didn’t add a duplicate. To update that one instead, say “update the FAQ about ${similar.match.question} to say ${parsed.data.answer}”, or reword your question if it’s genuinely different.`;
+	}
 	const created = await api.createFaq(parsed.data);
 	return `Added a new FAQ: “${created.question}”.`;
 }

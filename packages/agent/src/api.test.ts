@@ -124,6 +124,21 @@ describe('createRivusApiClient', () => {
 		expect(nthCall(fetch, 0).init?.method).toBe('POST');
 	});
 
+	it('checks for a similar FAQ before creating', async () => {
+		const fetch = vi
+			.fn<typeof globalThis.fetch>()
+			.mockResolvedValue(jsonResponse({ match: faq, reason: 'same topic', merged: null }));
+		const client = createRivusApiClient(BASE, TOKEN, fetch);
+
+		const result = await client.findSimilarFaq({ question: 'Do you offer refunds?' });
+		expect(result.match?.id).toBe('faq_1');
+		const { url, init } = nthCall(fetch, 0);
+		expect(url).toBe(`${BASE}/v1/faqs/similar`);
+		expect(init?.method).toBe('POST');
+		// The optional answer defaults to an empty string on the wire.
+		expect(init?.body).toBe(JSON.stringify({ question: 'Do you offer refunds?', answer: '' }));
+	});
+
 	it('throws AgentApiError carrying the status and API message on non-2xx', async () => {
 		const fetch = vi
 			.fn<typeof globalThis.fetch>()

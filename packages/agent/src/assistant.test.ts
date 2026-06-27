@@ -128,7 +128,12 @@ function router(routes: Route[]): FetchLike {
 const onGetMe: Route['when'] = (url, method) => method === 'GET' && url.endsWith('/v1/auth/me');
 const onListFaqs: Route['when'] = (url, method) => method === 'GET' && url.includes('/v1/faqs?');
 const onUpdateFaq: Route['when'] = (_url, method) => method === 'PATCH';
+const onSimilarFaq: Route['when'] = (url, method) =>
+	method === 'POST' && url.endsWith('/v1/faqs/similar');
 const onCreateFaq: Route['when'] = (url, method) => method === 'POST' && url.endsWith('/v1/faqs');
+
+/** The "no duplicate found" response from /v1/faqs/similar (the common case). */
+const noSimilarFaq = { match: null, reason: '', merged: null };
 
 function envWith(over: Partial<Env> = {}): Env {
 	return { JWT_SECRET: SECRET, RIVUS_API_URL: API_URL, ...over } as unknown as Env;
@@ -408,6 +413,7 @@ describe('respond — knowledge base writes', () => {
 		const reply = await ask('add an faq question: Do you ship? answer: Yes, nationwide.', {
 			token: TOKEN,
 			fetchImpl: router([
+				{ when: onSimilarFaq, body: noSimilarFaq },
 				{
 					when: onCreateFaq,
 					body: makeFaq({ question: 'Do you ship?', answer: 'Yes, nationwide.' }),
@@ -416,6 +422,19 @@ describe('respond — knowledge base writes', () => {
 		});
 		expect(reply).toMatch(/Added a new FAQ/i);
 		expect(reply).toContain('Do you ship?');
+	});
+
+	it('warns instead of creating a duplicate FAQ', async () => {
+		const existing = makeFaq({ question: 'Do you ship nationwide?', answer: 'Yes.' });
+		const reply = await ask('add an faq question: Do you ship? answer: Yes, nationwide.', {
+			token: TOKEN,
+			fetchImpl: router([
+				{ when: onSimilarFaq, body: { match: existing, reason: 'same topic', merged: null } },
+				// createFaq must NOT be called — there's no route for it, so a call would throw.
+			]),
+		});
+		expect(reply).toMatch(/looks a lot like an existing FAQ/i);
+		expect(reply).toContain('Do you ship nationwide?');
 	});
 
 	it('asks for the answer when only a question is given', async () => {

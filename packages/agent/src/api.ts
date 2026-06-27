@@ -99,6 +99,13 @@ const faqListSchema = z.object({
 });
 export type FaqListResult = z.infer<typeof faqListSchema>;
 
+const faqSimilaritySchema = z.object({
+	match: faqSchema.nullable(),
+	reason: z.string(),
+	merged: z.object({ question: z.string(), answer: z.string() }).nullable(),
+});
+export type FaqSimilarityResult = z.infer<typeof faqSimilaritySchema>;
+
 const errorBodySchema = z.object({
 	error: z.string().optional(),
 	message: z.string().optional(),
@@ -120,6 +127,12 @@ export interface RivusApiClient {
 	updateFaq(id: FaqId, patch: UpdateFaqInput): Promise<Faq>;
 	/** Create a new FAQ. */
 	createFaq(input: CreateFaqInput): Promise<Faq>;
+	/**
+	 * Ask whether a semantically similar FAQ already exists (AI-assisted), before
+	 * creating one. Returns `{ match: null }` when nothing similar is found — or
+	 * always, when the API has no AI provider configured.
+	 */
+	findSimilarFaq(input: { question: string; answer?: string }): Promise<FaqSimilarityResult>;
 }
 
 /** Strip a single trailing slash so `${base}${path}` never doubles up. */
@@ -194,6 +207,13 @@ export function createRivusApiClient(
 			return request('/v1/faqs', faqSchema, {
 				method: 'POST',
 				body: JSON.stringify(input),
+			});
+		},
+
+		findSimilarFaq(input: { question: string; answer?: string }) {
+			return request('/v1/faqs/similar', faqSimilaritySchema, {
+				method: 'POST',
+				body: JSON.stringify({ question: input.question, answer: input.answer ?? '' }),
 			});
 		},
 	};
