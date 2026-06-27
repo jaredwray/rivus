@@ -187,6 +187,7 @@ function HomeLink({ height, style }: { height: number; style?: StyleProp<ViewSty
 			onPress={() => router.push('/')}
 			accessibilityRole="link"
 			accessibilityLabel="Rivus home"
+			hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
 		>
 			<RivusWordmark height={height} />
 		</Pressable>
