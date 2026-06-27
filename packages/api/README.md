@@ -78,11 +78,43 @@ pnpm --filter @rivus/api dev           # watch-mode dev server (needs MongoDB)
 pnpm --filter @rivus/api test          # run the hermetic test suite
 pnpm --filter @rivus/api build         # bundle to dist/ with tsdown
 pnpm --filter @rivus/api openapi       # regenerate openapi.json for the docs site
+pnpm --filter @rivus/api seed          # seed an account with demo customers + FAQs
 pnpm --filter @rivus/api migrate:roles # rename the legacy team_member role to member
 ```
 
 Start MongoDB locally with `pnpm services:up` from the repo root. Configuration
 comes from environment variables — see `.env.example`.
+
+### Seeding demo data
+
+`seed` fills a single account with realistic demo data so you have something to
+look at locally: **20–30 CRM customers** and a library of **10+ common business
+FAQs**. It writes through the same repositories and Zod schemas the API uses, so
+seeded rows are identical to ones created over HTTP.
+
+Point it at an account by **slug or id** with `--account` (the account must
+already exist — sign up first, or grab a slug from the staff company switcher):
+
+```bash
+# Seed both customers and FAQs (uses MONGODB_URI, defaulting to the local replica set)
+pnpm --filter @rivus/api seed --account acme-co
+
+# Control the counts; pass 0 to skip one kind entirely
+pnpm --filter @rivus/api seed -a acme-co --customers 25 --faqs 12
+pnpm --filter @rivus/api seed -a acme-co --customers 0        # FAQs only
+
+# Preview without writing, or make a batch reproducible
+pnpm --filter @rivus/api seed -a acme-co --dry-run
+pnpm --filter @rivus/api seed -a acme-co --seed 42
+
+# Full help
+pnpm --filter @rivus/api seed --help
+```
+
+Customers are additive (re-running adds more), while FAQs are de-duplicated by
+question — so re-running the FAQ seed won't create duplicates. The curated FAQ
+text and customer generation live in `src/seed-data.ts` (unit-tested);
+`src/seed.ts` is the thin database wrapper.
 
 ### Migrations
 

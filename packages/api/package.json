@@ -12,6 +12,7 @@
 		"start": "node dist/index.mjs",
 		"deploy": "wrangler deploy",
 		"openapi": "tsx src/openapi.ts",
+		"seed": "tsx src/seed.ts",
 		"migrate:roles": "node scripts/migrate-roles.mjs",
 		"test": "vitest run",
 		"test:watch": "vitest",
