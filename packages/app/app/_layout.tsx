@@ -167,9 +167,12 @@ function Shell() {
 			<View style={styles.content}>
 				<Slot />
 			</View>
-			<BottomTabBar />
-			{/* Lift the chat button clear of the bottom tab bar so they don't overlap. */}
+			{/* Render the chat button before the tab bar so the "More" sheet and its
+			    backdrop layer above — and dim — the chat button while the sheet is open.
+			    The button is lifted by MOBILE_TABBAR_HEIGHT so the two never overlap when
+			    the sheet is closed. */}
 			<RivusChat key={chatKey} bottomOffset={MOBILE_TABBAR_HEIGHT} />
+			<BottomTabBar />
 		</View>
 	);
 }
