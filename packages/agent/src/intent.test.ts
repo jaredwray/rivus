@@ -164,3 +164,127 @@ describe('parseIntent — knowledge base', () => {
 		});
 	});
 });
+
+describe('parseIntent — natural FAQ create', () => {
+	it('extracts a quoted title and a trailing-sentence answer (the reported case)', () => {
+		expect(
+			parseIntent('add this FAQ. "Our Cancelation Policy". It needs to be 24 hour in advance'),
+		).toEqual({
+			kind: 'faq_create',
+			question: 'Our Cancelation Policy',
+			answer: 'It needs to be 24 hour in advance',
+		});
+	});
+
+	it('handles smart (curly) quotes from a phone keyboard', () => {
+		expect(parseIntent('add a faq “Our Hours”. We open at 9am')).toEqual({
+			kind: 'faq_create',
+			question: 'Our Hours',
+			answer: 'We open at 9am',
+		});
+	});
+
+	it('handles German-style low-high double quotes (“„…“”)', () => {
+		expect(parseIntent('add a faq „Our Hours“. We open at 9am')).toEqual({
+			kind: 'faq_create',
+			question: 'Our Hours',
+			answer: 'We open at 9am',
+		});
+	});
+
+	it('takes a quoted title alone as the question and asks for the answer next', () => {
+		expect(parseIntent('add a faq "Do you deliver?"')).toEqual({
+			kind: 'faq_create',
+			question: 'Do you deliver?',
+			answer: null,
+		});
+	});
+
+	it('strips a stray "answer:" label that trails a quoted title', () => {
+		expect(parseIntent('add a faq "Returns" answer: 30 days')).toEqual({
+			kind: 'faq_create',
+			question: 'Returns',
+			answer: '30 days',
+		});
+	});
+
+	it('splits a natural "<question>? <answer>" with no quotes', () => {
+		expect(parseIntent('add an FAQ: do you deliver? yes, city-wide')).toEqual({
+			kind: 'faq_create',
+			question: 'do you deliver?',
+			answer: 'yes, city-wide',
+		});
+	});
+
+	it('treats a lone question (ending in ?) as the question and asks for the answer', () => {
+		expect(parseIntent('add an faq: how do I cancel?')).toEqual({
+			kind: 'faq_create',
+			question: 'how do I cancel?',
+			answer: null,
+		});
+	});
+
+	it('does not mistake an apostrophe for an opening quote', () => {
+		// No double-quoted title and no "?" → nothing reliable to extract, so it asks
+		// for both parts rather than splitting on the apostrophe in "it's".
+		expect(parseIntent("add a faq it's our policy")).toEqual({
+			kind: 'faq_create',
+			question: null,
+			answer: null,
+		});
+	});
+
+	it('does not split on a "?" that ends the request rather than the FAQ', () => {
+		// The "?" closes "…to our FAQ?", so it must not be taken as the FAQ's
+		// question with the trailing sentence as its answer.
+		expect(parseIntent('Can you add this to our FAQ? It really matters')).toEqual({
+			kind: 'faq_create',
+			question: null,
+			answer: null,
+		});
+	});
+
+	it('does not invent a question from punctuation alone', () => {
+		expect(parseIntent('add a faq : ?')).toEqual({
+			kind: 'faq_create',
+			question: null,
+			answer: null,
+		});
+	});
+
+	it('strips a leading "question:" label so it never leaks into the question', () => {
+		// "question:" is command syntax, not part of the question text.
+		expect(parseIntent('add an FAQ question: Do you deliver? yes')).toEqual({
+			kind: 'faq_create',
+			question: 'Do you deliver?',
+			answer: 'yes',
+		});
+	});
+
+	it('does not treat "to the knowledge base" command boilerplate as the answer', () => {
+		expect(parseIntent('add a faq "Returns" to the knowledge base')).toEqual({
+			kind: 'faq_create',
+			question: 'Returns',
+			answer: null,
+		});
+	});
+
+	it('ignores a quoted phrase that sits before the add-FAQ command', () => {
+		// The quoted "Returns" is page context; the real command follows it.
+		expect(parseIntent('On the "Returns" page, add an FAQ: Do you accept returns? Yes')).toEqual({
+			kind: 'faq_create',
+			question: 'Do you accept returns?',
+			answer: 'Yes',
+		});
+	});
+
+	it('still extracts a quoted title when no add-FAQ command marker is found', () => {
+		// "knowledge" (no "base") matches the KB context but not the command marker,
+		// so the payload falls back to the whole message and the quote still wins.
+		expect(parseIntent('add to my knowledge "Hours" we open at 9')).toEqual({
+			kind: 'faq_create',
+			question: 'Hours',
+			answer: 'we open at 9',
+		});
+	});
+});
