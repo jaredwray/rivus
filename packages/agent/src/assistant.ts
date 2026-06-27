@@ -56,26 +56,28 @@ const FIELD_LABEL: Record<CompanyField, string> = {
 /** Produce the agent's reply to the most recent user turn. */
 export async function respond(deps: RespondDeps): Promise<string> {
 	const { env, request, messages, fetchImpl } = deps;
-	const intent = parseIntent(lastUserMessage(messages) ?? '');
+	const question = lastUserMessage(messages) ?? '';
+	const intent = parseIntent(question);
 	const session = await authenticate(request, env.JWT_SECRET);
+	const claims = session?.claims ?? null;
 
 	// Conversational intents need no data and work signed in or out.
 	if (intent.kind === 'greeting') {
-		return greetingReply(session?.claims ?? null);
+		return greetingReply(claims);
 	}
 	if (intent.kind === 'help') {
-		return helpReply(session?.claims ?? null);
-	}
-	if (intent.kind === 'unknown') {
-		return unknownReply(session?.claims ?? null);
+		return helpReply(claims);
 	}
 
-	// Everything below is gated on a valid session.
+	// Everything below needs a session and a configured API. A general question
+	// (`unknown`) is the catch-all: rather than brushing it off, we try to answer it
+	// from the knowledge base with AI. It still degrades to a friendly nudge — not
+	// the sign-in / not-configured errors — when we can't reach the data.
 	if (!session) {
-		return SIGN_IN_REQUIRED;
+		return intent.kind === 'unknown' ? unknownReply(null) : SIGN_IN_REQUIRED;
 	}
 	if (!env.RIVUS_API_URL) {
-		return NOT_CONFIGURED;
+		return intent.kind === 'unknown' ? unknownReply(claims) : NOT_CONFIGURED;
 	}
 	const api = createRivusApiClient(env.RIVUS_API_URL, session.token, fetchImpl);
 
@@ -91,6 +93,8 @@ export async function respond(deps: RespondDeps): Promise<string> {
 				return await faqUpdateReply(api, intent);
 			case 'faq_create':
 				return await faqCreateReply(api, intent);
+			case 'unknown':
+				return await knowledgeAnswerReply(api, question, claims);
 		}
 	} catch (error) {
 		return apiErrorReply(error);
@@ -126,6 +130,31 @@ function unknownReply(claims: SessionClaims | null): string {
 		return `${GREETING} I can help with your company details and your knowledge base once you’re signed in. Try “what’s our website?” or “search the FAQ for pricing.”`;
 	}
 	return 'I’m not sure how to help with that yet. I can tell you your company details (like your website) or search and update your knowledge base — try “what’s our phone number?” or “find FAQs about pricing.”';
+}
+
+/**
+ * Answer a general question from the account's knowledge base. The API does the AI
+ * work — it retrieves the relevant FAQs and composes an answer grounded strictly in
+ * them — so the agent just forwards the question and formats the result, citing the
+ * source FAQ so the user can see it came from their own knowledge base. When the
+ * knowledge base doesn't cover the question, we fall back to the same friendly nudge
+ * as any other unrecognized ask rather than guessing.
+ */
+async function knowledgeAnswerReply(
+	api: RivusApiClient,
+	question: string,
+	claims: SessionClaims | null,
+): Promise<string> {
+	const { answered, answer, sources } = await api.answerFromKnowledge({ question });
+	const text = answer.trim();
+	if (!answered || text === '') {
+		return unknownReply(claims);
+	}
+	const [source] = sources;
+	if (source) {
+		return `${text}\n\n(From your FAQ “${source.question}”.)`;
+	}
+	return text;
 }
 
 /* -------------------------------------------------------------------------- */

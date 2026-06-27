@@ -8,6 +8,10 @@ function call.
 It greets anyone who opens it, and — once a request is **authenticated** — it can
 answer from the signed-in user's own Rivus account: their company details (e.g.
 "what's our website?") and their knowledge base (search, update, and add FAQs).
+Any other question is treated as a general ask and answered from the knowledge
+base: the agent forwards it to the API's AI-backed `/v1/faqs/answer` endpoint,
+which finds the relevant FAQs and composes a grounded reply (so "what's our best
+price?" is answered by a differently-worded "cost" FAQ), and cites the source FAQ.
 The reply logic is still a set of small, pure, unit-tested functions, so turning
 the deterministic understanding layer (`intent.ts`) into a real model-backed
 assistant later means changing only that one place.

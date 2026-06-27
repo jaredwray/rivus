@@ -190,7 +190,7 @@ export function RivusChat() {
 					{open ? (
 						<Feather name="chevron-down" size={24} color="#fff" />
 					) : (
-						<RivusSymbol size={28} />
+						<Feather name="message-circle" size={26} color="#fff" />
 					)}
 				</BrandGradient>
 			</Pressable>

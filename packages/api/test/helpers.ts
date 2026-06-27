@@ -5,6 +5,7 @@ import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
 import { createInMemoryRepositories, type InMemoryRepositories } from '../src/repositories/memory';
 import type { InviteEmail, Mailer, VerificationEmail } from '../src/services/email';
+import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import type { AppDeps } from '../src/types';
 
@@ -52,8 +53,9 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		verificationCodes,
 		// A recording mailer by default so helpers can read back the emailed code.
 		mailer: new RecordingMailer(),
-		// Default to the no-op AI service so tests stay hermetic (no model/network).
+		// Default to the no-op AI services so tests stay hermetic (no model/network).
 		faqSimilarity: new NoopFaqSimilarityService(),
+		faqAnswer: new NoopFaqAnswerService(),
 		ping: async () => ({ ready: true }),
 		...overrides,
 	});
@@ -94,6 +96,7 @@ export async function buildTestAppWithRepos(): Promise<{
 		verificationCodes,
 		mailer: new RecordingMailer(),
 		faqSimilarity: new NoopFaqSimilarityService(),
+		faqAnswer: new NoopFaqAnswerService(),
 		ping: async () => ({ ready: true }),
 	});
 	await app.ready();

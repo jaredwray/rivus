@@ -131,6 +131,11 @@ const onUpdateFaq: Route['when'] = (_url, method) => method === 'PATCH';
 const onSimilarFaq: Route['when'] = (url, method) =>
 	method === 'POST' && url.endsWith('/v1/faqs/similar');
 const onCreateFaq: Route['when'] = (url, method) => method === 'POST' && url.endsWith('/v1/faqs');
+const onAnswerFaq: Route['when'] = (url, method) =>
+	method === 'POST' && url.endsWith('/v1/faqs/answer');
+
+/** The "knowledge base doesn't cover it" response from /v1/faqs/answer. */
+const noAnswer = { answered: false, answer: '', sources: [] };
 
 /** The "no duplicate found" response from /v1/faqs/similar (the common case). */
 const noSimilarFaq = { match: null, reason: '', merged: null };
@@ -189,8 +194,69 @@ describe('respond — conversational', () => {
 		const anon = await ask('what is the meaning of life');
 		expect(anon).toContain(GREETING);
 
-		const authed = await ask('what is the meaning of life', { token: TOKEN });
+		// Signed in, the agent tries the knowledge base first; when it doesn't cover
+		// the question it falls back to the same friendly nudge.
+		const authed = await ask('what is the meaning of life', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onAnswerFaq, body: noAnswer }]),
+		});
 		expect(authed).toMatch(/not sure how to help/i);
+	});
+});
+
+describe('respond — knowledge base answering', () => {
+	it('answers a general question from the knowledge base and cites the FAQ', async () => {
+		// "best price" matches a differently-worded pricing FAQ — the kind of semantic
+		// match the AI handles and plain keyword routing misses.
+		const reply = await ask("what's our best price?", {
+			token: TOKEN,
+			fetchImpl: router([
+				{
+					when: onAnswerFaq,
+					body: {
+						answered: true,
+						answer: 'Our standard rate is $125 an hour, and $85 on weekends.',
+						sources: [{ id: 'faq_1', question: 'How much does your service cost?' }],
+					},
+				},
+			]),
+		});
+		expect(reply).toContain('$125 an hour');
+		expect(reply).toContain('How much does your service cost?');
+	});
+
+	it('returns just the answer when no source FAQ is given', async () => {
+		const reply = await ask('do you charge for travel?', {
+			token: TOKEN,
+			fetchImpl: router([
+				{ when: onAnswerFaq, body: { answered: true, answer: 'No travel fees.', sources: [] } },
+			]),
+		});
+		expect(reply).toBe('No travel fees.');
+	});
+
+	it('falls back to the nudge when the knowledge base has no answer', async () => {
+		const reply = await ask('what is the airspeed of a swallow?', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onAnswerFaq, body: noAnswer }]),
+		});
+		expect(reply).toMatch(/not sure how to help/i);
+	});
+
+	it('nudges an anonymous caller to sign in instead of hitting the API', async () => {
+		// No fetch route is provided: a signed-out general question must never call the
+		// answer endpoint, so it resolves purely from the brush-off path.
+		const reply = await ask("what's our best price?");
+		expect(reply).toContain(GREETING);
+		expect(reply).toMatch(/signed in/i);
+	});
+
+	it('surfaces an API failure during answering', async () => {
+		const reply = await ask("what's our best price?", {
+			token: TOKEN,
+			fetchImpl: router([{ when: onAnswerFaq, body: { message: 'boom' }, status: 500 }]),
+		});
+		expect(reply).toMatch(/couldn’t reach your Rivus data/i);
 	});
 });
 

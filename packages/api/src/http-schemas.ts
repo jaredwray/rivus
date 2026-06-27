@@ -189,6 +189,19 @@ export const faqSimilarityResponseSchema = z
 	})
 	.meta({ id: 'FaqSimilarity' });
 
+/**
+ * Result of answering a question from the knowledge base (AI-assisted). `answered`
+ * is false when the FAQs don't cover the question; `answer` is then empty. `sources`
+ * lists the FAQ(s) the answer draws on so the client can cite where it came from.
+ */
+export const faqAnswerResponseSchema = z
+	.object({
+		answered: z.boolean(),
+		answer: z.string(),
+		sources: z.array(z.object({ id: z.string(), question: z.string() })),
+	})
+	.meta({ id: 'FaqAnswer' });
+
 /** A page of companies (accounts) for the staff company switcher. */
 export const accountListResponseSchema = z
 	.object({
