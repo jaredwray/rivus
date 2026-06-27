@@ -1,6 +1,7 @@
-import type { FaqId } from '@rivus/core';
+import type { Faq, FaqId } from '@rivus/core';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { FaqAnswer, FaqAnswerService } from '../src/services/faq-answer';
 import type { FaqSimilarityService } from '../src/services/faq-similarity';
 import { authHeader, buildTestApp, signupOwner } from './helpers';
 
@@ -328,6 +329,158 @@ describe('POST /v1/faqs/similar', () => {
 
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toEqual({ match: null, reason: '', merged: null });
+		await app.close();
+	});
+});
+
+describe('POST /v1/faqs/answer', () => {
+	it('requires authentication', async () => {
+		const app = await buildTestApp();
+		const response = await app.inject({
+			method: 'POST',
+			url: '/v1/faqs/answer',
+			payload: { question: 'How much do you charge?' },
+		});
+		expect(response.statusCode).toBe(401);
+		await app.close();
+	});
+
+	it('rejects an empty question (400)', async () => {
+		const app = await buildTestApp();
+		const token = (await signupOwner(app)).token;
+		const response = await app.inject({
+			method: 'POST',
+			url: '/v1/faqs/answer',
+			headers: authHeader(token),
+			payload: { question: '' },
+		});
+		expect(response.statusCode).toBe(400);
+		await app.close();
+	});
+
+	it('answers from the knowledge base and cites the source FAQ', async () => {
+		// A stub stands in for the AI service: it answers and points at whichever FAQ
+		// id the account created, exercising the route's id → question resolution.
+		let sourceId: string | null = null;
+		const stub: FaqAnswerService = {
+			async answer(): Promise<FaqAnswer> {
+				return sourceId
+					? {
+							answered: true,
+							answer: 'Our standard rate is $125 an hour, and $85 on weekends.',
+							sources: [sourceId as FaqId],
+						}
+					: { answered: false, answer: '', sources: [] };
+			},
+		};
+		const app = await buildTestApp({ faqAnswer: stub });
+		const token = (await signupOwner(app)).token;
+		const created = await app.inject({
+			method: 'POST',
+			url: '/v1/faqs',
+			headers: authHeader(token),
+			payload: {
+				question: 'How much does your service cost?',
+				answer: 'our standard rate is 125 an hour and 85 on weekends',
+			},
+		});
+		sourceId = created.json().id;
+
+		const response = await app.inject({
+			method: 'POST',
+			url: '/v1/faqs/answer',
+			headers: authHeader(token),
+			payload: { question: "what's our best price?" },
+		});
+
+		expect(response.statusCode).toBe(200);
+		const body = response.json();
+		expect(body.answered).toBe(true);
+		expect(body.answer).toContain('$125');
+		// The cited id is resolved back to its question for the client.
+		expect(body.sources).toEqual([{ id: sourceId, question: 'How much does your service cost?' }]);
+		await app.close();
+	});
+
+	it('reports not-answered when the knowledge base does not cover it', async () => {
+		const app = await buildTestApp();
+		const token = (await signupOwner(app)).token;
+		await app.inject({
+			method: 'POST',
+			url: '/v1/faqs',
+			headers: authHeader(token),
+			payload: { question: 'Where are you located?', answer: 'Seattle.' },
+		});
+
+		// The default (deterministic) service finds no keyword overlap with this ask.
+		const response = await app.inject({
+			method: 'POST',
+			url: '/v1/faqs/answer',
+			headers: authHeader(token),
+			payload: { question: 'tell me a joke' },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({ answered: false, answer: '', sources: [] });
+		await app.close();
+	});
+
+	it('drops a cited id that does not belong to the account', async () => {
+		const stub: FaqAnswerService = {
+			async answer(): Promise<FaqAnswer> {
+				return { answered: true, answer: 'Leaked answer.', sources: ['ghost-id' as FaqId] };
+			},
+		};
+		const app = await buildTestApp({ faqAnswer: stub });
+		const token = (await signupOwner(app)).token;
+		await app.inject({
+			method: 'POST',
+			url: '/v1/faqs',
+			headers: authHeader(token),
+			payload: { question: 'How much is a visit?', answer: 'It is $89.' },
+		});
+
+		const response = await app.inject({
+			method: 'POST',
+			url: '/v1/faqs/answer',
+			headers: authHeader(token),
+			payload: { question: 'price?' },
+		});
+
+		expect(response.statusCode).toBe(200);
+		const body = response.json();
+		// The answer text passes through, but the unknown id is filtered from sources.
+		expect(body.answer).toBe('Leaked answer.');
+		expect(body.sources).toEqual([]);
+		await app.close();
+	});
+
+	it('hands the account FAQs to the answering service as candidates', async () => {
+		let received: Faq[] = [];
+		const stub: FaqAnswerService = {
+			async answer(_input, candidates): Promise<FaqAnswer> {
+				received = candidates;
+				return { answered: false, answer: '', sources: [] };
+			},
+		};
+		const app = await buildTestApp({ faqAnswer: stub });
+		const token = (await signupOwner(app)).token;
+		await app.inject({
+			method: 'POST',
+			url: '/v1/faqs',
+			headers: authHeader(token),
+			payload: { question: 'Do you offer refunds?', answer: 'Yes, within 30 days.' },
+		});
+
+		await app.inject({
+			method: 'POST',
+			url: '/v1/faqs/answer',
+			headers: authHeader(token),
+			payload: { question: 'refund policy?' },
+		});
+
+		expect(received).toHaveLength(1);
+		expect(received[0]?.question).toBe('Do you offer refunds?');
 		await app.close();
 	});
 });

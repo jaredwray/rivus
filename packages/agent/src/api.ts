@@ -106,6 +106,13 @@ const faqSimilaritySchema = z.object({
 });
 export type FaqSimilarityResult = z.infer<typeof faqSimilaritySchema>;
 
+const faqAnswerSchema = z.object({
+	answered: z.boolean(),
+	answer: z.string(),
+	sources: z.array(z.object({ id: branded<FaqId>(), question: z.string() })),
+});
+export type FaqAnswerResult = z.infer<typeof faqAnswerSchema>;
+
 const errorBodySchema = z.object({
 	error: z.string().optional(),
 	message: z.string().optional(),
@@ -133,6 +140,12 @@ export interface RivusApiClient {
 	 * always, when the API has no AI provider configured.
 	 */
 	findSimilarFaq(input: { question: string; answer?: string }): Promise<FaqSimilarityResult>;
+	/**
+	 * Answer a free-text question from the account's knowledge base (AI-assisted).
+	 * Returns `{ answered: false }` when the FAQs don't cover the question, so the
+	 * agent can fall back to a friendly nudge instead of guessing.
+	 */
+	answerFromKnowledge(input: { question: string }): Promise<FaqAnswerResult>;
 }
 
 /** Strip a single trailing slash so `${base}${path}` never doubles up. */
@@ -214,6 +227,13 @@ export function createRivusApiClient(
 			return request('/v1/faqs/similar', faqSimilaritySchema, {
 				method: 'POST',
 				body: JSON.stringify({ question: input.question, answer: input.answer ?? '' }),
+			});
+		},
+
+		answerFromKnowledge(input: { question: string }) {
+			return request('/v1/faqs/answer', faqAnswerSchema, {
+				method: 'POST',
+				body: JSON.stringify({ question: input.question }),
 			});
 		},
 	};

@@ -13,6 +13,7 @@ import {
 	MongoUserRepository,
 	MongoVerificationCodeRepository,
 } from './repositories/mongo';
+import { createFaqAnswerService } from './services/faq-answer';
 import { createFaqSimilarityService } from './services/faq-similarity';
 import { createMailer } from './services/resend-mailer';
 
@@ -34,6 +35,7 @@ export async function start(): Promise<void> {
 		verificationCodes: new MongoVerificationCodeRepository(),
 		mailer: createMailer(config),
 		faqSimilarity: createFaqSimilarityService(config),
+		faqAnswer: createFaqAnswerService(config),
 		// Real readiness: run an actual query so "connected but unauthorized" reports
 		// unready (503, with the reason) instead of falsely healthy.
 		ping: checkDatabaseReady,
