@@ -251,11 +251,6 @@ function moneyCents(label: string) {
 		.min(0, { error: `${label} can't be negative.` });
 }
 
-/** The preferred channel a customer is reached on. */
-export const customerChannelSchema = z.enum(['whatsapp', 'phone', 'email', 'sms'], {
-	error: 'Choose a valid contact channel.',
-});
-
 /** Where a customer sits in the sales/billing lifecycle. */
 export const customerStatusSchema = z.enum(['lead', 'quote', 'paid', 'due'], {
 	error: 'Choose a valid status.',
@@ -266,7 +261,6 @@ export const createCustomerSchema = z.object({
 	email: optionalEmailSchema.default(''),
 	phone: phoneSchema.default(''),
 	address: addressSchema.default(''),
-	channel: customerChannelSchema.default('phone'),
 	status: customerStatusSchema.default('lead'),
 	lifetimeValue: moneyCents('Lifetime value').default(0),
 	balance: moneyCents('Balance').default(0),
@@ -285,7 +279,6 @@ export const updateCustomerSchema = z
 		email: optionalEmailSchema.optional(),
 		phone: phoneSchema.optional(),
 		address: addressSchema.optional(),
-		channel: customerChannelSchema.optional(),
 		status: customerStatusSchema.optional(),
 		lifetimeValue: moneyCents('Lifetime value').optional(),
 		balance: moneyCents('Balance').optional(),

@@ -38,7 +38,6 @@ describe('customers', () => {
 			email: '',
 			phone: '',
 			address: '',
-			channel: 'phone',
 			status: 'lead',
 			lifetimeValue: 0,
 			balance: 0,
@@ -52,7 +51,6 @@ describe('customers', () => {
 			email: 'Priya@Example.com',
 			phone: '(206) 555-0119',
 			address: 'Capitol Hill',
-			channel: 'email',
 			status: 'due',
 			lifetimeValue: 526_000,
 			balance: 54_000,
@@ -63,7 +61,6 @@ describe('customers', () => {
 		expect(response.json()).toMatchObject({
 			name: 'Priya Anand',
 			email: 'priya@example.com',
-			channel: 'email',
 			status: 'due',
 			lifetimeValue: 526_000,
 			balance: 54_000,
@@ -78,11 +75,6 @@ describe('customers', () => {
 			payload: { address: 'orphan' },
 		});
 
-		expect(response.statusCode).toBe(400);
-	});
-
-	it('rejects a create with an unknown channel (400)', async () => {
-		const response = await createCustomer('Bad Channel', { channel: 'telegram' });
 		expect(response.statusCode).toBe(400);
 	});
 

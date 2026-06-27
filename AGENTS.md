@@ -10,6 +10,7 @@ packages/
   core/      # @rivus/core   — shared types, Zod schemas, utilities (tsdown lib)
   api/       # @rivus/api    — Fastify REST API on MongoDB Atlas (Mongoose) + JWT
   website/   # @rivus/website— Next.js 16 marketing site
+  agent/     # @rivus/agent  — Cloudflare Agent (Durable Object) the app chats with
   docs/      # @rivus/docs   — Docula site (docs, changelog, API reference)
   app/       # @rivus/app    — Expo app (iOS / Android / Web)
 ```
@@ -96,6 +97,11 @@ Tests are an inventory of failure modes, not a coverage ritual.
   generated, not committed. All UI follows [`DESIGN_SYSTEM.md`](./DESIGN_SYSTEM.md).
 - **docs** — `scripts/sync-openapi.mjs` copies the API spec into the site on
   build. `githubPath` is gated on `GITHUB_TOKEN` so builds stay green offline.
+- **agent** — A Cloudflare Agent (SQLite-backed Durable Object). Reply logic is
+  pure (`conversation.ts`, `http.ts`) and unit-tested under Node; `agent.ts` and
+  `index.ts` are the Workers-runtime adapters (they import the Agents SDK, which
+  needs `cloudflare:workers`, so they aren't unit-tested). Coverage is scoped to
+  the pure modules; build validates with `wrangler deploy --dry-run`.
 - **app** — The API client (`src/api`) is RN-free so it is unit-tested under
   Node. Native builds need Expo tooling/devices and are not run in CI. All UI
   follows [`DESIGN_SYSTEM.md`](./DESIGN_SYSTEM.md).

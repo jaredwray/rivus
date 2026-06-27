@@ -87,7 +87,6 @@ function makeCustomer() {
 		email: faker.internet.email().toLowerCase(),
 		phone: faker.phone.number(),
 		address: faker.location.streetAddress(),
-		channel: faker.helpers.arrayElement(['whatsapp', 'phone', 'email', 'sms'] as const),
 		status: faker.helpers.arrayElement(['lead', 'quote', 'paid', 'due'] as const),
 		lifetimeValue: faker.number.int({ min: 0, max: 1_000_000 }),
 		balance: faker.number.int({ min: 0, max: 100_000 }),
@@ -771,7 +770,6 @@ describe('createApiClient', () => {
 			const result = await client.createCustomer('owner-token', {
 				name: customer.name,
 				email: customer.email,
-				channel: customer.channel,
 				status: customer.status,
 				lifetimeValue: customer.lifetimeValue,
 				balance: customer.balance,
@@ -803,7 +801,6 @@ describe('createApiClient', () => {
 				email: '',
 				phone: '',
 				address: '',
-				channel: 'phone',
 				status: 'lead',
 				lifetimeValue: 0,
 				balance: 0,
