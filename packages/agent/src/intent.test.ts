@@ -164,3 +164,83 @@ describe('parseIntent — knowledge base', () => {
 		});
 	});
 });
+
+describe('parseIntent — natural FAQ create', () => {
+	it('extracts a quoted title and a trailing-sentence answer (the reported case)', () => {
+		expect(
+			parseIntent('add this FAQ. "Our Cancelation Policy". It needs to be 24 hour in advance'),
+		).toEqual({
+			kind: 'faq_create',
+			question: 'Our Cancelation Policy',
+			answer: 'It needs to be 24 hour in advance',
+		});
+	});
+
+	it('handles smart (curly) quotes from a phone keyboard', () => {
+		expect(parseIntent('add a faq “Our Hours”. We open at 9am')).toEqual({
+			kind: 'faq_create',
+			question: 'Our Hours',
+			answer: 'We open at 9am',
+		});
+	});
+
+	it('takes a quoted title alone as the question and asks for the answer next', () => {
+		expect(parseIntent('add a faq "Do you deliver?"')).toEqual({
+			kind: 'faq_create',
+			question: 'Do you deliver?',
+			answer: null,
+		});
+	});
+
+	it('strips a stray "answer:" label that trails a quoted title', () => {
+		expect(parseIntent('add a faq "Returns" answer: 30 days')).toEqual({
+			kind: 'faq_create',
+			question: 'Returns',
+			answer: '30 days',
+		});
+	});
+
+	it('splits a natural "<question>? <answer>" with no quotes', () => {
+		expect(parseIntent('add an FAQ: do you deliver? yes, city-wide')).toEqual({
+			kind: 'faq_create',
+			question: 'do you deliver?',
+			answer: 'yes, city-wide',
+		});
+	});
+
+	it('treats a lone question (ending in ?) as the question and asks for the answer', () => {
+		expect(parseIntent('add an faq: how do I cancel?')).toEqual({
+			kind: 'faq_create',
+			question: 'how do I cancel?',
+			answer: null,
+		});
+	});
+
+	it('does not mistake an apostrophe for an opening quote', () => {
+		// No double-quoted title and no "?" → nothing reliable to extract, so it asks
+		// for both parts rather than splitting on the apostrophe in "it's".
+		expect(parseIntent("add a faq it's our policy")).toEqual({
+			kind: 'faq_create',
+			question: null,
+			answer: null,
+		});
+	});
+
+	it('does not split on a "?" that ends the request rather than the FAQ', () => {
+		// The "?" closes "…to our FAQ?", so it must not be taken as the FAQ's
+		// question with the trailing sentence as its answer.
+		expect(parseIntent('Can you add this to our FAQ? It really matters')).toEqual({
+			kind: 'faq_create',
+			question: null,
+			answer: null,
+		});
+	});
+
+	it('does not invent a question from punctuation alone', () => {
+		expect(parseIntent('add a faq : ?')).toEqual({
+			kind: 'faq_create',
+			question: null,
+			answer: null,
+		});
+	});
+});

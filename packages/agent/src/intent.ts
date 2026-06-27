@@ -114,16 +114,65 @@ function parseFaqUpdate(text: string): { topic: string; answer: string | null } 
 	return { topic: topic ?? '', answer: null };
 }
 
-/** Parse an FAQ-create ask into an explicit question/answer pair when supplied. */
+/**
+ * A double-quoted phrase used as the FAQ's title/question, e.g.
+ * `add this FAQ. "Our Cancelation Policy". …`. Only *double* quotes (straight,
+ * curly, or low) delimit a title — single quotes/apostrophes are left alone so
+ * words like "don't" or "policy's" never look like an opening quote.
+ */
+const QUOTED_TITLE = /["“„]([^"“”„]+)["”]/;
+
+/** Strip the leading "add/create/make … faq" preamble, leaving just the content. */
+function stripCreatePreamble(text: string): string {
+	return text
+		.replace(/^[\s,.:;'"“”-]*(?:add|create|new|make|insert)\b[^?]*?\bfaqs?\b[\s,:.;-]*/i, '')
+		.trim();
+}
+
+/** Tidy an extracted answer: drop wrapping punctuation/quotes, an "answer:" label, trailing stops. */
+function cleanAnswer(value: string): string {
+	return value
+		.replace(/^[\s,.:;()\-–—"“„]+/, '')
+		.replace(/^answer\s*[:=-]\s*/i, '')
+		.replace(/["”]+$/, '')
+		.replace(/[.!?]+\s*$/, '')
+		.replace(/\s+/g, ' ')
+		.trim();
+}
+
+/** Parse an FAQ-create ask into a question/answer pair, extracting as much as the user gave. */
 function parseFaqCreate(text: string): { question: string | null; answer: string | null } {
-	// "question: ... answer: ..." (or "q: ..."). Only the full word "answer" marks
-	// the split — a bare single-letter "a" would match a stray "a-" / "a:" inside
-	// the question text (e.g. "a-la-carte") and truncate it.
+	// 1. Explicit "question: ... answer: ..." (or "q: ..."). Only the full word
+	// "answer" marks the split — a bare single-letter "a" would match a stray
+	// "a-" / "a:" inside the question text (e.g. "a-la-carte") and truncate it.
 	const qa = /\b(?:question|q)\s*[:-]\s*(.+?)\s+answer\s*[:-]\s*(.+)$/i.exec(text);
 	if (qa?.[1] && qa[2]) {
 		return { question: qa[1].trim(), answer: qa[2].trim() };
 	}
-	// Otherwise treat any "about <topic>" as the question and ask for the answer.
+	// 2. A double-quoted phrase is the question/title; whatever follows the closing
+	// quote is the answer. Covers the natural phrasing people actually type, e.g.
+	// `add this FAQ. "Our Cancelation Policy". It needs to be 24 hours in advance`.
+	const quoted = QUOTED_TITLE.exec(text);
+	const title = quoted?.[1]?.trim();
+	if (quoted && title) {
+		const answer = cleanAnswer(text.slice(quoted.index + quoted[0].length));
+		return { question: title, answer: answer.length > 0 ? answer : null };
+	}
+	// 3. A natural "<question>? <answer>" split — e.g. `add an FAQ: do you deliver?
+	// yes, city-wide`. Only trust the "?" when the message is actually framed as an
+	// add-FAQ command (the "add … faq" preamble was found and removed); otherwise a
+	// "?" in the *request* itself — "Can you add this to our FAQ? …" — would be
+	// mistaken for the FAQ's question.
+	const body = stripCreatePreamble(text);
+	const mark = body.indexOf('?');
+	if (body.length > 0 && body !== text && mark >= 0) {
+		const question = body.slice(0, mark + 1).trim();
+		if (/[\p{L}\p{N}]/u.test(question)) {
+			const answer = cleanAnswer(body.slice(mark + 1));
+			return { question, answer: answer.length > 0 ? answer : null };
+		}
+	}
+	// 4. Otherwise treat any "about <topic>" as the question and ask for the answer.
 	const topic = afterPreposition(text);
 	return { question: topic, answer: null };
 }

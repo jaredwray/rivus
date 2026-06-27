@@ -446,6 +446,38 @@ describe('respond — knowledge base writes', () => {
 		expect(reply).toMatch(/warranty/i);
 	});
 
+	it('creates an FAQ from a quoted title and a trailing-sentence answer', async () => {
+		// The phrasing a user actually typed: a quoted title plus a follow-on
+		// sentence as the answer — previously this fell through to "tell me both".
+		const reply = await ask(
+			'add this FAQ. "Our Cancelation Policy". It needs to be 24 hour in advance',
+			{
+				token: TOKEN,
+				fetchImpl: router([
+					{ when: onSimilarFaq, body: noSimilarFaq },
+					{
+						when: onCreateFaq,
+						body: makeFaq({
+							question: 'Our Cancelation Policy',
+							answer: 'It needs to be 24 hour in advance',
+						}),
+					},
+				]),
+			},
+		);
+		expect(reply).toMatch(/Added a new FAQ/i);
+		expect(reply).toContain('Our Cancelation Policy');
+	});
+
+	it('asks only for the answer when a quoted title arrives without one', async () => {
+		const reply = await ask('add a faq "Do you deliver?"', {
+			token: TOKEN,
+			fetchImpl: router([]),
+		});
+		expect(reply).toMatch(/in one message/i);
+		expect(reply).toContain('Do you deliver?');
+	});
+
 	it('searches every page of a large knowledge base before reporting a miss', async () => {
 		// Page 1 is full and signals more; the match lives on page 2. A single-page
 		// scan would wrongly report "nothing found".
