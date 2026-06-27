@@ -103,6 +103,20 @@ describe('parseIntent — knowledge base', () => {
 		});
 	});
 
+	it('keeps a multi-word topic that itself contains "to" intact', () => {
+		expect(parseIntent('update the faq about how to cancel to say just email us')).toEqual({
+			kind: 'faq_update',
+			topic: 'how to cancel',
+			answer: 'just email us',
+		});
+		// Bare "to" connector: split at the LAST " to ", not the first.
+		expect(parseIntent('change the faq about ways to pay to credit and cash')).toEqual({
+			kind: 'faq_update',
+			topic: 'ways to pay',
+			answer: 'credit and cash',
+		});
+	});
+
 	it('asks for a topic when an update names none', () => {
 		expect(parseIntent('update an FAQ')).toEqual({ kind: 'faq_update', topic: '', answer: null });
 	});
@@ -121,6 +135,18 @@ describe('parseIntent — knowledge base', () => {
 			question: 'warranty',
 			answer: null,
 		});
+	});
+
+	it('does not let a hyphenated "a" in the question hijack the answer split', () => {
+		expect(parseIntent('add an FAQ question: is there a-la-carte pricing answer: yes')).toEqual({
+			kind: 'faq_create',
+			question: 'is there a-la-carte pricing',
+			answer: 'yes',
+		});
+	});
+
+	it('treats "find FAQs in our knowledge base" as a list, not a search for "knowledge base"', () => {
+		expect(parseIntent('find FAQs in our knowledge base')).toEqual({ kind: 'faq_list' });
 	});
 
 	it('parses a bare create with neither part', () => {

@@ -83,7 +83,9 @@ function extractSearchQuery(text: string): string {
 	}
 	const stripped = text
 		.replace(/\b(search|find|look ?up|lookup|for|in|the|our|my)\b/gi, ' ')
-		.replace(FAQ_CONTEXT, ' ')
+		// Global flag: strip every FAQ/knowledge term, e.g. both words in
+		// "FAQs … knowledge base", so neither leaks into the query.
+		.replace(new RegExp(FAQ_CONTEXT.source, 'gi'), ' ')
 		.replace(/[?.!]+$/, '')
 		.replace(/\s+/g, ' ')
 		.trim();
@@ -92,13 +94,20 @@ function extractSearchQuery(text: string): string {
 
 /** Parse an FAQ-edit ask into its topic and (optional) replacement answer. */
 function parseFaqUpdate(text: string): { topic: string; answer: string | null } {
-	// "...about <topic> to (say) <answer>" — the richest form, both parts present.
-	const withAnswer =
-		/\b(?:about|regarding|for|on)\s+(.+?)\s+(?:to say|to read|to|so (?:that )?it (?:says|reads))\s+(.+)$/i.exec(
+	// Prefer an explicit connector ("to say"/"to read"/"so it says") — it's
+	// unambiguous, so a lazy topic is safe.
+	const explicit =
+		/\b(?:about|regarding|for|on)\s+(.+?)\s+(?:to say|to read|so (?:that )?it (?:says|reads))\s+(.+)$/i.exec(
 			text,
 		);
-	if (withAnswer?.[1] && withAnswer[2]) {
-		return { topic: trimTopic(withAnswer[1]), answer: withAnswer[2].trim().replace(/[?.!]+$/, '') };
+	if (explicit?.[1] && explicit[2]) {
+		return { topic: trimTopic(explicit[1]), answer: explicit[2].trim().replace(/[?.!]+$/, '') };
+	}
+	// Bare "to" connector. Use a *greedy* topic so a multi-word topic that itself
+	// contains "to" (e.g. "how to cancel") splits at the LAST " to ", not the first.
+	const bare = /\b(?:about|regarding|for|on)\s+(.+)\s+to\s+(.+)$/i.exec(text);
+	if (bare?.[1] && bare[2]) {
+		return { topic: trimTopic(bare[1]), answer: bare[2].trim().replace(/[?.!]+$/, '') };
 	}
 	// Just a topic: "update the FAQ about <topic>" — we'll ask what to change.
 	const topic = afterPreposition(text);
@@ -107,8 +116,10 @@ function parseFaqUpdate(text: string): { topic: string; answer: string | null } 
 
 /** Parse an FAQ-create ask into an explicit question/answer pair when supplied. */
 function parseFaqCreate(text: string): { question: string | null; answer: string | null } {
-	// "question: ... answer: ..." (or "q: ... a: ...").
-	const qa = /\b(?:question|q)\s*[:-]\s*(.+?)\s+(?:answer|a)\s*[:-]\s*(.+)$/i.exec(text);
+	// "question: ... answer: ..." (or "q: ..."). Only the full word "answer" marks
+	// the split — a bare single-letter "a" would match a stray "a-" / "a:" inside
+	// the question text (e.g. "a-la-carte") and truncate it.
+	const qa = /\b(?:question|q)\s*[:-]\s*(.+?)\s+answer\s*[:-]\s*(.+)$/i.exec(text);
 	if (qa?.[1] && qa[2]) {
 		return { question: qa[1].trim(), answer: qa[2].trim() };
 	}

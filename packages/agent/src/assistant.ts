@@ -209,6 +209,28 @@ function companyFieldSentence(
 // One page wide enough to cover a small business's whole knowledge base, so a
 // search or topic match considers everything rather than just the newest few.
 const FAQ_SCAN_PAGE_SIZE = 100;
+// Bound the scan so a pathological knowledge base can't fan out unbounded API
+// calls inside one Worker request. 10 pages × 100 = 1000 FAQs — far beyond a real
+// small business — after which we tell the user the scan was partial.
+const FAQ_SCAN_MAX_PAGES = 10;
+
+/**
+ * Read the account's FAQs across pages (the API caps a page at 100 and returns
+ * newest-first), so a search or topic match considers the whole knowledge base —
+ * not just the most recent 100. `complete` is false when the cap cut the scan short.
+ */
+async function scanFaqs(api: RivusApiClient): Promise<{ faqs: Faq[]; complete: boolean }> {
+	const faqs: Faq[] = [];
+	let page = 1;
+	let hasNextPage = true;
+	while (hasNextPage && page <= FAQ_SCAN_MAX_PAGES) {
+		const result = await api.listFaqs({ page, pageSize: FAQ_SCAN_PAGE_SIZE });
+		faqs.push(...result.data);
+		hasNextPage = result.meta.hasNextPage;
+		page += 1;
+	}
+	return { faqs, complete: !hasNextPage };
+}
 
 async function faqListReply(api: RivusApiClient): Promise<string> {
 	const { data, meta } = await api.listFaqs({ page: 1, pageSize: 20 });
@@ -226,13 +248,14 @@ async function faqListReply(api: RivusApiClient): Promise<string> {
 }
 
 async function faqSearchReply(api: RivusApiClient, query: string): Promise<string> {
-	const { data, meta } = await api.listFaqs({ page: 1, pageSize: FAQ_SCAN_PAGE_SIZE });
-	if (meta.total === 0) {
+	const { faqs, complete } = await scanFaqs(api);
+	if (faqs.length === 0) {
 		return EMPTY_KB;
 	}
-	const ranked = rankFaqs(data, query);
+	const ranked = rankFaqs(faqs, query);
 	if (ranked.length === 0) {
-		return `I couldn’t find anything in your knowledge base about “${query}”. Try different wording, or ask me to list all your FAQs.`;
+		const scope = complete ? 'your knowledge base' : `the ${faqs.length} most recent FAQs`;
+		return `I couldn’t find anything in ${scope} about “${query}”. Try different wording, or ask me to list all your FAQs.`;
 	}
 	const lines = ranked.slice(0, 3).map((faq) => `• ${faq.question}\n  ${snippet(faq.answer)}`);
 	return [`Here’s what I found about “${query}”:`, ...lines].join('\n');
@@ -245,11 +268,11 @@ async function faqUpdateReply(
 	if (intent.topic === '') {
 		return 'Which FAQ should I update? Tell me the topic — e.g. “update the FAQ about refunds to say we offer 30-day refunds.”';
 	}
-	const { data, meta } = await api.listFaqs({ page: 1, pageSize: FAQ_SCAN_PAGE_SIZE });
-	if (meta.total === 0) {
+	const { faqs } = await scanFaqs(api);
+	if (faqs.length === 0) {
 		return EMPTY_KB;
 	}
-	const matches = matchFaqsByTopic(data, intent.topic);
+	const matches = matchFaqsByTopic(faqs, intent.topic);
 	if (matches.length > 1) {
 		const options = matches.slice(0, 5).map((faq) => `• ${faq.question}`);
 		return [`I found a few FAQs that could match “${intent.topic}”. Which one?`, ...options].join(
@@ -261,7 +284,10 @@ async function faqUpdateReply(
 		return `I couldn’t find an FAQ about “${intent.topic}”. Ask me to list your FAQs and I’ll show you what’s there.`;
 	}
 	if (intent.answer === null) {
-		return `The FAQ “${target.question}” currently says:\n  ${snippet(target.answer)}\nWhat should the new answer be?`;
+		// Rivus replies one message at a time with no memory of this turn, so ask for
+		// the whole instruction in a single message rather than a follow-up it can't
+		// tie back to this FAQ.
+		return `The FAQ “${target.question}” currently says:\n  ${snippet(target.answer)}\nTo change it, send the whole instruction in one message, e.g. “update the FAQ about ${intent.topic} to say <your new answer>”.`;
 	}
 	const parsed = updateFaqSchema.safeParse({ answer: intent.answer });
 	if (!parsed.success) {
@@ -279,9 +305,10 @@ async function faqCreateReply(
 		return 'Sure — what question should the FAQ answer, and what’s the answer? For example: “add an FAQ question: Do you offer refunds? answer: Yes, within 30 days.”';
 	}
 	// The parser only fills `answer` alongside a `question`, so a lone question here
-	// means we still need the answer before we can file it.
+	// means we still need the answer. Rivus has no memory of this turn, so ask for
+	// the full command in one message rather than a follow-up.
 	if (intent.answer === null) {
-		return `Got it — the question is “${intent.question}”. What should the answer be?`;
+		return `Got it — the question is “${intent.question}”. Send it in one message with the answer, e.g. “add an FAQ question: ${intent.question} answer: <your answer>”.`;
 	}
 	const parsed = createFaqSchema.safeParse({ question: intent.question, answer: intent.answer });
 	if (!parsed.success) {

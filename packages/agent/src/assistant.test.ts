@@ -354,7 +354,9 @@ describe('respond — knowledge base writes', () => {
 			fetchImpl: router([{ when: onListFaqs, body: page(faqs) }]),
 		});
 		expect(reply).toMatch(/currently says/i);
-		expect(reply).toMatch(/what should the new answer be/i);
+		// Stateless: it asks for the whole instruction in one message, not a follow-up.
+		expect(reply).toMatch(/in one message/i);
+		expect(reply).toMatch(/to say/i);
 	});
 
 	it('asks which FAQ when several match', async () => {
@@ -421,7 +423,27 @@ describe('respond — knowledge base writes', () => {
 			token: TOKEN,
 			fetchImpl: router([]),
 		});
-		expect(reply).toMatch(/what should the answer be/i);
+		expect(reply).toMatch(/in one message/i);
+		expect(reply).toMatch(/warranty/i);
+	});
+
+	it('searches every page of a large knowledge base before reporting a miss', async () => {
+		// Page 1 is full and signals more; the match lives on page 2. A single-page
+		// scan would wrongly report "nothing found".
+		const filler = Array.from({ length: 100 }, (_, i) =>
+			makeFaq({ id: `f${i}`, question: `Filler ${i}?`, answer: 'n/a' }),
+		);
+		const target = makeFaq({ id: 'target', question: 'What is your refund policy?', answer: 'X.' });
+		const firstPage = page(filler);
+		const fetchImpl = router([
+			{
+				when: (url, method) => method === 'GET' && url.includes('page=1'),
+				body: { data: filler, meta: { ...firstPage.meta, hasNextPage: true } },
+			},
+			{ when: (url, method) => method === 'GET' && url.includes('page=2'), body: page([target]) },
+		]);
+		const reply = await ask('search faqs for refund', { token: TOKEN, fetchImpl });
+		expect(reply).toContain('What is your refund policy?');
 	});
 
 	it('asks for both parts when neither is given', async () => {

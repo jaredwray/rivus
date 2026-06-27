@@ -260,6 +260,42 @@ describe('handleChat', () => {
 		);
 	});
 
+	it('blocks a cookie-authenticated POST from a disallowed origin (CSRF guard)', async () => {
+		const env = { ALLOWED_ORIGINS: 'https://app.rivus.ai' } as Env;
+		const response = await handleChat(
+			request('/agents/rivus-agent/default', {
+				method: 'POST',
+				headers: {
+					Origin: 'https://evil.example',
+					cookie: 'rivus_session=some.jwt.value',
+					'content-type': 'application/json',
+				},
+				body: JSON.stringify({ messages: [{ role: 'user', content: 'update a faq' }] }),
+			}),
+			env,
+		);
+		expect(response.status).toBe(403);
+	});
+
+	it('does not CSRF-block a bearer POST (not forgeable cross-site)', async () => {
+		const env = { ALLOWED_ORIGINS: 'https://app.rivus.ai' } as Env;
+		const response = await handleChat(
+			request('/agents/rivus-agent/default', {
+				method: 'POST',
+				headers: {
+					Origin: 'https://evil.example',
+					Authorization: 'Bearer not.a.real.token',
+					'content-type': 'application/json',
+				},
+				body: JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }),
+			}),
+			env,
+		);
+		// Bearer tokens can't be forged cross-site, so this isn't blocked — it just
+		// isn't authenticated, so Rivus greets and nudges to sign in.
+		expect(response.status).toBe(200);
+	});
+
 	it('rejects other methods with 405', async () => {
 		const response = await handleChat(request('/agents/rivus-agent/default', { method: 'DELETE' }));
 		expect(response.status).toBe(405);

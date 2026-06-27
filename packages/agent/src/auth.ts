@@ -123,7 +123,8 @@ export async function verifySessionToken(
 	const header = decodeJson(headerSegment);
 	// Only accept HS256 — the algorithm the API signs with. Honouring the token's
 	// own `alg` blindly would let an attacker downgrade to `none` or swap algorithms.
-	if (!header || header.alg !== 'HS256') {
+	// (A null header — malformed segment — also fails this check.)
+	if (header?.alg !== 'HS256') {
 		return null;
 	}
 

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { respond } from './assistant';
+import { parseCookies, SESSION_COOKIE } from './auth';
 import { replyTo } from './conversation';
 import type { ChatMessage, Env } from './types';
 
@@ -171,9 +172,50 @@ export async function handleChat(
 			env,
 		);
 	}
+	const csrf = csrfBlock(request, env);
+	if (csrf) {
+		return csrf;
+	}
 	const messages = parseMessages(await readJson(request));
 	const reply = await respond({ env: env ?? ({} as Env), request, messages, fetchImpl });
 	return jsonResponse({ reply }, request, 200, env);
+}
+
+/**
+ * CSRF guard for cookie-authenticated POSTs. CORS only controls whether the
+ * browser may *read* the response — it doesn't stop the request from running and
+ * mutating data (create/update FAQ). A `rivus_session` cookie scoped to the parent
+ * domain rides along on same-site requests (SameSite=Lax), so a malicious or
+ * compromised sibling subdomain could drive a write. Bearer requests aren't
+ * CSRF-able (an attacker can't supply the token), so we guard only requests that
+ * carry the cookie and no `Authorization` header, and require an allowlisted
+ * `Origin` — mirroring the API's CSRF hook. Skipped in local-dev wildcard mode.
+ */
+function csrfBlock(request: Request, env?: Env): Response | null {
+	const list = (env?.ALLOWED_ORIGINS ?? '*')
+		.split(',')
+		.map((entry) => entry.trim())
+		.filter(Boolean);
+	if (list.includes('*')) {
+		// Local development (wildcard CORS) stays permissive, like the API.
+		return null;
+	}
+	const cookieAuthed =
+		SESSION_COOKIE in parseCookies(request.headers.get('cookie')) &&
+		!request.headers.get('authorization');
+	if (!cookieAuthed) {
+		return null;
+	}
+	const origin = request.headers.get('Origin');
+	if (origin && originAllowed(origin, env?.ALLOWED_ORIGINS, env?.NODE_ENV)) {
+		return null;
+	}
+	return jsonResponse(
+		{ error: 'Forbidden', message: 'Cross-origin request blocked' },
+		request,
+		403,
+		env,
+	);
 }
 
 /**

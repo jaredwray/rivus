@@ -1,13 +1,15 @@
-import type {
-	Account,
-	AccountId,
-	CreateFaqInput,
-	Faq,
-	FaqId,
-	Role,
-	UpdateFaqInput,
-	User,
-	UserId,
+import {
+	type Account,
+	type AccountId,
+	accountStatusSchema,
+	type CreateFaqInput,
+	type Faq,
+	type FaqId,
+	faqStatusSchema,
+	roleSchema,
+	type UpdateFaqInput,
+	type User,
+	type UserId,
 } from '@rivus/core';
 import { z } from 'zod';
 
@@ -57,18 +59,17 @@ const accountSchema = z.object({
 	address: z.string(),
 	website: z.string(),
 	timezone: z.string(),
-	status: z.enum(['active', 'canceled']),
+	// Reuse the core enums so the agent never drifts from the API's source of truth.
+	status: accountStatusSchema,
 	canceledAt: z.string().nullable(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
 }) satisfies z.ZodType<Account>;
 
-const roleSchemaLocal: z.ZodType<Role> = z.enum(['owner', 'manager', 'member']);
-
 const sessionSchema = z.object({
 	user: userSchema,
 	account: accountSchema,
-	role: roleSchemaLocal,
+	role: roleSchema,
 });
 export type SessionView = z.infer<typeof sessionSchema>;
 
@@ -78,7 +79,7 @@ const faqSchema = z.object({
 	question: z.string(),
 	answer: z.string(),
 	category: z.string(),
-	status: z.enum(['published', 'draft']),
+	status: faqStatusSchema,
 	createdAt: z.string(),
 	updatedAt: z.string(),
 }) satisfies z.ZodType<Faq>;
