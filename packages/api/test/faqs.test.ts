@@ -483,4 +483,48 @@ describe('POST /v1/faqs/answer', () => {
 		expect(received[0]?.question).toBe('Do you offer refunds?');
 		await app.close();
 	});
+
+	it('never answers from or cites a draft FAQ', async () => {
+		let received: Faq[] = [];
+		const stub: FaqAnswerService = {
+			async answer(_input, candidates): Promise<FaqAnswer> {
+				received = candidates;
+				// Echo whatever it was given as the source, to prove drafts can't leak.
+				const [first] = candidates;
+				return first
+					? { answered: true, answer: first.answer, sources: [first.id] }
+					: { answered: false, answer: '', sources: [] };
+			},
+		};
+		const app = await buildTestApp({ faqAnswer: stub });
+		const token = (await signupOwner(app)).token;
+		// A published FAQ and a draft FAQ holding unreleased pricing.
+		await app.inject({
+			method: 'POST',
+			url: '/v1/faqs',
+			headers: authHeader(token),
+			payload: { question: 'What are your hours?', answer: '9 to 5.', status: 'published' },
+		});
+		await app.inject({
+			method: 'POST',
+			url: '/v1/faqs',
+			headers: authHeader(token),
+			payload: { question: 'Upcoming price?', answer: 'SECRET draft pricing.', status: 'draft' },
+		});
+
+		const response = await app.inject({
+			method: 'POST',
+			url: '/v1/faqs/answer',
+			headers: authHeader(token),
+			payload: { question: 'price?' },
+		});
+
+		expect(response.statusCode).toBe(200);
+		// Only the published FAQ is ever handed to the answering service…
+		expect(received).toHaveLength(1);
+		expect(received[0]?.status).toBe('published');
+		// …and the draft's content never appears in the reply.
+		expect(response.json().answer).not.toContain('SECRET');
+		await app.close();
+	});
 });

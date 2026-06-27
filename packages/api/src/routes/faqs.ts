@@ -134,11 +134,15 @@ export const faqRoutes: FastifyPluginAsync = async (fastify) => {
 			const { question } = request.body;
 
 			// The newest page of FAQs is the knowledge base the answer is grounded in.
-			const { faqs: candidates } = await faqs.list({
+			const { faqs: page } = await faqs.list({
 				accountId,
 				page: 1,
 				pageSize: ANSWER_CANDIDATE_LIMIT,
 			});
+			// Only published FAQs are customer-facing. Drafts are staged and not yet
+			// live, so the answer must never be grounded in — or cite — draft content
+			// (e.g. unreleased pricing or policies).
+			const candidates = page.filter((faq) => faq.status === 'published');
 
 			const result = await faqAnswer.answer({ question }, candidates);
 			// Resolve the cited ids back to questions for the response, scoped to this

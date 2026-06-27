@@ -15,8 +15,13 @@ import type { Config } from '../config';
  */
 const MAX_CANDIDATES = 24;
 const MAX_OUTPUT_TOKENS = 700;
-/** Trim each FAQ answer sent in the prompt so a few long ones can't blow the budget. */
-const MAX_ANSWER_IN_PROMPT = 600;
+// Send each FAQ's full stored answer so a fact late in a long answer (the FAQ
+// field allows up to 4000 chars) is still visible to the model — truncating to a
+// short prefix could hide exactly the detail the question asks about. This equals
+// the FAQ answer field cap, so a valid answer is passed through whole (whitespace
+// collapsed); it only bounds malformed, over-long data. With MAX_CANDIDATES this
+// keeps the prompt bounded.
+const MAX_ANSWER_IN_PROMPT = 4000;
 /** Keep the composed answer chat-sized. */
 const MAX_ANSWER_LENGTH = 1200;
 

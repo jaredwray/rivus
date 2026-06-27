@@ -177,6 +177,24 @@ describe('AiFaqAnswerService.answer', () => {
 		expect(result.answer.length).toBeLessThanOrEqual(1200);
 	});
 
+	it('sends the full FAQ answer to the model, not just a short prefix', async () => {
+		// A fact buried past the first several hundred characters must still reach the
+		// model — FAQ answers can be up to 4000 chars and the question may target the end.
+		const longAnswer = `${'Filler sentence. '.repeat(60)}The weekend rate is $85.`;
+		expect(longAnswer.length).toBeGreaterThan(900);
+		const { generate, mock } = fakeGenerate(() => ({
+			object: { answered: true, answer: 'The weekend rate is $85.', faqIds: ['faq-1'] },
+		}));
+		const service = new AiFaqAnswerService({ models: [PRIMARY], generate });
+
+		await service.answer({ question: 'what is the weekend rate?' }, [
+			makeFaq({ answer: longAnswer }),
+		]);
+
+		const options = mock.mock.calls[0]?.[0] as { prompt: string };
+		expect(options.prompt).toContain('The weekend rate is $85.');
+	});
+
 	it('keeps the answer but drops sources when the only cited id is unusable and nothing overlaps', async () => {
 		// The model answered and cited only a hallucinated id; the question shares no
 		// keyword with the FAQ, so there's no closest fallback — we return the answer
