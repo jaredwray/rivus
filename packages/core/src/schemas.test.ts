@@ -265,7 +265,6 @@ describe('createCustomerSchema', () => {
 			email: '',
 			phone: '',
 			address: '',
-			status: 'lead',
 			lifetimeValue: 0,
 			balance: 0,
 			notes: '',
@@ -278,17 +277,12 @@ describe('createCustomerSchema', () => {
 			email: '  Priya@Example.COM ',
 			phone: '(206) 555-0119',
 			address: 'Capitol Hill',
-			status: 'due',
 			lifetimeValue: 526_000,
 			balance: 54_000,
 			notes: 'Billing flag',
 		});
 		expect(parsed.email).toBe('priya@example.com');
-		expect(parsed).toMatchObject({ status: 'due', balance: 54_000 });
-	});
-
-	it('rejects an unknown status', () => {
-		expect(() => createCustomerSchema.parse({ name: 'X', status: 'cold' })).toThrow();
+		expect(parsed).toMatchObject({ balance: 54_000 });
 	});
 
 	it('rejects negative money', () => {
@@ -309,7 +303,7 @@ describe('createCustomerSchema', () => {
 
 describe('updateCustomerSchema', () => {
 	it('accepts a partial update of one field', () => {
-		expect(updateCustomerSchema.parse({ status: 'paid' })).toEqual({ status: 'paid' });
+		expect(updateCustomerSchema.parse({ balance: 5_000 })).toEqual({ balance: 5_000 });
 	});
 
 	it('rejects an empty update', () => {

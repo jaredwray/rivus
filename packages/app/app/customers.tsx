@@ -1,4 +1,3 @@
-import type { CustomerStatus } from '@rivus/core';
 import { type ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
 import {
 	ActivityIndicator,
@@ -19,9 +18,7 @@ import {
 	GradientButton,
 	Icon,
 	OutlineButton,
-	Pill,
 	SectionLabel,
-	Segmented,
 	TextField,
 	Txt,
 } from '@/src/components/ui';
@@ -32,21 +29,6 @@ const COLS = {
 	address: 1.3,
 	lifetime: 1,
 	balance: 1.2,
-	status: 1.1,
-};
-
-const STATUS_OPTIONS: { label: string; value: CustomerStatus }[] = [
-	{ label: 'Lead', value: 'lead' },
-	{ label: 'Quote', value: 'quote' },
-	{ label: 'Paid', value: 'paid' },
-	{ label: 'Due', value: 'due' },
-];
-
-const STATUS_STYLE: Record<CustomerStatus, { label: string; color: string; background: string }> = {
-	paid: { label: 'Paid up', color: colors.green, background: 'rgba(31,181,115,0.12)' },
-	due: { label: 'Balance due', color: colors.redInk, background: 'rgba(240,88,75,0.12)' },
-	quote: { label: 'Quote pending', color: colors.amberInk, background: 'rgba(240,160,32,0.14)' },
-	lead: { label: 'New lead', color: colors.brandPurple, background: 'rgba(110,30,200,0.10)' },
 };
 
 /** Format integer cents as a grouped dollar string (54000 → "$540.00"). */
@@ -101,7 +83,6 @@ export default function CustomersScreen() {
 	const [email, setEmail] = useState('');
 	const [phone, setPhone] = useState('');
 	const [address, setAddress] = useState('');
-	const [status, setStatus] = useState<CustomerStatus>('lead');
 	const [lifetime, setLifetime] = useState('');
 	const [balance, setBalance] = useState('');
 	const [notes, setNotes] = useState('');
@@ -168,7 +149,6 @@ export default function CustomersScreen() {
 		setEmail('');
 		setPhone('');
 		setAddress('');
-		setStatus('lead');
 		setLifetime('');
 		setBalance('');
 		setNotes('');
@@ -187,7 +167,6 @@ export default function CustomersScreen() {
 		setEmail(customer.email);
 		setPhone(customer.phone);
 		setAddress(customer.address);
-		setStatus(customer.status);
 		setLifetime(centsToInput(customer.lifetimeValue));
 		setBalance(centsToInput(customer.balance));
 		setNotes(customer.notes);
@@ -219,7 +198,6 @@ export default function CustomersScreen() {
 				email: email.trim(),
 				phone: phone.trim(),
 				address: address.trim(),
-				status,
 				lifetimeValue,
 				balance: balanceValue,
 				notes: notes.trim(),
@@ -318,10 +296,6 @@ export default function CustomersScreen() {
 							placeholder="1 Main St, Seattle, WA"
 							apiKey={mapsApiKey}
 						/>
-						<View style={styles.fieldWrap}>
-							<Txt style={styles.fieldLabel}>Status</Txt>
-							<Segmented options={STATUS_OPTIONS} value={status} onChange={setStatus} />
-						</View>
 						<View style={styles.formRow}>
 							<View style={styles.formCol}>
 								<TextField
@@ -388,11 +362,9 @@ export default function CustomersScreen() {
 								<Txt style={[styles.th, { flex: COLS.address }]}>Address</Txt>
 								<Txt style={[styles.th, styles.right, { flex: COLS.lifetime }]}>Lifetime</Txt>
 								<Txt style={[styles.th, styles.right, { flex: COLS.balance }]}>Balance</Txt>
-								<Txt style={[styles.th, styles.right, { flex: COLS.status }]}>Status</Txt>
 								<View style={styles.editCol} />
 							</View>
 							{list.map((customer, index) => {
-								const st = STATUS_STYLE[customer.status];
 								const isSelected = customer.id === selected?.id;
 								return (
 									<Pressable
@@ -419,9 +391,6 @@ export default function CustomersScreen() {
 										<Txt style={[styles.td, styles.right, styles.tdBold, { flex: COLS.balance }]}>
 											{formatMoney(customer.balance)}
 										</Txt>
-										<View style={[styles.cell, styles.statusCell, { flex: COLS.status }]}>
-											<Pill label={st.label} color={st.color} background={st.background} />
-										</View>
 										<Pressable
 											style={styles.editCol}
 											onPress={() => openEdit(customer)}
@@ -465,7 +434,6 @@ function ContactRow({
 }
 
 function AccountPanel({ customer, onEdit }: { customer: Customer; onEdit: () => void }) {
-	const st = STATUS_STYLE[customer.status];
 	const since = new Date(customer.createdAt).getFullYear();
 	return (
 		<ScrollView style={styles.panel} contentContainerStyle={styles.panelPad}>
@@ -478,10 +446,6 @@ function AccountPanel({ customer, onEdit }: { customer: Customer; onEdit: () => 
 						{customer.address ? `${customer.address} · ` : ''}Customer since {since}
 					</Txt>
 				</View>
-			</View>
-
-			<View style={styles.pillRow}>
-				<Pill label={st.label} color={st.color} background={st.background} />
 			</View>
 
 			<View style={styles.billCard}>
@@ -544,8 +508,6 @@ const styles = StyleSheet.create({
 	formTitle: { fontFamily: font.semibold, fontSize: 15, color: colors.text },
 	formRow: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
 	formCol: { flexGrow: 1, flexBasis: 180 },
-	fieldWrap: { gap: 6 },
-	fieldLabel: { fontFamily: font.semibold, fontSize: 12.5, color: colors.textSub },
 	notesInput: { minHeight: 80, textAlignVertical: 'top' },
 	btnRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
 	btnGrow: { flexGrow: 1, flexBasis: 140 },
@@ -594,7 +556,6 @@ const styles = StyleSheet.create({
 	td: { fontFamily: font.regular, fontSize: 13, color: colors.textSub },
 	tdMed: { fontFamily: font.medium, color: colors.text },
 	tdBold: { fontFamily: font.semibold, color: colors.text },
-	statusCell: { justifyContent: 'flex-end' },
 	editCol: { width: 30, alignItems: 'flex-end' },
 
 	// Panel
@@ -610,7 +571,6 @@ const styles = StyleSheet.create({
 	acctHead: { flexDirection: 'row', alignItems: 'center', gap: 13, marginBottom: 14 },
 	acctName: { fontFamily: font.semibold, fontSize: 16 },
 	acctSub: { fontFamily: font.regular, fontSize: 12.5, color: colors.textMuted },
-	pillRow: { marginBottom: 14 },
 	billCard: {
 		backgroundColor: colors.surface,
 		borderWidth: 1,

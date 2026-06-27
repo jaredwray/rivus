@@ -592,7 +592,6 @@ export class InMemoryCustomerRepository implements CustomerRepository {
 			email: input.email,
 			phone: input.phone,
 			address: input.address,
-			status: input.status,
 			lifetimeValue: input.lifetimeValue,
 			balance: input.balance,
 			notes: input.notes,

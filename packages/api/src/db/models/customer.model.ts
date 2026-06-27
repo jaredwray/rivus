@@ -14,7 +14,6 @@ export interface CustomerDocument {
 	 * existing customers have been backfilled.
 	 */
 	area?: string;
-	status: 'lead' | 'quote' | 'paid' | 'due';
 	lifetimeValue: number;
 	balance: number;
 	notes: string;
@@ -33,7 +32,6 @@ const customerSchema = new Schema<CustomerDocument>(
 		// written to new documents, but it is still read back for pre-rename records
 		// (see the fallback in `mapCustomer`).
 		area: { type: String, trim: true },
-		status: { type: String, enum: ['lead', 'quote', 'paid', 'due'], default: 'lead' },
 		lifetimeValue: { type: Number, default: 0 },
 		balance: { type: Number, default: 0 },
 		notes: { type: String, default: '', trim: true },

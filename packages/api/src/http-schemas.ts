@@ -1,10 +1,4 @@
-import {
-	accountStatusSchema,
-	customerStatusSchema,
-	faqStatusSchema,
-	itemStatusSchema,
-	roleSchema,
-} from '@rivus/core';
+import { accountStatusSchema, faqStatusSchema, itemStatusSchema, roleSchema } from '@rivus/core';
 import { z } from 'zod';
 
 /** Public user projection — never includes the password hash. */
@@ -167,7 +161,6 @@ export const customerResponseSchema = z
 		email: z.string(),
 		phone: z.string(),
 		address: z.string(),
-		status: customerStatusSchema,
 		lifetimeValue: z.number().int(),
 		balance: z.number().int(),
 		notes: z.string(),

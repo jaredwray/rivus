@@ -87,7 +87,6 @@ function makeCustomer() {
 		email: faker.internet.email().toLowerCase(),
 		phone: faker.phone.number(),
 		address: faker.location.streetAddress(),
-		status: faker.helpers.arrayElement(['lead', 'quote', 'paid', 'due'] as const),
 		lifetimeValue: faker.number.int({ min: 0, max: 1_000_000 }),
 		balance: faker.number.int({ min: 0, max: 100_000 }),
 		notes: faker.lorem.sentence(),
@@ -770,7 +769,6 @@ describe('createApiClient', () => {
 			const result = await client.createCustomer('owner-token', {
 				name: customer.name,
 				email: customer.email,
-				status: customer.status,
 				lifetimeValue: customer.lifetimeValue,
 				balance: customer.balance,
 			});
@@ -801,7 +799,6 @@ describe('createApiClient', () => {
 				email: '',
 				phone: '',
 				address: '',
-				status: 'lead',
 				lifetimeValue: 0,
 				balance: 0,
 				notes: '',
@@ -841,20 +838,19 @@ describe('createApiClient', () => {
 
 	describe('updateCustomer', () => {
 		it('PATCHes the customer with the bearer token and returns it', async () => {
-			const customer = { ...makeCustomer(), status: 'paid' as const };
+			const customer = { ...makeCustomer(), balance: 12_500 };
 			fetchMock.mockResolvedValueOnce(jsonResponse(customer));
 
 			const client = createApiClient(BASE, fetchMock);
 			const result = await client.updateCustomer('owner-token', customer.id as CustomerId, {
-				status: 'paid',
-				balance: 0,
+				balance: 12_500,
 			});
 
-			expect(result.status).toBe('paid');
+			expect(result.balance).toBe(12_500);
 			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
 			expect(url).toBe(`${BASE}/v1/customers/${customer.id}`);
 			expect(init.method).toBe('PATCH');
-			expect(JSON.parse(init.body as string)).toEqual({ status: 'paid', balance: 0 });
+			expect(JSON.parse(init.body as string)).toEqual({ balance: 12_500 });
 			expect(init.headers).toMatchObject({ Authorization: 'Bearer owner-token' });
 		});
 

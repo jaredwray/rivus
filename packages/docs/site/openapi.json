@@ -2018,16 +2018,6 @@
                     "type": "string",
                     "maxLength": 300
                   },
-                  "status": {
-                    "default": "lead",
-                    "type": "string",
-                    "enum": [
-                      "lead",
-                      "quote",
-                      "paid",
-                      "due"
-                    ]
-                  },
                   "lifetimeValue": {
                     "default": 0,
                     "type": "integer",
@@ -2175,15 +2165,6 @@
                   "address": {
                     "type": "string",
                     "maxLength": 300
-                  },
-                  "status": {
-                    "type": "string",
-                    "enum": [
-                      "lead",
-                      "quote",
-                      "paid",
-                      "due"
-                    ]
                   },
                   "lifetimeValue": {
                     "type": "integer",
