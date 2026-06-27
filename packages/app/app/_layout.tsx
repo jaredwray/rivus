@@ -14,9 +14,11 @@ import {
 	ActivityIndicator,
 	Pressable,
 	ScrollView,
+	type StyleProp,
 	StyleSheet,
 	useWindowDimensions,
 	View,
+	type ViewStyle,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthProvider, initialsOf, roleLabel, useAuth } from '@/src/auth/AuthContext';
@@ -172,6 +174,26 @@ function Shell() {
 	);
 }
 
+/**
+ * The Rivus wordmark, linking back to Home. Shared by the wide sidebar and the
+ * compact top bar so the brand mark is a consistent "return to dashboard" tap
+ * target on every breakpoint.
+ */
+function HomeLink({ height, style }: { height: number; style?: StyleProp<ViewStyle> }) {
+	const router = useRouter();
+	return (
+		<Pressable
+			style={style}
+			onPress={() => router.push('/')}
+			accessibilityRole="link"
+			accessibilityLabel="Rivus home"
+			hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+		>
+			<RivusWordmark height={height} />
+		</Pressable>
+	);
+}
+
 /* ------------------------------- Wide layout ------------------------------ */
 
 function Sidebar() {
@@ -183,9 +205,7 @@ function Sidebar() {
 
 	return (
 		<View style={styles.sidebar}>
-			<View style={styles.sidebarLogo}>
-				<RivusWordmark height={24} />
-			</View>
+			<HomeLink height={24} style={styles.sidebarLogo} />
 
 			<View style={styles.nav}>
 				{navFor(session?.role).map((item) => {
@@ -263,7 +283,7 @@ function CompactBar() {
 	const insets = useSafeAreaInsets();
 	return (
 		<View style={[styles.compactBar, { paddingTop: insets.top + 12 }]}>
-			<RivusWordmark height={20} />
+			<HomeLink height={20} />
 			<View style={styles.compactRight}>
 				<View style={styles.compactStatus}>
 					<Dot color={colors.green} size={7} />
