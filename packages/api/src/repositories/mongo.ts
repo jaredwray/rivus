@@ -917,12 +917,19 @@ export class MongoJobRepository implements JobRepository {
 		}
 		const windowStart = new Date(options.startAt);
 		const windowEnd = new Date(options.endAt);
+		// Durations are capped at 24h (see `durationMinutesSchema`), so any job that
+		// starts more than 24h before the window can't possibly still be running when
+		// it opens. Bounding `startAt` from below keeps this indexed query to the
+		// handful of candidates around the window instead of scanning the assignee's
+		// whole history on every conflict check.
+		const earliestPossibleStart = new Date(windowStart.getTime() - 1440 * 60_000);
 		const filter: Record<string, unknown> = {
 			accountId: new Types.ObjectId(options.accountId),
 			assignedUserId: options.assignedUserId,
 			status: { $ne: 'canceled' },
-			// Existing job must start before the window ends; the index serves this.
-			startAt: { $lt: windowEnd },
+			// Existing job must start within [windowStart-24h, windowEnd) to overlap;
+			// the compound index serves this range.
+			startAt: { $gte: earliestPossibleStart, $lt: windowEnd },
 		};
 		if (options.excludeJobId && Types.ObjectId.isValid(options.excludeJobId)) {
 			filter._id = { $ne: new Types.ObjectId(options.excludeJobId) };

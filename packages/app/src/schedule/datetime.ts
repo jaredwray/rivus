@@ -7,9 +7,12 @@
 // case for a single-location home-services business. Rendering in the account's
 // IANA zone regardless of device is a deliberate follow-up.
 
-/** The grid spans these hours (24h), one row per hour. */
-export const GRID_START_HOUR = 7;
-export const GRID_END_HOUR = 19;
+// The grid spans these hours (24h), one row per hour. They match `timeOptions`'
+// default window (6 AM–8 PM) so every selectable start time is visible on the
+// grid — a job booked at the earliest/latest slot is never clipped by the
+// day column's `overflow: hidden`.
+export const GRID_START_HOUR = 6;
+export const GRID_END_HOUR = 20;
 /** Pixel height of one hour row in the week/day grid. */
 export const HOUR_HEIGHT = 56;
 /** Minimum rendered height of an event so very short jobs stay tappable. */
@@ -184,13 +187,73 @@ export function gridHours(): number[] {
 	return hours;
 }
 
+export interface LanePlacement {
+	/** 0-based column this event sits in within its overlap cluster. */
+	lane: number;
+	/** Number of side-by-side columns the event's cluster needs. */
+	columns: number;
+}
+
+/**
+ * Pack a day's events into side-by-side lanes so overlapping jobs (the API allows
+ * double-booking) render next to each other instead of on top of one another.
+ *
+ * Events must be sorted by start ascending. Returns a placement parallel to the
+ * input: each event's `lane` and the `columns` (max concurrency) of the cluster of
+ * transitively-overlapping events it belongs to — so non-overlapping jobs stay
+ * full width while only the actually-overlapping ones split.
+ */
+export function packLanes(events: { startAt: string; durationMinutes: number }[]): LanePlacement[] {
+	const startMs = (event: { startAt: string }) => Date.parse(event.startAt);
+	const endMs = (event: { startAt: string; durationMinutes: number }) =>
+		Date.parse(event.startAt) + event.durationMinutes * 60_000;
+
+	const placements: LanePlacement[] = new Array(events.length);
+	let index = 0;
+	while (index < events.length) {
+		// Grow a cluster of transitively-overlapping events (sorted, so a new event
+		// joins while it starts before the cluster's running max end).
+		let clusterEnd = endMs(events[index]);
+		const members = [index];
+		let next = index + 1;
+		while (next < events.length && startMs(events[next]) < clusterEnd) {
+			clusterEnd = Math.max(clusterEnd, endMs(events[next]));
+			members.push(next);
+			next += 1;
+		}
+		// First-fit lane assignment within the cluster.
+		const laneEnds: number[] = [];
+		for (const member of members) {
+			let lane = laneEnds.findIndex((end) => end <= startMs(events[member]));
+			if (lane === -1) {
+				lane = laneEnds.length;
+			}
+			laneEnds[lane] = endMs(events[member]);
+			placements[member] = { lane, columns: 0 };
+		}
+		for (const member of members) {
+			placements[member].columns = laneEnds.length;
+		}
+		index = next;
+	}
+	return placements;
+}
+
 export interface Option {
 	label: string;
 	value: string;
 }
 
-/** Selectable start times across the working day, every `stepMinutes`. */
-export function timeOptions(stepMinutes = 30, startHour = 6, endHour = 20): Option[] {
+/**
+ * Selectable start times across the working day, every `stepMinutes`. Defaults to
+ * the grid window so every offered start is visible on the calendar (see
+ * {@link GRID_START_HOUR}/{@link GRID_END_HOUR}).
+ */
+export function timeOptions(
+	stepMinutes = 30,
+	startHour = GRID_START_HOUR,
+	endHour = GRID_END_HOUR,
+): Option[] {
 	const options: Option[] = [];
 	for (let minutes = startHour * 60; minutes <= endHour * 60; minutes += stepMinutes) {
 		options.push({ label: formatTimeLabel(minutes), value: String(minutes) });

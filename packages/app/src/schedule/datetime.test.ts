@@ -10,11 +10,17 @@ import {
 	isoFromKeyAndMinutes,
 	isValidDateKey,
 	minutesSinceMidnight,
+	packLanes,
 	placeEvent,
 	startOfWeek,
 	weekDays,
 	weekRange,
 } from './datetime';
+
+/** Build an event whose start is `minutes` into 2026-06-24, lasting `duration`. */
+function ev(minutes: number, duration: number) {
+	return { startAt: isoFromKeyAndMinutes('2026-06-24', minutes), durationMinutes: duration };
+}
 
 describe('formatTimeLabel', () => {
 	it('formats minutes-of-day on a 12-hour clock', () => {
@@ -97,6 +103,57 @@ describe('weekRange / dayRange', () => {
 	it('returns a one-day window', () => {
 		const { from, to } = dayRange(new Date(2026, 5, 24));
 		expect(Date.parse(to) - Date.parse(from)).toBe(86_400_000);
+	});
+});
+
+describe('packLanes', () => {
+	it('keeps non-overlapping jobs full width (single column)', () => {
+		const lanes = packLanes([ev(9 * 60, 60), ev(10 * 60, 60), ev(11 * 60, 60)]);
+		expect(lanes).toEqual([
+			{ lane: 0, columns: 1 },
+			{ lane: 0, columns: 1 },
+			{ lane: 0, columns: 1 },
+		]);
+	});
+
+	it('splits two overlapping jobs into two lanes', () => {
+		// 9:00–10:00 and 9:30–10:30 overlap.
+		const lanes = packLanes([ev(9 * 60, 60), ev(9 * 60 + 30, 60)]);
+		expect(lanes).toEqual([
+			{ lane: 0, columns: 2 },
+			{ lane: 1, columns: 2 },
+		]);
+	});
+
+	it('treats back-to-back (touching) jobs as non-overlapping', () => {
+		const lanes = packLanes([ev(9 * 60, 60), ev(10 * 60, 60)]);
+		expect(lanes).toEqual([
+			{ lane: 0, columns: 1 },
+			{ lane: 0, columns: 1 },
+		]);
+	});
+
+	it('sizes each overlap cluster independently', () => {
+		// Cluster A: 9:00–10:00 + 9:30–10:30 (2 cols). Separate: 11:00–12:00 (1 col).
+		const lanes = packLanes([ev(9 * 60, 60), ev(9 * 60 + 30, 60), ev(11 * 60, 60)]);
+		expect(lanes).toEqual([
+			{ lane: 0, columns: 2 },
+			{ lane: 1, columns: 2 },
+			{ lane: 0, columns: 1 },
+		]);
+	});
+
+	it('reuses a freed lane within a cluster', () => {
+		// 9:00–10:00, 9:15–9:45 (overlaps first → lane 1), 9:50–10:30 (first lane free at 10:00? no,
+		// starts 9:50 < 10:00 so still overlaps lane 0; lane 1 freed at 9:45 → reuse lane 1).
+		const lanes = packLanes([ev(540, 60), ev(555, 30), ev(590, 40)]);
+		expect(lanes[0]).toEqual({ lane: 0, columns: 2 });
+		expect(lanes[1]).toEqual({ lane: 1, columns: 2 });
+		expect(lanes[2]).toEqual({ lane: 1, columns: 2 });
+	});
+
+	it('returns an empty placement for no events', () => {
+		expect(packLanes([])).toEqual([]);
 	});
 });
 

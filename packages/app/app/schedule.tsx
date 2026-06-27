@@ -2,6 +2,7 @@ import type { JobStatus } from '@rivus/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
 	ActivityIndicator,
+	Alert,
 	Platform,
 	Pressable,
 	ScrollView,
@@ -29,6 +30,7 @@ import {
 	addDays,
 	type DayCell,
 	DURATION_OPTIONS,
+	dateFromKeyAndMinutes,
 	dayRange,
 	formatClock,
 	formatDayLabel,
@@ -38,8 +40,10 @@ import {
 	HOUR_HEIGHT,
 	isoFromKeyAndMinutes,
 	isValidDateKey,
+	type LanePlacement,
 	localDateKey,
 	minutesSinceMidnight,
+	packLanes,
 	placeEvent,
 	startOfDay,
 	startOfWeek,
@@ -51,6 +55,10 @@ import { colors, font, radii, SIDEBAR_BREAKPOINT, SIDEBAR_WIDTH } from '@/src/th
 
 const GUTTER = 58;
 const MIN_DAY_WIDTH = 132;
+// Expand the touch target of small icon buttons to the ~44dp mobile minimum
+// without changing their visual size.
+const NAV_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 };
+const CLOSE_HIT_SLOP = { top: 13, bottom: 13, left: 13, right: 13 };
 
 type ScheduleView = 'week' | 'day' | 'list';
 
@@ -368,14 +376,14 @@ export default function ScheduleScreen() {
 		}
 	}
 
-	async function onDelete() {
-		if (!session || !editing || deleting) {
+	async function performDelete(job: Job) {
+		if (!session) {
 			return;
 		}
 		setFormError(null);
 		setDeleting(true);
 		try {
-			await client.deleteJob(session.token, editing.id);
+			await client.deleteJob(session.token, job.id);
 			closeForm();
 			await load();
 		} catch (caught) {
@@ -383,6 +391,26 @@ export default function ScheduleScreen() {
 		} finally {
 			setDeleting(false);
 		}
+	}
+
+	// Deleting a job is irreversible, so confirm first — a native alert on device,
+	// the browser's confirm on web (RN's Alert is a no-op under react-native-web).
+	function onDelete() {
+		if (!editing || deleting) {
+			return;
+		}
+		const job = editing;
+		const message = `Delete "${job.title}"? This can't be undone.`;
+		if (Platform.OS === 'web') {
+			if (typeof window !== 'undefined' && window.confirm(message)) {
+				performDelete(job);
+			}
+			return;
+		}
+		Alert.alert('Delete job', message, [
+			{ text: 'Cancel', style: 'cancel' },
+			{ text: 'Delete', style: 'destructive', onPress: () => performDelete(job) },
+		]);
 	}
 
 	if (!session) {
@@ -419,6 +447,8 @@ export default function ScheduleScreen() {
 								style={styles.navBtn}
 								onPress={() => setAnchor((current) => addDays(current, -navStep))}
 								accessibilityRole="button"
+								accessibilityLabel="Previous"
+								hitSlop={NAV_HIT_SLOP}
 							>
 								<Icon name="chevron-left" size={16} color={colors.textSub} />
 							</Pressable>
@@ -429,6 +459,8 @@ export default function ScheduleScreen() {
 								style={styles.navBtn}
 								onPress={() => setAnchor((current) => addDays(current, navStep))}
 								accessibilityRole="button"
+								accessibilityLabel="Next"
+								hitSlop={NAV_HIT_SLOP}
 							>
 								<Icon name="chevron-right" size={16} color={colors.textSub} />
 							</Pressable>
@@ -457,7 +489,7 @@ export default function ScheduleScreen() {
 					<GradientButton
 						label="New job"
 						icon="plus"
-						onPress={() => openCreate(localDateKey(view === 'day' ? anchor : today), 540)}
+						onPress={() => openCreate(localDateKey(view === 'list' ? today : anchor), 540)}
 					/>
 				</View>
 			</View>
@@ -481,7 +513,12 @@ export default function ScheduleScreen() {
 					<Card style={styles.form}>
 						<View style={styles.formHead}>
 							<Txt style={styles.formTitle}>{editing ? 'Edit job' : 'New job'}</Txt>
-							<Pressable onPress={closeForm} accessibilityRole="button">
+							<Pressable
+								onPress={closeForm}
+								accessibilityRole="button"
+								accessibilityLabel="Close"
+								hitSlop={CLOSE_HIT_SLOP}
+							>
 								<Icon name="x" size={18} color={colors.textMuted} />
 							</Pressable>
 						</View>
@@ -678,7 +715,10 @@ function listDays(today: Date, jobsByDay: Map<string, Job[]>): DayCell[] {
 		.filter((key) => jobsByDay.get(key)?.length)
 		.sort()
 		.map((key) => {
-			const date = new Date(`${key}T00:00:00`);
+			// Build the local date numerically — `new Date("YYYY-MM-DDT00:00:00")` is
+			// parsed inconsistently across JS engines (some as UTC), which would shift
+			// the weekday/day label by the local offset.
+			const date = dateFromKeyAndMinutes(key, 0);
 			const dow = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][date.getDay()];
 			return { date, key, dow, dayNum: date.getDate(), isToday: key === todayKey };
 		});
@@ -716,6 +756,10 @@ function CalendarGrid({
 		days.length === 1
 			? Math.max(260, avail - GUTTER)
 			: Math.max(MIN_DAY_WIDTH, (avail - GUTTER) / days.length);
+	// Pre-compute side-by-side lanes per day so overlapping jobs don't stack.
+	const lanesByDay = new Map(
+		days.map((day) => [day.key, packLanes(jobsByDay.get(day.key) ?? [])] as const),
+	);
 
 	return (
 		<ScrollView style={styles.gridScroll}>
@@ -756,11 +800,13 @@ function CalendarGrid({
 										onPress={() => onCreate(day.key, hour * 60)}
 									/>
 								))}
-								{(jobsByDay.get(day.key) ?? []).map((job) => (
+								{(jobsByDay.get(day.key) ?? []).map((job, index) => (
 									<EventBlock
 										key={job.id}
 										job={job}
 										tone={toneForJob(job)}
+										placement={lanesByDay.get(day.key)?.[index] ?? { lane: 0, columns: 1 }}
+										dayWidth={dayWidth}
 										customerName={customerName}
 										memberName={memberName}
 										onSelect={onSelect}
@@ -775,20 +821,31 @@ function CalendarGrid({
 	);
 }
 
+const EVENT_INSET = 4;
+const LANE_GAP = 3;
+
 function EventBlock({
 	job,
 	tone,
+	placement,
+	dayWidth,
 	customerName,
 	memberName,
 	onSelect,
 }: {
 	job: Job;
 	tone: Tone;
+	placement: LanePlacement;
+	dayWidth: number;
 	customerName: (id: string) => string;
 	memberName: (id: string) => string;
 	onSelect: (job: Job) => void;
 }) {
 	const { top, height } = placeEvent(job.startAt, job.durationMinutes);
+	// Split the column into the cluster's lanes so overlapping jobs sit side by side.
+	const laneWidth = (dayWidth - EVENT_INSET * 2) / placement.columns;
+	const left = EVENT_INSET + placement.lane * laneWidth;
+	const width = laneWidth - (placement.columns > 1 ? LANE_GAP : 0);
 	const who = [customerName(job.customerId), memberName(job.assignedUserId)]
 		.filter(Boolean)
 		.join(' · ');
@@ -797,7 +854,7 @@ function EventBlock({
 			onPress={() => onSelect(job)}
 			style={[
 				styles.event,
-				{ top, height, backgroundColor: tone.bg },
+				{ top, height, left, width, backgroundColor: tone.bg },
 				job.status === 'canceled' && styles.eventCanceled,
 			]}
 		>
@@ -1010,10 +1067,9 @@ const styles = StyleSheet.create({
 	dayCol: { borderLeftWidth: 1, borderLeftColor: '#f0f1f5', overflow: 'hidden' },
 	dayColToday: { backgroundColor: 'rgba(110,30,200,0.018)' },
 	gridLine: { height: HOUR_HEIGHT, borderBottomWidth: 1, borderBottomColor: '#f0f1f5' },
+	// `left` and `width` are set inline per lane (see EventBlock).
 	event: {
 		position: 'absolute',
-		left: 4,
-		right: 4,
 		borderRadius: radii.sm,
 		paddingVertical: 5,
 		paddingHorizontal: 8,

@@ -14,7 +14,7 @@ import {
 	SectionLabel,
 	Txt,
 } from '@/src/components/ui';
-import { dayRange, formatClock } from '@/src/schedule/datetime';
+import { dayRange, formatClock, formatDayLabel } from '@/src/schedule/datetime';
 import { colors, font, radii } from '@/src/theme/tokens';
 
 // Categorical dot colors per assignee (cycled by member order).
@@ -60,14 +60,36 @@ export default function HomeScreen() {
 			setLoadingJobs(true);
 			try {
 				const { from, to } = dayRange(new Date());
-				const [jobPage, customerPage, roster] = await Promise.all([
-					client.listJobs(session.token, { from, to, pageSize: 100 }),
-					client.listCustomers(session.token, { pageSize: 100 }),
-					client.listMembers(session.token),
-				]);
+				const roster = await client.listMembers(session.token);
+				// Page through today's jobs and every customer so a busy day's count and
+				// pipeline aren't undercounted, and a job whose customer sits past the
+				// first page still resolves a name on the "Today's schedule" card.
+				const allJobs: Job[] = [];
+				const allCustomers: Customer[] = [];
+				let page = 1;
+				let hasNext = true;
+				while (hasNext && page <= 50) {
+					const { data, meta } = await client.listJobs(session.token, {
+						from,
+						to,
+						page,
+						pageSize: 100,
+					});
+					allJobs.push(...data);
+					hasNext = meta.hasNextPage;
+					page += 1;
+				}
+				page = 1;
+				hasNext = true;
+				while (hasNext && page <= 50) {
+					const { data, meta } = await client.listCustomers(session.token, { page, pageSize: 100 });
+					allCustomers.push(...data);
+					hasNext = meta.hasNextPage;
+					page += 1;
+				}
 				if (isActive()) {
-					setJobs(jobPage.data);
-					setCustomers(customerPage.data);
+					setJobs(allJobs);
+					setCustomers(allCustomers);
 					setMembers(roster.members);
 				}
 			} catch {
@@ -115,6 +137,7 @@ export default function HomeScreen() {
 		});
 	}, [jobs, members, customers]);
 
+	const todayLabel = useMemo(() => formatDayLabel(new Date()), []);
 	const bookedCount = todayRows.length;
 	const pipeline = useMemo(
 		() =>
@@ -161,7 +184,7 @@ export default function HomeScreen() {
 				{/* Heading */}
 				<View style={styles.head}>
 					<View>
-						<SectionLabel>Monday, June 22</SectionLabel>
+						<SectionLabel>{todayLabel}</SectionLabel>
 						<Txt style={styles.h1}>Good morning, Marcus</Txt>
 					</View>
 					<GradientButton label="New job" icon="plus" onPress={() => router.push('/schedule')} />
@@ -174,10 +197,9 @@ export default function HomeScreen() {
 					<View style={styles.briefingBody}>
 						<Txt style={styles.briefingEyebrow}>While you were away</Txt>
 						<Txt style={styles.briefingText}>
-							Rivus handled <Txt style={styles.briefingBold}>38 conversations</Txt>, booked{' '}
-							<Txt style={styles.briefingBold}>6 jobs</Txt>, and answered{' '}
-							<Txt style={styles.briefingBold}>19 questions</Txt> from your FAQs overnight. Two
-							items need a human eye.
+							Rivus handled <Txt style={styles.briefingBold}>38 conversations</Txt>, booked new
+							jobs, and answered <Txt style={styles.briefingBold}>19 questions</Txt> from your FAQs
+							overnight. Two items need a human eye.
 						</Txt>
 					</View>
 					<Pressable style={styles.reviewBtn} onPress={() => router.push('/inbox')}>
