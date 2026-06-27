@@ -12,7 +12,14 @@ export default defineConfig({
 			// SDK (which pulls in `cloudflare:workers`, unavailable under Node), so they
 			// are validated by `wrangler deploy --dry-run` and local `wrangler dev`
 			// rather than unit tests — see README.
-			include: ['src/conversation.ts', 'src/http.ts'],
+			include: [
+				'src/conversation.ts',
+				'src/http.ts',
+				'src/auth.ts',
+				'src/api.ts',
+				'src/intent.ts',
+				'src/assistant.ts',
+			],
 			exclude: ['src/**/*.test.ts'],
 			thresholds: {
 				lines: 90,

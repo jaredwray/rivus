@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import { respond } from './assistant';
 import { replyTo } from './conversation';
-import type { ChatMessage } from './types';
+import type { ChatMessage, Env } from './types';
 
 // The app posts either a full `{ messages: [...] }` transcript or a shorthand
 // `{ message: "hi" }`. Both are tolerated; anything unparseable degrades to an
@@ -27,46 +28,80 @@ export function parseMessages(body: unknown): ChatMessage[] {
 	return parsed.success ? parsed.data : [];
 }
 
+/** Whether a browser `Origin` may make credentialed requests to the agent. */
+function originAllowed(origin: string, allowed: string | undefined): boolean {
+	const list = (allowed ?? '*')
+		.split(',')
+		.map((entry) => entry.trim())
+		.filter(Boolean);
+	if (list.includes('*')) {
+		return true;
+	}
+	return list.includes(origin);
+}
+
 /**
  * CORS headers for the agent. The app is served from a different origin
- * (e.g. the Expo web bundle on app.rivus.ai, or localhost during dev), so the
- * browser requires these on every response and on the preflight. We echo the
- * caller's `Origin` because this is a public greeting endpoint.
+ * (e.g. app.rivus.ai, or localhost during dev), so the browser requires these on
+ * every response and on the preflight.
+ *
+ * Authenticated requests carry the session cookie, which means credentialed CORS:
+ * we must echo the *specific* allowed origin (never `*`) and set
+ * `Allow-Credentials`. `ALLOWED_ORIGINS` is the allowlist; a bare `*` (the dev
+ * default) reflects any origin but only for unauthenticated use, and a request
+ * with no `Origin` (curl / the native app) gets a plain wildcard with no
+ * credentials. `Authorization` is allowed so native clients can send the bearer
+ * token.
  */
-export function corsHeaders(request: Request): Record<string, string> {
-	return {
-		'Access-Control-Allow-Origin': request.headers.get('Origin') ?? '*',
+export function corsHeaders(request: Request, env?: Env): Record<string, string> {
+	const base: Record<string, string> = {
 		'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-		'Access-Control-Allow-Headers': 'Content-Type',
+		'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 		'Access-Control-Max-Age': '86400',
-		Vary: 'Origin',
 	};
+	const origin = request.headers.get('Origin');
+	if (origin && originAllowed(origin, env?.ALLOWED_ORIGINS)) {
+		return {
+			...base,
+			'Access-Control-Allow-Origin': origin,
+			'Access-Control-Allow-Credentials': 'true',
+			Vary: 'Origin',
+		};
+	}
+	if (!origin) {
+		// No browser origin (curl / native bearer client): a plain public wildcard.
+		return { ...base, 'Access-Control-Allow-Origin': '*' };
+	}
+	// A browser origin that isn't on the allowlist: omit `Allow-Origin` so the
+	// browser blocks the response rather than us reflecting an untrusted origin.
+	return { ...base, Vary: 'Origin' };
 }
 
 /** JSON response carrying the CORS headers. */
-export function jsonResponse(body: unknown, request: Request, status = 200): Response {
+export function jsonResponse(body: unknown, request: Request, status = 200, env?: Env): Response {
 	return new Response(JSON.stringify(body), {
 		status,
-		headers: { 'content-type': 'application/json', ...corsHeaders(request) },
+		headers: { 'content-type': 'application/json', ...corsHeaders(request, env) },
 	});
 }
 
 /** Empty 204 answer to a browser CORS preflight. */
-export function corsPreflight(request: Request): Response {
-	return new Response(null, { status: 204, headers: corsHeaders(request) });
+export function corsPreflight(request: Request, env?: Env): Response {
+	return new Response(null, { status: 204, headers: corsHeaders(request, env) });
 }
 
 /** Liveness probe payload. */
-export function healthResponse(request: Request): Response {
-	return jsonResponse({ status: 'ok', agent: 'rivus' }, request);
+export function healthResponse(request: Request, env?: Env): Response {
+	return jsonResponse({ status: 'ok', agent: 'rivus' }, request, 200, env);
 }
 
 /** A 404 for an unmatched route. */
-export function notFoundResponse(request: Request, pathname: string): Response {
+export function notFoundResponse(request: Request, pathname: string, env?: Env): Response {
 	return jsonResponse(
 		{ error: 'Not Found', message: `No route for ${request.method} ${pathname}` },
 		request,
 		404,
+		env,
 	);
 }
 
@@ -82,26 +117,38 @@ async function readJson(request: Request): Promise<unknown> {
 
 /**
  * Handle a chat request to a Rivus agent instance. This is what the Durable
- * Object's `onRequest` delegates to, and it is pure (request in, response out)
- * so it is unit-tested under Node without the Workers runtime.
+ * Object's `onRequest` delegates to, and it is pure (request + env in, response
+ * out) so it is unit-tested under Node without the Workers runtime.
  *
  * - `GET` returns the greeting, which makes the endpoint a friendly smoke test
- *   you can hit straight from a browser.
- * - `POST` replies to the supplied conversation.
+ *   you can hit straight from a browser (no auth required).
+ * - `POST` replies to the supplied conversation. When the request carries a valid
+ *   session (bearer token or `rivus_session` cookie) the reply can draw on the
+ *   user's company and knowledge base; otherwise Rivus nudges them to sign in.
  * - `OPTIONS` answers the CORS preflight.
  */
-export async function handleChat(request: Request): Promise<Response> {
+export async function handleChat(
+	request: Request,
+	env?: Env,
+	fetchImpl?: typeof globalThis.fetch,
+): Promise<Response> {
 	if (request.method === 'OPTIONS') {
-		return corsPreflight(request);
+		return corsPreflight(request, env);
 	}
 	if (request.method === 'GET') {
-		return jsonResponse(replyTo([]), request);
+		return jsonResponse(replyTo([]), request, 200, env);
 	}
 	if (request.method !== 'POST') {
-		return jsonResponse({ error: 'Method Not Allowed', message: 'Use POST to chat' }, request, 405);
+		return jsonResponse(
+			{ error: 'Method Not Allowed', message: 'Use POST to chat' },
+			request,
+			405,
+			env,
+		);
 	}
 	const messages = parseMessages(await readJson(request));
-	return jsonResponse(replyTo(messages), request);
+	const reply = await respond({ env: env ?? ({} as Env), request, messages, fetchImpl });
+	return jsonResponse({ reply }, request, 200, env);
 }
 
 /**
@@ -110,13 +157,13 @@ export async function handleChat(request: Request): Promise<Response> {
  * and root probes. Returns `null` when the request should fall through to the
  * Agents SDK router. Pure, so `index.ts` stays a thin adapter.
  */
-export function handlePublicRoute(request: Request): Response | null {
+export function handlePublicRoute(request: Request, env?: Env): Response | null {
 	if (request.method === 'OPTIONS') {
-		return corsPreflight(request);
+		return corsPreflight(request, env);
 	}
 	const { pathname } = new URL(request.url);
 	if (pathname === '/health' || pathname === '/') {
-		return healthResponse(request);
+		return healthResponse(request, env);
 	}
 	return null;
 }

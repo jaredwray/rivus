@@ -16,6 +16,7 @@
 		"clean": "rm -rf dist coverage .wrangler"
 	},
 	"dependencies": {
+		"@rivus/core": "workspace:*",
 		"agents": "^0.16.1",
 		"zod": "catalog:"
 	},

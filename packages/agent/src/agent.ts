@@ -19,6 +19,8 @@ export class RivusAgent extends Agent<Env, RivusAgentState> {
 		if (request.method === 'POST') {
 			this.setState({ messagesSeen: this.state.messagesSeen + 1 });
 		}
-		return handleChat(request);
+		// `this.env` carries the Worker bindings/secrets (JWT_SECRET, RIVUS_API_URL,
+		// ALLOWED_ORIGINS) so the chat handler can authenticate and call the API.
+		return handleChat(request, this.env);
 	}
 }

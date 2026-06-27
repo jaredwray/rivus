@@ -1,6 +1,7 @@
 import type { AccountId, UserId } from '@rivus/core';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { loadConfig } from '../src/config';
 import { SESSION_COOKIE } from '../src/plugins/auth';
 import { ConflictError } from '../src/repositories/errors';
 import { createInMemoryRepositories } from '../src/repositories/memory';
@@ -545,5 +546,33 @@ describe('session cookie', () => {
 		// Cleared: the cookie is re-sent with an empty value so the browser drops it.
 		expect(setCookieHeader(res)).toContain(`${SESSION_COOKIE}=`);
 		expect(sessionCookieValue(res)).toBe('');
+	});
+
+	it('scopes the cookie to COOKIE_DOMAIN so subdomains (app, agent) receive it', async () => {
+		// A parent-domain cookie is what lets a web user reach an authenticated agent
+		// on a sibling subdomain (agent.rivus.ai) with the session set by the API.
+		const scoped = await buildTestApp({
+			config: loadConfig({
+				NODE_ENV: 'test',
+				JWT_SECRET: 'test-secret-value-1234',
+				COOKIE_DOMAIN: '.rivus.ai',
+			} as NodeJS.ProcessEnv),
+		});
+		const email = 'domain@example.com';
+		await requestSignup(scoped, signupBody({ email }));
+		const verified = await verifyCode(scoped, email, latestCodeFor(scoped, email));
+		expect(setCookieHeader(verified)).toMatch(/Domain=\.rivus\.ai/i);
+
+		// Logout must clear with the same Domain or the browser won't drop it.
+		const out = await scoped.inject({ method: 'POST', url: '/v1/auth/logout' });
+		expect(setCookieHeader(out)).toMatch(/Domain=\.rivus\.ai/i);
+		await scoped.close();
+	});
+
+	it('omits the Domain attribute when COOKIE_DOMAIN is unset (host-only)', async () => {
+		const email = 'hostonly@example.com';
+		await requestSignup(app, signupBody({ email }));
+		const verified = await verifyCode(app, email, latestCodeFor(app, email));
+		expect(setCookieHeader(verified)).not.toMatch(/Domain=/i);
 	});
 });

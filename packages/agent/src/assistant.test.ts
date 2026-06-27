@@ -1,0 +1,461 @@
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import type { FetchLike } from './api';
+import { respond } from './assistant';
+import { GREETING } from './conversation';
+import type { ChatMessage, Env } from './types';
+
+const SECRET = 'test-secret-value-1234';
+const API_URL = 'https://api.test';
+
+const encoder = new TextEncoder();
+
+function base64Url(bytes: Uint8Array): string {
+	let binary = '';
+	for (const byte of bytes) {
+		binary += String.fromCharCode(byte);
+	}
+	return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function signToken(payload: Record<string, unknown>, secret = SECRET): Promise<string> {
+	const seg = (value: unknown) => base64Url(encoder.encode(JSON.stringify(value)));
+	const data = `${seg({ alg: 'HS256', typ: 'JWT' })}.${seg(payload)}`;
+	const key = await crypto.subtle.importKey(
+		'raw',
+		encoder.encode(secret),
+		{ name: 'HMAC', hash: 'SHA-256' },
+		false,
+		['sign'],
+	);
+	const signature = new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(data)));
+	return `${data}.${base64Url(signature)}`;
+}
+
+let TOKEN: string;
+beforeAll(async () => {
+	TOKEN = await signToken({
+		sub: 'user_1',
+		email: 'owner@acme.example',
+		accountId: 'acct_1',
+		role: 'owner',
+		exp: Math.floor(Date.now() / 1000) + 3600,
+	});
+});
+
+const user = (content: string): ChatMessage => ({ role: 'user', content });
+
+function makeAccount(over: Partial<Record<string, string>> = {}) {
+	return {
+		id: 'acct_1',
+		name: 'Acme Plumbing',
+		slug: 'acme-plumbing',
+		phone: '+1 206 555 0100',
+		address: '1 Main St',
+		website: 'https://acme.example',
+		timezone: 'America/Los_Angeles',
+		status: 'active',
+		canceledAt: null,
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+		...over,
+	};
+}
+
+function sessionBody(account = makeAccount()) {
+	return {
+		user: {
+			id: 'user_1',
+			email: 'owner@acme.example',
+			name: 'Pat Owner',
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		},
+		account,
+		role: 'owner',
+	};
+}
+
+function makeFaq(over: Partial<Record<string, string>> = {}) {
+	return {
+		id: 'faq_1',
+		accountId: 'acct_1',
+		question: 'Do you offer refunds?',
+		answer: 'Yes, within 30 days.',
+		category: 'Billing',
+		status: 'published',
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+		...over,
+	};
+}
+
+function page(faqs: ReturnType<typeof makeFaq>[], total = faqs.length) {
+	return {
+		data: faqs,
+		meta: {
+			page: 1,
+			pageSize: 100,
+			total,
+			totalPages: 1,
+			hasNextPage: false,
+			hasPreviousPage: false,
+		},
+	};
+}
+
+interface Route {
+	when: (url: string, method: string) => boolean;
+	body: unknown;
+	status?: number;
+}
+
+/** A fetch that answers each call from the first matching route (fresh Response). */
+function router(routes: Route[]): FetchLike {
+	return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+		const url = String(input);
+		const method = init?.method ?? 'GET';
+		const route = routes.find((r) => r.when(url, method));
+		if (!route) {
+			throw new Error(`no mock route for ${method} ${url}`);
+		}
+		return new Response(JSON.stringify(route.body), {
+			status: route.status ?? 200,
+			headers: { 'content-type': 'application/json' },
+		});
+	}) as unknown as FetchLike;
+}
+
+const onGetMe: Route['when'] = (url, method) => method === 'GET' && url.endsWith('/v1/auth/me');
+const onListFaqs: Route['when'] = (url, method) => method === 'GET' && url.includes('/v1/faqs?');
+const onUpdateFaq: Route['when'] = (_url, method) => method === 'PATCH';
+const onCreateFaq: Route['when'] = (url, method) => method === 'POST' && url.endsWith('/v1/faqs');
+
+function envWith(over: Partial<Env> = {}): Env {
+	return { JWT_SECRET: SECRET, RIVUS_API_URL: API_URL, ...over } as unknown as Env;
+}
+
+function anonRequest(): Request {
+	return new Request('https://agent.test/chat', { method: 'POST' });
+}
+
+function authedRequest(token = TOKEN): Request {
+	return new Request('https://agent.test/chat', {
+		method: 'POST',
+		headers: { Authorization: `Bearer ${token}` },
+	});
+}
+
+/** Run respond with sensible defaults; pass a token to authenticate. */
+function ask(
+	content: string,
+	opts: { token?: string; fetchImpl?: FetchLike; env?: Env } = {},
+): Promise<string> {
+	return respond({
+		env: opts.env ?? envWith(),
+		request: opts.token ? authedRequest(opts.token) : anonRequest(),
+		messages: content === '' ? [] : [user(content)],
+		fetchImpl: opts.fetchImpl,
+	});
+}
+
+describe('respond — conversational', () => {
+	it('greets an anonymous caller and nudges them to sign in', async () => {
+		const reply = await ask('');
+		expect(reply).toContain(GREETING);
+		expect(reply).toMatch(/sign in/i);
+	});
+
+	it('greets a signed-in caller by email', async () => {
+		const reply = await ask('hi', { token: TOKEN });
+		expect(reply).toContain('owner@acme.example');
+	});
+
+	it('explains its capabilities for help', async () => {
+		const anon = await ask('what can you do?');
+		expect(anon).toMatch(/knowledge base/i);
+		expect(anon).toMatch(/sign in first/i);
+
+		const authed = await ask('help', { token: TOKEN });
+		expect(authed).toMatch(/company details/i);
+		expect(authed).not.toMatch(/sign in first/i);
+	});
+
+	it('handles an unrelated ask gracefully', async () => {
+		const anon = await ask('what is the meaning of life');
+		expect(anon).toContain(GREETING);
+
+		const authed = await ask('what is the meaning of life', { token: TOKEN });
+		expect(authed).toMatch(/not sure how to help/i);
+	});
+});
+
+describe('respond — auth gating', () => {
+	it('requires sign-in for protected asks', async () => {
+		const reply = await ask('what is our website?');
+		expect(reply).toMatch(/signed in/i);
+	});
+
+	it('reports when the API is not configured', async () => {
+		const reply = await ask('what is our website?', {
+			token: TOKEN,
+			env: envWith({ RIVUS_API_URL: undefined }),
+		});
+		expect(reply).toMatch(/fully configured/i);
+	});
+});
+
+describe('respond — company info', () => {
+	it('answers a specific field', async () => {
+		const reply = await ask('what is our website?', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onGetMe, body: sessionBody() }]),
+		});
+		expect(reply).toBe('Your website is https://acme.example.');
+	});
+
+	it('explains when a field is not set yet', async () => {
+		const reply = await ask('what is our website?', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onGetMe, body: sessionBody(makeAccount({ website: '' })) }]),
+		});
+		expect(reply).toMatch(/haven’t added a website/i);
+	});
+
+	it('summarizes the whole record for a generic ask, showing blanks', async () => {
+		const reply = await ask('tell me about my business', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onGetMe, body: sessionBody(makeAccount({ phone: '' })) }]),
+		});
+		expect(reply).toContain('Acme Plumbing');
+		expect(reply).toContain('Website: https://acme.example');
+		expect(reply).toContain('Phone: not set');
+	});
+});
+
+describe('respond — knowledge base reads', () => {
+	it('lists FAQs', async () => {
+		const faqs = [makeFaq(), makeFaq({ id: 'faq_2', question: 'Where are you located?' })];
+		const reply = await ask('list our faqs', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onListFaqs, body: page(faqs) }]),
+		});
+		expect(reply).toContain('has 2 FAQs');
+		expect(reply).toContain('Do you offer refunds?');
+		expect(reply).toContain('Where are you located?');
+	});
+
+	it('uses the singular for a single FAQ', async () => {
+		const reply = await ask('show me the knowledge base', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onListFaqs, body: page([makeFaq()]) }]),
+		});
+		expect(reply).toContain('has 1 FAQ:');
+	});
+
+	it('notes how many more FAQs exist beyond the first ten', async () => {
+		const faqs = Array.from({ length: 12 }, (_, i) =>
+			makeFaq({ id: `faq_${i}`, question: `Question ${i}?` }),
+		);
+		const reply = await ask('list faqs', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onListFaqs, body: page(faqs) }]),
+		});
+		expect(reply).toMatch(/and 2 more/i);
+	});
+
+	it('reports an empty knowledge base', async () => {
+		const reply = await ask('list faqs', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onListFaqs, body: page([]) }]),
+		});
+		expect(reply).toMatch(/knowledge base is empty/i);
+	});
+
+	it('searches and ranks by relevance', async () => {
+		const faqs = [
+			makeFaq({
+				id: 'faq_1',
+				question: 'What is your refund policy?',
+				answer: 'Refunds in 30 days.',
+			}),
+			makeFaq({ id: 'faq_2', question: 'Where are you located?', answer: 'Seattle.' }),
+		];
+		const reply = await ask('search the FAQ for refund', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onListFaqs, body: page(faqs) }]),
+		});
+		expect(reply).toMatch(/found about “refund”/i);
+		expect(reply).toContain('What is your refund policy?');
+		expect(reply).not.toContain('Where are you located?');
+	});
+
+	it('falls back to a substring match for a short query', async () => {
+		const faqs = [makeFaq({ question: 'What are your HR policies?', answer: 'See the handbook.' })];
+		const reply = await ask('do we have an faq about hr', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onListFaqs, body: page(faqs) }]),
+		});
+		expect(reply).toContain('What are your HR policies?');
+	});
+
+	it('says when a search finds nothing', async () => {
+		const reply = await ask('search faqs for skydiving', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onListFaqs, body: page([makeFaq()]) }]),
+		});
+		expect(reply).toMatch(/couldn’t find anything/i);
+	});
+
+	it('truncates a very long answer in results', async () => {
+		const longAnswer = `${'x'.repeat(400)} END`;
+		const faqs = [makeFaq({ question: 'Refund policy?', answer: longAnswer })];
+		const reply = await ask('search faqs for refund', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onListFaqs, body: page(faqs) }]),
+		});
+		expect(reply).toContain('…');
+		expect(reply).not.toContain('END');
+	});
+});
+
+describe('respond — knowledge base writes', () => {
+	it('updates a matched FAQ with a new answer', async () => {
+		const faqs = [makeFaq({ question: 'What is your return policy?' })];
+		const reply = await ask('update the faq about return to say we accept returns within 14 days', {
+			token: TOKEN,
+			fetchImpl: router([
+				{ when: onListFaqs, body: page(faqs) },
+				{
+					when: onUpdateFaq,
+					body: makeFaq({
+						question: 'What is your return policy?',
+						answer: 'we accept returns within 14 days',
+					}),
+				},
+			]),
+		});
+		expect(reply).toMatch(/Done — I updated/i);
+		expect(reply).toContain('we accept returns within 14 days');
+	});
+
+	it('asks what to change when only a topic is given', async () => {
+		const faqs = [makeFaq({ question: 'What is your return policy?', answer: 'Old answer.' })];
+		const reply = await ask('change the faq about return', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onListFaqs, body: page(faqs) }]),
+		});
+		expect(reply).toMatch(/currently says/i);
+		expect(reply).toMatch(/what should the new answer be/i);
+	});
+
+	it('asks which FAQ when several match', async () => {
+		const faqs = [
+			makeFaq({ id: 'faq_1', question: 'What is your return policy?' }),
+			makeFaq({ id: 'faq_2', question: 'How do I start a return?' }),
+		];
+		const reply = await ask('update the faq about return to say see our policy page', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onListFaqs, body: page(faqs) }]),
+		});
+		expect(reply).toMatch(/which one/i);
+		expect(reply).toContain('What is your return policy?');
+		expect(reply).toContain('How do I start a return?');
+	});
+
+	it('says when no FAQ matches the topic', async () => {
+		const reply = await ask('update the faq about parking to say there is none', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onListFaqs, body: page([makeFaq()]) }]),
+		});
+		expect(reply).toMatch(/couldn’t find an FAQ about “parking”/i);
+	});
+
+	it('asks for a topic when an update names none', async () => {
+		const reply = await ask('update an faq', { token: TOKEN, fetchImpl: router([]) });
+		expect(reply).toMatch(/which faq should i update/i);
+	});
+
+	it('reports an empty knowledge base on update', async () => {
+		const reply = await ask('update the faq about return to say hello', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onListFaqs, body: page([]) }]),
+		});
+		expect(reply).toMatch(/knowledge base is empty/i);
+	});
+
+	it('rejects an invalid (too long) answer before calling the API', async () => {
+		const faqs = [makeFaq({ question: 'What is your return policy?' })];
+		const huge = 'y'.repeat(4001);
+		const reply = await ask(`update the faq about return to say ${huge}`, {
+			token: TOKEN,
+			fetchImpl: router([{ when: onListFaqs, body: page(faqs) }]),
+		});
+		expect(reply).toMatch(/4000 characters or fewer/i);
+	});
+
+	it('creates an FAQ from an explicit question and answer', async () => {
+		const reply = await ask('add an faq question: Do you ship? answer: Yes, nationwide.', {
+			token: TOKEN,
+			fetchImpl: router([
+				{
+					when: onCreateFaq,
+					body: makeFaq({ question: 'Do you ship?', answer: 'Yes, nationwide.' }),
+				},
+			]),
+		});
+		expect(reply).toMatch(/Added a new FAQ/i);
+		expect(reply).toContain('Do you ship?');
+	});
+
+	it('asks for the answer when only a question is given', async () => {
+		const reply = await ask('create a new faq about warranty', {
+			token: TOKEN,
+			fetchImpl: router([]),
+		});
+		expect(reply).toMatch(/what should the answer be/i);
+	});
+
+	it('asks for both parts when neither is given', async () => {
+		const reply = await ask('add a faq', { token: TOKEN, fetchImpl: router([]) });
+		expect(reply).toMatch(/what question should the FAQ answer/i);
+	});
+
+	it('rejects an invalid (too long) new question before calling the API', async () => {
+		const longQuestion = 'q'.repeat(301);
+		const reply = await ask(`add an faq question: ${longQuestion} answer: short`, {
+			token: TOKEN,
+			fetchImpl: router([]),
+		});
+		expect(reply).toMatch(/300 characters or fewer/i);
+	});
+});
+
+describe('respond — API error handling', () => {
+	it('explains an expired session (401)', async () => {
+		const reply = await ask('what is our website?', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onGetMe, body: { message: 'nope' }, status: 401 }]),
+		});
+		expect(reply).toMatch(/session looks like it expired/i);
+	});
+
+	it('explains a permission error (403)', async () => {
+		const faqs = [makeFaq({ question: 'What is your return policy?' })];
+		const reply = await ask('update the faq about return to say new answer', {
+			token: TOKEN,
+			fetchImpl: router([
+				{ when: onListFaqs, body: page(faqs) },
+				{ when: onUpdateFaq, body: { message: 'forbidden' }, status: 403 },
+			]),
+		});
+		expect(reply).toMatch(/don’t have permission/i);
+	});
+
+	it('handles an unexpected API failure (500)', async () => {
+		const reply = await ask('search faqs for refund', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onListFaqs, body: { message: 'boom' }, status: 500 }]),
+		});
+		expect(reply).toMatch(/couldn’t reach your Rivus data/i);
+	});
+});

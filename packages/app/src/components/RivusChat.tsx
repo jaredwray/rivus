@@ -13,10 +13,15 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type ChatMessage, createAgentClient } from '@/src/agent/client';
+import { useAuth } from '@/src/auth/AuthContext';
 import { RivusSymbol } from '@/src/brand/RivusLogo';
 import { colors, font, radii, shadowSoft } from '@/src/theme/tokens';
 import { BrandGradient } from './Gradient';
 import { Dot, Txt } from './ui';
+
+// Web keeps the session in the HttpOnly cookie (sent with credentials), so the
+// token is empty there; native holds the bearer token in memory and sends it.
+const IS_WEB = Platform.OS === 'web';
 
 type Status = 'idle' | 'sending' | 'error';
 
@@ -35,13 +40,22 @@ export function RivusChat() {
 	const insets = useSafeAreaInsets();
 	const { width, height } = useWindowDimensions();
 
+	const { session } = useAuth();
+	// Web authenticates the agent via the shared session cookie; native forwards
+	// the in-memory bearer token. Either way the agent recognises the signed-in
+	// user and can answer from their company + knowledge base.
+	const token = session?.token ?? '';
+
 	const [open, setOpen] = useState(false);
 	const [greeted, setGreeted] = useState(false);
 	const [messages, setMessages] = useState<DisplayMessage[]>([]);
 	const [draft, setDraft] = useState('');
 	const [status, setStatus] = useState<Status>('idle');
 
-	const client = useMemo(() => createAgentClient(), []);
+	const client = useMemo(
+		() => createAgentClient(undefined, undefined, { withCredentials: IS_WEB }),
+		[],
+	);
 	const scrollRef = useRef<ScrollView>(null);
 	const seq = useRef(0);
 
@@ -53,14 +67,14 @@ export function RivusChat() {
 			setStatus('sending');
 			try {
 				const wire = history.map(({ role, content }) => ({ role, content }));
-				const { reply } = await client.chat(wire);
+				const { reply } = await client.chat(wire, token);
 				setMessages([...history, { id: seq.current++, role: 'assistant', content: reply }]);
 				setStatus('idle');
 			} catch {
 				setStatus('error');
 			}
 		},
-		[client],
+		[client, token],
 	);
 
 	// The first time the panel opens, ask the agent to say hello.
