@@ -1,4 +1,4 @@
-import cors from '@fastify/cors';
+import cors, { type FastifyCorsOptionsDelegateCallback } from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
@@ -112,23 +112,37 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 			'CORS_ORIGIN must be an explicit origin allowlist in production, not "*": credentialed CORS reflects the request origin, so a wildcard would authorize every site.',
 		);
 	}
-	app.register(cors, {
-		// Web clients send the session cookie cross-origin (app.rivus.ai →
-		// api.rivus.ai), which requires credentialed CORS. A credentialed request
-		// can't use a wildcard `Access-Control-Allow-Origin`, so reflect the request
-		// origin when configured wide-open (local dev only) and otherwise echo only
-		// the configured allowlist.
-		origin: corsOrigin === '*' ? true : corsOrigin,
-		credentials: true,
-		// `@fastify/cors` v11 narrowed its default `methods` to `GET,HEAD,POST`, so
-		// preflight for any other verb answers without it in
-		// `Access-Control-Allow-Methods` — the browser then blocks the real request
-		// and `fetch` rejects with "Failed to fetch". The web app's writes are
-		// cross-origin (app.rivus.ai → api.rivus.ai) and preflighted, so without
-		// this every PATCH (edit FAQ, update account) and DELETE (remove FAQ) fails.
-		// Advertise exactly the verbs the API serves.
-		methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE'],
-	});
+	// The app's own origin: the only one allowed to make *credentialed* (cookie-
+	// bearing) cross-origin requests in deployed environments (see below).
+	const appOrigin = new URL(deps.config.APP_URL).origin;
+	// A per-request CORS delegate so credentials can vary by origin.
+	//
+	// Web clients send the session cookie cross-origin (app.rivus.ai →
+	// api.rivus.ai), which requires credentialed CORS — and a credentialed response
+	// can't use a wildcard `Access-Control-Allow-Origin`, so reflect the request
+	// origin when wide-open (local dev only) and otherwise echo only the configured
+	// allowlist. The session cookie is scoped to the parent domain (`.rivus.ai`) so
+	// it also reaches the app and the agent — which means a *sibling* subdomain
+	// (marketing, docs) could send it too. To stop those origins from *reading*
+	// cookie-authenticated responses, credentialed CORS is granted only to the app's
+	// own origin; other allowlisted origins still get plain CORS for public reads
+	// (e.g. `/health`). Local dev (wildcard) stays fully permissive.
+	const corsDelegate: FastifyCorsOptionsDelegateCallback = (request, callback) => {
+		const credentials = corsOrigin === '*' || request.headers.origin === appOrigin;
+		callback(null, {
+			origin: corsOrigin === '*' ? true : corsOrigin,
+			credentials,
+			// `@fastify/cors` v11 narrowed its default `methods` to `GET,HEAD,POST`, so
+			// preflight for any other verb answers without it in
+			// `Access-Control-Allow-Methods` — the browser then blocks the real request
+			// and `fetch` rejects with "Failed to fetch". The web app's writes are
+			// cross-origin (app.rivus.ai → api.rivus.ai) and preflighted, so without
+			// this every PATCH (edit FAQ, update account) and DELETE (remove FAQ) fails.
+			// Advertise exactly the verbs the API serves.
+			methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE'],
+		});
+	};
+	app.register(cors, () => corsDelegate);
 
 	// CSRF defense for cookie-authenticated writes. The session cookie rides along
 	// automatically on same-site requests, so a malicious or compromised same-site
@@ -137,7 +151,6 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 	// unsafe methods that actually carry the session cookie, and require the request
 	// to originate from the app itself. Local development (wildcard CORS) stays
 	// permissive; the deployed environments (an explicit allowlist) enforce it.
-	const appOrigin = new URL(deps.config.APP_URL).origin;
 	const enforceCsrf = corsOrigin !== '*';
 	app.addHook('onRequest', async (request) => {
 		if (!enforceCsrf || request.method === 'GET' || request.method === 'HEAD') {

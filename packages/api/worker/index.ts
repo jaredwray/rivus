@@ -9,6 +9,9 @@ export interface Env {
 	RESEND_API_KEY: string;
 	EMAIL_FROM: string;
 	APP_URL: string;
+	// Optional: scopes the session cookie to a parent domain (e.g. `.rivus.ai`) so
+	// sibling subdomains (the app and the agent) receive it. Unset → host-only.
+	COOKIE_DOMAIN?: string;
 	// AI provider keys + model overrides for duplicate-FAQ detection (all optional;
 	// when none is set the check degrades to a no-op).
 	OPENAI_API_KEY?: string;
@@ -40,6 +43,7 @@ export class ApiContainer extends Container<Env> {
 		...(this.env.MONGODB_URI ? { MONGODB_URI: this.env.MONGODB_URI } : {}),
 		...(this.env.JWT_SECRET ? { JWT_SECRET: this.env.JWT_SECRET } : {}),
 		...(this.env.CORS_ORIGIN ? { CORS_ORIGIN: this.env.CORS_ORIGIN } : {}),
+		...(this.env.COOKIE_DOMAIN ? { COOKIE_DOMAIN: this.env.COOKIE_DOMAIN } : {}),
 		...(this.env.RESEND_API_KEY ? { RESEND_API_KEY: this.env.RESEND_API_KEY } : {}),
 		...(this.env.EMAIL_FROM ? { EMAIL_FROM: this.env.EMAIL_FROM } : {}),
 		...(this.env.APP_URL ? { APP_URL: this.env.APP_URL } : {}),

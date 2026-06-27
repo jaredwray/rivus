@@ -35,10 +35,18 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Shared with the API so the agent can verify its session tokens.
+      DEV_JWT_SECRET: ${{ secrets.DEV_JWT_SECRET }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup
       - run: pnpm --filter @rivus/agent exec wrangler deploy --env development
+      # Keep the agent's JWT_SECRET in sync with the API. Skipped until the GitHub
+      # secret exists (until then the agent just treats every request as anonymous).
+      - name: Sync the shared JWT secret
+        if: ${{ env.DEV_JWT_SECRET != '' }}
+        run: |
+          printf '%s' "$DEV_JWT_SECRET" | pnpm --filter @rivus/agent exec wrangler secret put JWT_SECRET --env development
 
   deploy-docs:
     name: Deploy docs

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { FetchLike } from './api';
 import { GREETING } from './conversation';
 import {
 	corsHeaders,
@@ -8,16 +9,47 @@ import {
 	notFoundResponse,
 	parseMessages,
 } from './http';
+import type { Env } from './types';
+
+const SECRET = 'test-secret-value-1234';
+const encoder = new TextEncoder();
+
+function base64Url(bytes: Uint8Array): string {
+	let binary = '';
+	for (const byte of bytes) {
+		binary += String.fromCharCode(byte);
+	}
+	return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function signToken(payload: Record<string, unknown>): Promise<string> {
+	const seg = (value: unknown) => base64Url(encoder.encode(JSON.stringify(value)));
+	const data = `${seg({ alg: 'HS256', typ: 'JWT' })}.${seg(payload)}`;
+	const key = await crypto.subtle.importKey(
+		'raw',
+		encoder.encode(SECRET),
+		{ name: 'HMAC', hash: 'SHA-256' },
+		false,
+		['sign'],
+	);
+	const signature = new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(data)));
+	return `${data}.${base64Url(signature)}`;
+}
 
 function request(path: string, init?: RequestInit): Request {
 	return new Request(`https://agent.test${path}`, init);
 }
 
-function postJson(body: unknown): Request {
+function postJson(body: unknown, init?: RequestInit): Request {
 	return request('/agents/rivus-agent/default', {
 		method: 'POST',
-		headers: { 'content-type': 'application/json', Origin: 'https://app.rivus.ai' },
+		headers: {
+			'content-type': 'application/json',
+			Origin: 'https://app.rivus.ai',
+			...init?.headers,
+		},
 		body: JSON.stringify(body),
+		...init,
 	});
 }
 
@@ -52,12 +84,66 @@ describe('parseMessages', () => {
 });
 
 describe('corsHeaders', () => {
-	it('echoes the caller Origin', () => {
-		expect(corsHeaders(postJson({}))['Access-Control-Allow-Origin']).toBe('https://app.rivus.ai');
+	it('echoes an allowed Origin and allows credentials', () => {
+		const headers = corsHeaders(postJson({}));
+		expect(headers['Access-Control-Allow-Origin']).toBe('https://app.rivus.ai');
+		expect(headers['Access-Control-Allow-Credentials']).toBe('true');
+		expect(headers['Access-Control-Allow-Headers']).toContain('Authorization');
 	});
 
-	it('falls back to * when there is no Origin', () => {
-		expect(corsHeaders(request('/health'))['Access-Control-Allow-Origin']).toBe('*');
+	it('falls back to a plain wildcard when there is no Origin', () => {
+		const headers = corsHeaders(request('/health'));
+		expect(headers['Access-Control-Allow-Origin']).toBe('*');
+		expect(headers['Access-Control-Allow-Credentials']).toBeUndefined();
+	});
+
+	it('does not reflect an Origin that is not on the allowlist', () => {
+		const env = { ALLOWED_ORIGINS: 'https://app.rivus.ai' } as Env;
+		const headers = corsHeaders(
+			request('/x', { headers: { Origin: 'https://evil.example' } }),
+			env,
+		);
+		expect(headers['Access-Control-Allow-Origin']).toBeUndefined();
+	});
+
+	it('reflects an explicitly allowlisted Origin', () => {
+		const env = { ALLOWED_ORIGINS: 'https://app.rivus.ai,https://www.rivus.ai' } as Env;
+		const headers = corsHeaders(
+			request('/x', { headers: { Origin: 'https://www.rivus.ai' } }),
+			env,
+		);
+		expect(headers['Access-Control-Allow-Origin']).toBe('https://www.rivus.ai');
+	});
+
+	it('refuses a wildcard allowlist in production (credentialed CORS guard)', () => {
+		const env = { NODE_ENV: 'production', ALLOWED_ORIGINS: '*' } as Env;
+		expect(() =>
+			corsHeaders(request('/x', { headers: { Origin: 'https://evil.example' } }), env),
+		).toThrow(/production/i);
+	});
+
+	it('still reflects an explicit origin in production (no throw)', () => {
+		const env = { NODE_ENV: 'production', ALLOWED_ORIGINS: 'https://app.rivus.ai' } as Env;
+		const headers = corsHeaders(
+			request('/x', { headers: { Origin: 'https://app.rivus.ai' } }),
+			env,
+		);
+		expect(headers['Access-Control-Allow-Origin']).toBe('https://app.rivus.ai');
+		expect(headers['Access-Control-Allow-Credentials']).toBe('true');
+	});
+
+	it('matches a single-label subdomain wildcard but not nested subdomains', () => {
+		const env = { ALLOWED_ORIGINS: 'https://*.rivus.ai' } as Env;
+		expect(
+			corsHeaders(request('/x', { headers: { Origin: 'https://app.rivus.ai' } }), env)[
+				'Access-Control-Allow-Origin'
+			],
+		).toBe('https://app.rivus.ai');
+		expect(
+			corsHeaders(request('/x', { headers: { Origin: 'https://a.b.rivus.ai' } }), env)[
+				'Access-Control-Allow-Origin'
+			],
+		).toBeUndefined();
 	});
 });
 
@@ -78,7 +164,7 @@ describe('jsonResponse / notFoundResponse', () => {
 });
 
 describe('handleChat', () => {
-	it('answers a CORS preflight with 204 and no body', async () => {
+	it('answers a CORS preflight with 204 allowing POST and Authorization', async () => {
 		const response = await handleChat(
 			request('/agents/rivus-agent/default', {
 				method: 'OPTIONS',
@@ -87,6 +173,7 @@ describe('handleChat', () => {
 		);
 		expect(response.status).toBe(204);
 		expect(response.headers.get('access-control-allow-methods')).toContain('POST');
+		expect(response.headers.get('access-control-allow-headers')).toContain('Authorization');
 	});
 
 	it('greets on GET so it can be smoke-tested from a browser', async () => {
@@ -95,21 +182,118 @@ describe('handleChat', () => {
 		expect(await response.json()).toEqual({ reply: GREETING });
 	});
 
-	it('replies with hello to a posted message', async () => {
+	it('greets and nudges an unauthenticated POST to sign in', async () => {
 		const response = await handleChat(postJson({ messages: [{ role: 'user', content: 'hi' }] }));
 		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({ reply: GREETING });
+		const body = (await response.json()) as { reply: string };
+		expect(body.reply).toContain(GREETING);
+		expect(body.reply).toMatch(/sign in/i);
 		expect(response.headers.get('access-control-allow-origin')).toBe('https://app.rivus.ai');
 	});
 
 	it('tolerates an empty or invalid POST body and still greets', async () => {
 		const empty = await handleChat(request('/agents/rivus-agent/default', { method: 'POST' }));
-		expect(await empty.json()).toEqual({ reply: GREETING });
+		expect(((await empty.json()) as { reply: string }).reply).toContain(GREETING);
 
 		const garbage = await handleChat(
 			request('/agents/rivus-agent/default', { method: 'POST', body: 'not json' }),
 		);
-		expect(await garbage.json()).toEqual({ reply: GREETING });
+		expect(((await garbage.json()) as { reply: string }).reply).toContain(GREETING);
+	});
+
+	it('serves an authenticated request from the user’s Rivus data', async () => {
+		const token = await signToken({
+			sub: 'user_1',
+			email: 'owner@acme.example',
+			accountId: 'acct_1',
+			role: 'owner',
+			exp: Math.floor(Date.now() / 1000) + 3600,
+		});
+		const account = {
+			id: 'acct_1',
+			name: 'Acme',
+			slug: 'acme',
+			phone: '',
+			address: '',
+			website: 'https://acme.example',
+			timezone: 'UTC',
+			status: 'active',
+			canceledAt: null,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		};
+		const fetchImpl = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						user: {
+							id: 'user_1',
+							email: 'owner@acme.example',
+							name: 'Pat',
+							createdAt: account.createdAt,
+							updatedAt: account.updatedAt,
+						},
+						account,
+						role: 'owner',
+					}),
+					{ status: 200, headers: { 'content-type': 'application/json' } },
+				),
+		) as unknown as FetchLike;
+
+		const env = { JWT_SECRET: SECRET, RIVUS_API_URL: 'https://api.test' } as unknown as Env;
+		const response = await handleChat(
+			postJson(
+				{ messages: [{ role: 'user', content: 'what is our website?' }] },
+				{ headers: { Authorization: `Bearer ${token}` } },
+			),
+			env,
+			fetchImpl,
+		);
+
+		expect(response.status).toBe(200);
+		expect(((await response.json()) as { reply: string }).reply).toBe(
+			'Your website is https://acme.example.',
+		);
+		expect(fetchImpl).toHaveBeenCalledWith(
+			'https://api.test/v1/auth/me',
+			expect.objectContaining({ method: 'GET' }),
+		);
+	});
+
+	it('blocks a cookie-authenticated POST from a disallowed origin (CSRF guard)', async () => {
+		const env = { ALLOWED_ORIGINS: 'https://app.rivus.ai' } as Env;
+		const response = await handleChat(
+			request('/agents/rivus-agent/default', {
+				method: 'POST',
+				headers: {
+					Origin: 'https://evil.example',
+					cookie: 'rivus_session=some.jwt.value',
+					'content-type': 'application/json',
+				},
+				body: JSON.stringify({ messages: [{ role: 'user', content: 'update a faq' }] }),
+			}),
+			env,
+		);
+		expect(response.status).toBe(403);
+	});
+
+	it('does not CSRF-block a bearer POST (not forgeable cross-site)', async () => {
+		const env = { ALLOWED_ORIGINS: 'https://app.rivus.ai' } as Env;
+		const response = await handleChat(
+			request('/agents/rivus-agent/default', {
+				method: 'POST',
+				headers: {
+					Origin: 'https://evil.example',
+					Authorization: 'Bearer not.a.real.token',
+					'content-type': 'application/json',
+				},
+				body: JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }),
+			}),
+			env,
+		);
+		// Bearer tokens can't be forged cross-site, so this isn't blocked — it just
+		// isn't authenticated, so Rivus greets and nudges to sign in.
+		expect(response.status).toBe(200);
 	});
 
 	it('rejects other methods with 405', async () => {

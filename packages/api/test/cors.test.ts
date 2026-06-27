@@ -66,6 +66,19 @@ describe('CORS', () => {
 		expect(res.headers['access-control-allow-credentials']).toBe('true');
 	});
 
+	it('grants credentials only to the app origin, not other allowlisted origins', async () => {
+		// The default test APP_URL is https://app.rivus.ai. A sibling origin (the
+		// marketing site) is still allowlisted for plain CORS — so public reads like
+		// /health work — but must NOT get credentialed CORS, or it could read a
+		// signed-in user's cookie-authenticated responses once the cookie is
+		// parent-domain scoped.
+		app = buildAppWithCors('https://app.rivus.ai,https://www.rivus.ai');
+		const res = await preflight(app, 'https://www.rivus.ai');
+
+		expect(res.headers['access-control-allow-origin']).toBe('https://www.rivus.ai');
+		expect(res.headers['access-control-allow-credentials']).toBeUndefined();
+	});
+
 	it('advertises the write verbs the API serves (PATCH, DELETE) in preflight', async () => {
 		// `@fastify/cors` v11 narrowed its default `methods` to `GET,HEAD,POST`. Without
 		// an explicit list, a cross-origin PATCH/DELETE preflight (editing or deleting an

@@ -5,11 +5,44 @@ A Cloudflare Agent is a **Durable Object** with conversation state built in, so
 each chat is its own addressable, stateful instance rather than a stateless
 function call.
 
-Right now the agent does exactly one thing on purpose: **it says hello.** That is
-the first milestone — proof that the app can reach the agent and get a reply all
-the way back. The reply logic is a single pure function (`replyTo`), so turning
-"hello" into a real model-backed assistant later means changing only that one
-place.
+It greets anyone who opens it, and — once a request is **authenticated** — it can
+answer from the signed-in user's own Rivus account: their company details (e.g.
+"what's our website?") and their knowledge base (search, update, and add FAQs).
+The reply logic is still a set of small, pure, unit-tested functions, so turning
+the deterministic understanding layer (`intent.ts`) into a real model-backed
+assistant later means changing only that one place.
+
+## Authentication
+
+The agent verifies the **same session JWT that `@rivus/api` issues**, so a user
+who is signed in to the Rivus app is recognised automatically. The token arrives
+either as an `Authorization: Bearer <jwt>` header (native app) or as the
+`rivus_session` HttpOnly cookie (web app). Verification is local (HMAC-SHA256 via
+Web Crypto) against the shared `JWT_SECRET`, so an unauthenticated caller gets a
+friendly nudge to sign in without any network round-trip.
+
+A valid signature only proves the token is ours and unexpired — it isn't the
+authority on live membership or permissions. So for anything that touches data,
+the agent **forwards the user's token to the Rivus API** (`RIVUS_API_URL`) and
+lets the API enforce tenancy (account scoping) and role permissions exactly as it
+does for the app. The agent orchestrates and formats; the API stays the single
+source of truth. Any `401`/`403` from the API is turned into a clear sentence.
+
+> **Web + cookies across subdomains.** For the browser to send the cookie to
+> `agent.rivus.ai`, the API must scope it to the shared parent domain — set
+> `COOKIE_DOMAIN=.rivus.ai` on `@rivus/api`. Native clients use the bearer token
+> and need no cookie.
+
+### Configuration
+
+| Binding          | Kind   | Example                | Purpose                                             |
+| ---------------- | ------ | ---------------------- | --------------------------------------------------- |
+| `JWT_SECRET`     | secret | (match the API)        | Verifies session tokens. `wrangler secret put JWT_SECRET`. |
+| `RIVUS_API_URL`  | var    | `https://api.rivus.ai` | The REST API the agent calls on the user's behalf.  |
+| `ALLOWED_ORIGINS`| var    | `https://app.rivus.ai` | Credentialed-CORS allowlist (`*` = any, dev only).  |
+
+`RIVUS_API_URL` and `ALLOWED_ORIGINS` are set per environment in `wrangler.jsonc`;
+`JWT_SECRET` is a deploy-time secret and must equal the API's.
 
 ## How it fits together
 
@@ -48,13 +81,17 @@ each gets its own isolated state.
 
 ## Source layout
 
-| File                | Runtime?            | Role                                                          |
-| ------------------- | ------------------- | ------------------------------------------------------------ |
-| `src/conversation.ts` | pure (Node)       | `replyTo(messages)` — the greeting logic. The heart of the agent. |
+| File                  | Runtime?          | Role                                                          |
+| --------------------- | ----------------- | ------------------------------------------------------------ |
+| `src/conversation.ts` | pure (Node)       | `replyTo(messages)` — the greeting logic.                    |
+| `src/auth.ts`         | pure (Node)       | Extract + verify the session JWT (bearer or cookie, HS256).  |
+| `src/intent.ts`       | pure (Node)       | `parseIntent(text)` — deterministic understanding layer.     |
+| `src/api.ts`          | pure (Node)       | Rivus API client the agent calls on the user's behalf.       |
+| `src/assistant.ts`    | pure (Node)       | `respond()` — verify session → intent → API → formatted reply. |
 | `src/http.ts`         | pure (Node)       | Request parsing, CORS, and `handleChat` / `handlePublicRoute`. |
 | `src/agent.ts`        | Workers runtime   | `RivusAgent` Durable Object — a thin adapter over the pure modules. |
 | `src/index.ts`        | Workers runtime   | Worker entrypoint: health/CORS + `routeAgentRequest`.        |
-| `src/types.ts`        | shared             | `Env`, `ChatMessage`, `ChatReply`, agent state.              |
+| `src/types.ts`        | shared            | `Env`, `SessionClaims`, `ChatMessage`, `ChatReply`, agent state. |
 
 The pure modules import nothing from the Agents SDK (which pulls in
 `cloudflare:workers`, unavailable under Node), which is what keeps the tests
@@ -78,11 +115,20 @@ curl http://localhost:8787/health
 curl http://localhost:8787/agents/rivus-agent/default
 # {"reply":"Hello! I'm Rivus, your AI assistant. 👋"}
 
-# POST a conversation, the way the app does.
+# POST a conversation, the way the app does. Without a session, Rivus greets and
+# nudges you to sign in.
 curl -X POST http://localhost:8787/agents/rivus-agent/default \
   -H 'content-type: application/json' \
   -d '{"messages":[{"role":"user","content":"hi"}]}'
-# {"reply":"Hello! I'm Rivus, your AI assistant. 👋"}
+# {"reply":"Hello! I'm Rivus, your AI assistant. 👋 Sign in to Rivus and I can …"}
+
+# Authenticated: forward a session token (the JWT the API issues) and ask about
+# your account. Requires JWT_SECRET (matching the API) and RIVUS_API_URL set.
+curl -X POST http://localhost:8787/agents/rivus-agent/default \
+  -H 'content-type: application/json' \
+  -H "authorization: Bearer $RIVUS_JWT" \
+  -d '{"messages":[{"role":"user","content":"what is our website?"}]}'
+# {"reply":"Your website is https://acme.example."}
 ```
 
 To see it end-to-end from the app, run the agent (`pnpm --filter @rivus/agent
@@ -123,13 +169,16 @@ Object. The named environments map to `dev-agent.rivus.ai` and `agent.rivus.ai`
 
 ## Extending it
 
-When you're ready for the agent to do more than greet:
-
-- Put the real logic in `replyTo` (or call a model from `onRequest` and keep
-  `replyTo` as the fallback). The app and the routing don't change.
-- Use the Durable Object's state/SQL (`this.state`, `this.setState`, `this.sql`)
-  to remember the conversation. `messagesSeen` is already wired as a starting
-  point.
-- For streaming/token-by-token replies, switch the app to the Agents SDK's
+- **Smarter understanding.** `parseIntent` is deterministic on purpose (testable,
+  predictable). To make it model-backed, replace just that function — `assistant.ts`
+  consumes the same `Intent` shape, and the app and routing don't change.
+- **More capabilities.** `assistant.ts` already calls the API for company context
+  and FAQ search/update/create; add a new API method in `api.ts` and a branch in
+  `respond` to cover more (customers, items, …). Permissions come for free — the
+  API enforces them and the agent surfaces any `403`.
+- **Memory.** Use the Durable Object's state/SQL (`this.state`, `this.setState`,
+  `this.sql`) to remember the conversation. `messagesSeen` is already wired as a
+  starting point.
+- **Streaming.** For token-by-token replies, switch the app to the Agents SDK's
   WebSocket client (`agents/react`) — the same `/agents/rivus-agent/:name`
   endpoint already supports it.

@@ -47,4 +47,28 @@ describe('createAgentClient', () => {
 
 		await expect(client.chat([])).rejects.toThrow();
 	});
+
+	it('forwards a bearer token when one is provided (native)', async () => {
+		const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(jsonResponse({ reply: 'hi' }));
+		const client = createAgentClient(ENDPOINT, fetch);
+
+		await client.chat([{ role: 'user', content: 'hi' }], 'jwt-token');
+
+		const init = fetch.mock.calls[0][1];
+		expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer jwt-token');
+		// Bearer mode doesn't send cookies.
+		expect(init?.credentials).toBeUndefined();
+	});
+
+	it('omits the Authorization header when no token is given (web cookie mode)', async () => {
+		const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(jsonResponse({ reply: 'hi' }));
+		const client = createAgentClient(ENDPOINT, fetch, { withCredentials: true });
+
+		await client.chat([{ role: 'user', content: 'hi' }], '');
+
+		const init = fetch.mock.calls[0][1];
+		expect((init?.headers as Record<string, string>).Authorization).toBeUndefined();
+		// Cookie mode sends credentials so the session cookie rides along.
+		expect(init?.credentials).toBe('include');
+	});
 });

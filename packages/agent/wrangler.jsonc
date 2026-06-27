@@ -9,6 +9,15 @@
 	"observability": {
 		"enabled": true
 	},
+	// Plain (non-secret) vars for local `wrangler dev`. `RIVUS_API_URL` is the Rivus
+	// REST API the agent calls on a signed-in user's behalf; `ALLOWED_ORIGINS` is the
+	// credentialed-CORS allowlist (`*` reflects any origin — local dev only).
+	// The shared `JWT_SECRET` (used to verify session tokens; must match the API's)
+	// is a *secret*, not a var: set it with `wrangler secret put JWT_SECRET`.
+	"vars": {
+		"RIVUS_API_URL": "http://localhost:4000",
+		"ALLOWED_ORIGINS": "*"
+	},
 	// Each Agent is a SQLite-backed Durable Object. The binding name kebab-cases to
 	// the URL segment the SDK routes on: `RivusAgent` -> `/agents/rivus-agent/:name`.
 	"durable_objects": {
@@ -16,12 +25,21 @@
 	},
 	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["RivusAgent"] }],
 	// Named environments. `durable_objects` is non-inheritable, so each environment
-	// redeclares it; `main`, `migrations` and `observability` are inherited.
-	// Deploy with `wrangler deploy --env development`.
+	// redeclares it; `main`, `migrations` and `observability` are inherited. Each
+	// environment pins its own `RIVUS_API_URL` and `ALLOWED_ORIGINS` (the latter
+	// must be the app's exact origin in deployed environments — credentialed CORS
+	// can't use a wildcard). Deploy with `wrangler deploy --env development`.
 	"env": {
 		"development": {
 			"name": "rivus-agent-dev",
 			"routes": [{ "pattern": "dev-agent.rivus.ai", "custom_domain": true }],
+			// Deployed environments run in production mode with an explicit origin
+			// allowlist (never `*`), so the credentialed-CORS guard stays satisfied.
+			"vars": {
+				"NODE_ENV": "production",
+				"RIVUS_API_URL": "https://dev-api.rivus.ai",
+				"ALLOWED_ORIGINS": "https://dev-app.rivus.ai"
+			},
 			"durable_objects": {
 				"bindings": [{ "name": "RivusAgent", "class_name": "RivusAgent" }]
 			}
@@ -29,6 +47,11 @@
 		"production": {
 			"name": "rivus-agent",
 			"routes": [{ "pattern": "agent.rivus.ai", "custom_domain": true }],
+			"vars": {
+				"NODE_ENV": "production",
+				"RIVUS_API_URL": "https://api.rivus.ai",
+				"ALLOWED_ORIGINS": "https://app.rivus.ai"
+			},
 			"durable_objects": {
 				"bindings": [{ "name": "RivusAgent", "class_name": "RivusAgent" }]
 			}

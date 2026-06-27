@@ -130,8 +130,14 @@ function Gate() {
 
 function Shell() {
 	const { width } = useWindowDimensions();
-	const { isStaff } = useAuth();
+	const { isStaff, session } = useAuth();
 	const wide = width >= SIDEBAR_BREAKPOINT;
+
+	// Remount the agent chat when the active account changes (a staff "switch
+	// company" swaps the session in place). Its transcript and answers are
+	// tenant-specific, so keying on the account id discards one company's
+	// conversation instead of leaking it — or re-sending it — into the next.
+	const chatKey = session?.account.id;
 
 	if (wide) {
 		return (
@@ -143,7 +149,7 @@ function Shell() {
 						<Slot />
 					</View>
 				</View>
-				<RivusChat />
+				<RivusChat key={chatKey} />
 			</View>
 		);
 	}
@@ -161,7 +167,7 @@ function Shell() {
 			<View style={styles.content}>
 				<Slot />
 			</View>
-			<RivusChat />
+			<RivusChat key={chatKey} />
 		</View>
 	);
 }

@@ -15,6 +15,10 @@ export const SESSION_COOKIE = 'rivus_session';
  * app's API calls while cross-site requests don't send it), and `Secure` in
  * production where everything is HTTPS. `maxAge` is passed in to match the JWT's
  * own expiry so the browser drops the cookie exactly when the token dies.
+ *
+ * When `COOKIE_DOMAIN` is configured (e.g. `.rivus.ai`) the cookie is scoped to
+ * that parent domain so every sibling subdomain — the app and the agent — receives
+ * it; left unset it stays a host-only cookie for the API alone.
  */
 export function sessionCookieOptions(
 	config: Config,
@@ -25,6 +29,7 @@ export function sessionCookieOptions(
 		secure: config.NODE_ENV === 'production',
 		sameSite: 'lax',
 		path: '/',
+		...(config.COOKIE_DOMAIN ? { domain: config.COOKIE_DOMAIN } : {}),
 		...(maxAgeSeconds !== undefined ? { maxAge: maxAgeSeconds } : {}),
 	};
 }

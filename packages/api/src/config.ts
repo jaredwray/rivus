@@ -12,6 +12,11 @@ const envSchema = z
 			.default('mongodb://localhost:27017/rivus?replicaSet=rs0&directConnection=true'),
 		JWT_SECRET: z.string().min(8).default(DEV_JWT_SECRET),
 		JWT_EXPIRES_IN: z.string().default('7d'),
+		// Domain the session cookie is scoped to. Unset (the default) makes it a
+		// host-only cookie for the API's own host. Set it to the shared parent domain
+		// (e.g. `.rivus.ai`) so sibling subdomains — the app *and the agent* — receive
+		// the cookie, which is what lets a web user chat with an authenticated agent.
+		COOKIE_DOMAIN: z.string().min(1).optional(),
 		LOG_LEVEL: z
 			.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
 			.default('info'),

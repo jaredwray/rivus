@@ -11,7 +11,7 @@ export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		// Health, root, and CORS preflights are answered without spinning up an
 		// agent instance.
-		const direct = handlePublicRoute(request);
+		const direct = handlePublicRoute(request, env);
 		if (direct) {
 			return direct;
 		}
@@ -19,6 +19,6 @@ export default {
 		// Everything under `/agents/:agent/:name` is dispatched to the matching
 		// Durable Object by the Agents SDK; it returns null when nothing matches.
 		const routed = await routeAgentRequest(request, env);
-		return routed ?? notFoundResponse(request, new URL(request.url).pathname);
+		return routed ?? notFoundResponse(request, new URL(request.url).pathname, env);
 	},
 } satisfies ExportedHandler<Env>;
