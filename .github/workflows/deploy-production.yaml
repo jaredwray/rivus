@@ -39,10 +39,24 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # The agent verifies the API's session tokens, so it must share the same
+      # JWT_SECRET. Required in production — without it the agent treats every
+      # request as anonymous and authenticated chat never works.
+      PROD_JWT_SECRET: ${{ secrets.PROD_JWT_SECRET }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup
+      - name: Require the shared JWT secret
+        run: |
+          if [ -z "$PROD_JWT_SECRET" ]; then
+            echo "::error::Set PROD_JWT_SECRET (the same value as the API) before deploying the agent."
+            exit 1
+          fi
       - run: pnpm --filter @rivus/agent exec wrangler deploy --env production
+      # Keep the agent's JWT_SECRET in sync with the API so it can verify tokens.
+      - name: Sync the shared JWT secret
+        run: |
+          printf '%s' "$PROD_JWT_SECRET" | pnpm --filter @rivus/agent exec wrangler secret put JWT_SECRET --env production
 
   deploy-docs:
     name: Deploy docs
