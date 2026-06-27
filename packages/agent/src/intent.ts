@@ -124,22 +124,48 @@ function parseFaqUpdate(text: string): { topic: string; answer: string | null } 
  */
 const QUOTED_TITLE = /["“„]([^"“”„]+)["”“]/;
 
-/** Strip the leading "add/create/make … faq" preamble, leaving just the content. */
-function stripCreatePreamble(text: string): string {
-	return text
-		.replace(/^[\s,.:;'"“”-]*(?:add|create|new|make|insert)\b[^?]*?\bfaqs?\b[\s,:.;-]*/i, '')
-		.trim();
+/** The FAQ noun a create command names, plus optional separators that follow it. */
+const FAQ_COMMAND =
+	/(?:add|create|new|make|insert)\b[^?]*?\b(?:faqs?|knowledge[ -]?base|kb)\b[\s:,.-]*/i;
+
+/**
+ * The FAQ "payload" — the text after the `add … faq` command, where the actual
+ * question/answer live. Scoping extraction to this (rather than the whole
+ * message) keeps quoted context or a "?" that appears *before* the command —
+ * `On the "Returns" page, add an FAQ: …` — from being mistaken for FAQ content.
+ * `hadCommand` is false when no command marker is found (then payload is the
+ * whole message).
+ */
+function faqPayload(text: string): { payload: string; hadCommand: boolean } {
+	const match = FAQ_COMMAND.exec(text);
+	if (!match) {
+		return { payload: text, hadCommand: false };
+	}
+	return { payload: text.slice(match.index + match[0].length).trim(), hadCommand: true };
+}
+
+/** Drop a leading `question:` / `q:` label so it never leaks into the question text. */
+function stripQuestionLabel(value: string): string {
+	return value.replace(/^(?:question|q)\s*[:=-]\s*/i, '').trim();
+}
+
+/** True when a candidate answer is really just "…to the/our knowledge base" command boilerplate. */
+function isDestinationBoilerplate(value: string): boolean {
+	return /^(?:to|into|in)\s+(?:the|our|my)\s+(?:knowledge[ -]?base|kb|faqs?)$/i.test(value);
 }
 
 /** Tidy an extracted answer: drop wrapping punctuation/quotes, an "answer:" label, trailing stops. */
 function cleanAnswer(value: string): string {
-	return value
+	const cleaned = value
 		.replace(/^[\s,.:;()\-–—"“„]+/, '')
 		.replace(/^answer\s*[:=-]\s*/i, '')
 		.replace(/["”“]+$/, '')
 		.replace(/[.!?]+\s*$/, '')
 		.replace(/\s+/g, ' ')
 		.trim();
+	// "add a faq \"Returns\" to the knowledge base" leaves "to the knowledge base"
+	// after the title — that's where to put it, not the answer, so don't keep it.
+	return isDestinationBoilerplate(cleaned) ? '' : cleaned;
 }
 
 /** Parse an FAQ-create ask into a question/answer pair, extracting as much as the user gave. */
@@ -151,26 +177,27 @@ function parseFaqCreate(text: string): { question: string | null; answer: string
 	if (qa?.[1] && qa[2]) {
 		return { question: qa[1].trim(), answer: qa[2].trim() };
 	}
+	// Everything below works on the FAQ payload — the content *after* the
+	// `add … faq` command — so quoted context or a "?" before the command is ignored.
+	const { payload, hadCommand } = faqPayload(text);
 	// 2. A double-quoted phrase is the question/title; whatever follows the closing
 	// quote is the answer. Covers the natural phrasing people actually type, e.g.
 	// `add this FAQ. "Our Cancelation Policy". It needs to be 24 hours in advance`.
-	const quoted = QUOTED_TITLE.exec(text);
+	const quoted = QUOTED_TITLE.exec(payload);
 	const title = quoted?.[1]?.trim();
 	if (quoted && title) {
-		const answer = cleanAnswer(text.slice(quoted.index + quoted[0].length));
+		const answer = cleanAnswer(payload.slice(quoted.index + quoted[0].length));
 		return { question: title, answer: answer.length > 0 ? answer : null };
 	}
 	// 3. A natural "<question>? <answer>" split — e.g. `add an FAQ: do you deliver?
-	// yes, city-wide`. Only trust the "?" when the message is actually framed as an
-	// add-FAQ command (the "add … faq" preamble was found and removed); otherwise a
-	// "?" in the *request* itself — "Can you add this to our FAQ? …" — would be
-	// mistaken for the FAQ's question.
-	const body = stripCreatePreamble(text);
-	const mark = body.indexOf('?');
-	if (body.length > 0 && body !== text && mark >= 0) {
-		const question = body.slice(0, mark + 1).trim();
+	// yes, city-wide`. Only trust the "?" when the message is framed as an add-FAQ
+	// command, so a "?" in the *request* itself ("Can you add this to our FAQ? …")
+	// isn't mistaken for the FAQ's question.
+	const mark = payload.indexOf('?');
+	if (hadCommand && payload.length > 0 && mark >= 0) {
+		const question = stripQuestionLabel(payload.slice(0, mark + 1));
 		if (/[\p{L}\p{N}]/u.test(question)) {
-			const answer = cleanAnswer(body.slice(mark + 1));
+			const answer = cleanAnswer(payload.slice(mark + 1));
 			return { question, answer: answer.length > 0 ? answer : null };
 		}
 	}
