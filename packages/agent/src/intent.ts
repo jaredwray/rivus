@@ -132,8 +132,10 @@ export function parseIntent(raw: string): Intent {
 	if (HELP.test(lower)) {
 		return { kind: 'help' };
 	}
-	// A bare greeting with nothing else asked.
-	if (GREETING.test(lower) && lower.replace(GREETING, '').trim().length === 0) {
+	// A bare greeting with nothing else asked. Strip trailing punctuation first so
+	// "hi!" / "hello." still count as a plain hello rather than falling through.
+	const cleanLower = lower.replace(/[?.!]+$/, '').trim();
+	if (GREETING.test(cleanLower) && cleanLower.replace(GREETING, '').trim().length === 0) {
 		return { kind: 'greeting' };
 	}
 

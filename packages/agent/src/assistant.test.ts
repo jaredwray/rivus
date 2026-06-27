@@ -298,6 +298,15 @@ describe('respond — knowledge base reads', () => {
 		expect(reply).toContain('What are your HR policies?');
 	});
 
+	it('matches accented (non-ASCII) search terms', async () => {
+		const faqs = [makeFaq({ question: 'Café opening hours?', answer: 'We open at 8am.' })];
+		const reply = await ask('search faqs for café', {
+			token: TOKEN,
+			fetchImpl: router([{ when: onListFaqs, body: page(faqs) }]),
+		});
+		expect(reply).toContain('Café opening hours?');
+	});
+
 	it('says when a search finds nothing', async () => {
 		const reply = await ask('search faqs for skydiving', {
 			token: TOKEN,

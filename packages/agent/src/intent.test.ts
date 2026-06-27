@@ -13,6 +13,12 @@ describe('parseIntent — conversational', () => {
 		expect(parseIntent('Good morning')).toEqual({ kind: 'greeting' });
 	});
 
+	it('recognises greetings with trailing punctuation', () => {
+		expect(parseIntent('hi!')).toEqual({ kind: 'greeting' });
+		expect(parseIntent('Hello.')).toEqual({ kind: 'greeting' });
+		expect(parseIntent('hey!!!')).toEqual({ kind: 'greeting' });
+	});
+
 	it('recognises help asks', () => {
 		expect(parseIntent('help')).toEqual({ kind: 'help' });
 		expect(parseIntent('What can you do?')).toEqual({ kind: 'help' });

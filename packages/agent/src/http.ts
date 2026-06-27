@@ -28,16 +28,41 @@ export function parseMessages(body: unknown): ChatMessage[] {
 	return parsed.success ? parsed.data : [];
 }
 
-/** Whether a browser `Origin` may make credentialed requests to the agent. */
-function originAllowed(origin: string, allowed: string | undefined): boolean {
+/** Match an origin against one allowlist entry, supporting a single-label `*`. */
+function matchesOrigin(origin: string, pattern: string): boolean {
+	if (!pattern.includes('*')) {
+		return origin === pattern;
+	}
+	// Escape regex metachars, then turn `*` into a single-label wildcard so
+	// `https://*.rivus.ai` matches `app.rivus.ai` but not `a.b.rivus.ai` — the same
+	// rule the API's `parseCorsOrigin` uses.
+	const escaped = pattern.replace(/[.+^${}()|[\]\\?]/g, '\\$&').replace(/\*/g, '[^.]+');
+	return new RegExp(`^${escaped}$`).test(origin);
+}
+
+/**
+ * Whether a browser `Origin` may make credentialed requests to the agent.
+ *
+ * Credentialed CORS can't safely reflect a bare `*` — that would let any site
+ * make authenticated cross-origin requests and read a signed-in user's replies.
+ * So a bare `*` is refused in production (mirroring the API's boot-time guard);
+ * locally it reflects any origin for convenience. Deployed environments must list
+ * exact origins, or a single-label subdomain wildcard like `https://*.rivus.ai`.
+ */
+function originAllowed(origin: string, allowed: string | undefined, nodeEnv?: string): boolean {
 	const list = (allowed ?? '*')
 		.split(',')
 		.map((entry) => entry.trim())
 		.filter(Boolean);
 	if (list.includes('*')) {
+		if (nodeEnv === 'production') {
+			throw new Error(
+				"ALLOWED_ORIGINS must be an explicit origin allowlist in production, not '*': credentialed CORS reflects the request origin, so a wildcard would authorize every site.",
+			);
+		}
 		return true;
 	}
-	return list.includes(origin);
+	return list.some((pattern) => matchesOrigin(origin, pattern));
 }
 
 /**
@@ -60,7 +85,7 @@ export function corsHeaders(request: Request, env?: Env): Record<string, string>
 		'Access-Control-Max-Age': '86400',
 	};
 	const origin = request.headers.get('Origin');
-	if (origin && originAllowed(origin, env?.ALLOWED_ORIGINS)) {
+	if (origin && originAllowed(origin, env?.ALLOWED_ORIGINS, env?.NODE_ENV)) {
 		return {
 			...base,
 			'Access-Control-Allow-Origin': origin,

@@ -25,6 +25,13 @@ export interface Env {
 	 * signed-in user's agent replies.
 	 */
 	ALLOWED_ORIGINS?: string;
+	/**
+	 * Deployment mode (`production` | `development`). In `production` a wildcard
+	 * `ALLOWED_ORIGINS` is refused so credentialed CORS can never reflect an
+	 * arbitrary origin — mirroring the API's boot-time guard. Set per environment
+	 * in wrangler.jsonc; unset locally (treated as development).
+	 */
+	NODE_ENV?: string;
 }
 
 /**

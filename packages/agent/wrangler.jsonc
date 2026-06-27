@@ -33,7 +33,10 @@
 		"development": {
 			"name": "rivus-agent-dev",
 			"routes": [{ "pattern": "dev-agent.rivus.ai", "custom_domain": true }],
+			// Deployed environments run in production mode with an explicit origin
+			// allowlist (never `*`), so the credentialed-CORS guard stays satisfied.
 			"vars": {
+				"NODE_ENV": "production",
 				"RIVUS_API_URL": "https://dev-api.rivus.ai",
 				"ALLOWED_ORIGINS": "https://dev-app.rivus.ai"
 			},
@@ -45,6 +48,7 @@
 			"name": "rivus-agent",
 			"routes": [{ "pattern": "agent.rivus.ai", "custom_domain": true }],
 			"vars": {
+				"NODE_ENV": "production",
 				"RIVUS_API_URL": "https://api.rivus.ai",
 				"ALLOWED_ORIGINS": "https://app.rivus.ai"
 			},

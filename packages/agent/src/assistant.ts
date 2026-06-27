@@ -331,7 +331,9 @@ const STOPWORDS = new Set([
 
 /** Lowercased word tokens worth matching on (short/stopword tokens dropped). */
 function tokenize(value: string): string[] {
-	return (value.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(
+	// Unicode letter/number classes (not ASCII-only ranges) so accented and
+	// non-Latin knowledge bases (e.g. "café", non-Latin scripts) tokenize correctly.
+	return (value.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter(
 		(token) => token.length > 2 && !STOPWORDS.has(token),
 	);
 }

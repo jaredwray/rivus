@@ -114,6 +114,37 @@ describe('corsHeaders', () => {
 		);
 		expect(headers['Access-Control-Allow-Origin']).toBe('https://www.rivus.ai');
 	});
+
+	it('refuses a wildcard allowlist in production (credentialed CORS guard)', () => {
+		const env = { NODE_ENV: 'production', ALLOWED_ORIGINS: '*' } as Env;
+		expect(() =>
+			corsHeaders(request('/x', { headers: { Origin: 'https://evil.example' } }), env),
+		).toThrow(/production/i);
+	});
+
+	it('still reflects an explicit origin in production (no throw)', () => {
+		const env = { NODE_ENV: 'production', ALLOWED_ORIGINS: 'https://app.rivus.ai' } as Env;
+		const headers = corsHeaders(
+			request('/x', { headers: { Origin: 'https://app.rivus.ai' } }),
+			env,
+		);
+		expect(headers['Access-Control-Allow-Origin']).toBe('https://app.rivus.ai');
+		expect(headers['Access-Control-Allow-Credentials']).toBe('true');
+	});
+
+	it('matches a single-label subdomain wildcard but not nested subdomains', () => {
+		const env = { ALLOWED_ORIGINS: 'https://*.rivus.ai' } as Env;
+		expect(
+			corsHeaders(request('/x', { headers: { Origin: 'https://app.rivus.ai' } }), env)[
+				'Access-Control-Allow-Origin'
+			],
+		).toBe('https://app.rivus.ai');
+		expect(
+			corsHeaders(request('/x', { headers: { Origin: 'https://a.b.rivus.ai' } }), env)[
+				'Access-Control-Allow-Origin'
+			],
+		).toBeUndefined();
+	});
 });
 
 describe('jsonResponse / notFoundResponse', () => {
