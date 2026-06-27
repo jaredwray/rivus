@@ -131,8 +131,15 @@ function Gate() {
 
 function Shell() {
 	const { width } = useWindowDimensions();
+	const insets = useSafeAreaInsets();
 	const { isStaff, session } = useAuth();
 	const wide = width >= SIDEBAR_BREAKPOINT;
+
+	// Measured height of the bottom tab bar (it has no fixed height, so larger
+	// text settings or a wrapped label can grow it). The chat button and the
+	// "More" sheet anchor to this so they always clear the real bar; the constant
+	// is just the pre-measurement default.
+	const [tabBarHeight, setTabBarHeight] = useState(MOBILE_TABBAR_HEIGHT + insets.bottom);
 
 	// Remount the agent chat when the active account changes (a staff "switch
 	// company" swaps the session in place). Its transcript and answers are
@@ -169,10 +176,10 @@ function Shell() {
 			</View>
 			{/* Render the chat button before the tab bar so the "More" sheet and its
 			    backdrop layer above — and dim — the chat button while the sheet is open.
-			    The button is lifted by MOBILE_TABBAR_HEIGHT so the two never overlap when
-			    the sheet is closed. */}
-			<RivusChat key={chatKey} bottomOffset={MOBILE_TABBAR_HEIGHT} />
-			<BottomTabBar />
+			    The button is lifted by the measured bar height so the two never overlap
+			    when the sheet is closed. */}
+			<RivusChat key={chatKey} bottomOffset={tabBarHeight} />
+			<BottomTabBar height={tabBarHeight} onHeight={setTabBarHeight} />
 		</View>
 	);
 }
@@ -292,7 +299,7 @@ const PRIMARY_TAB_COUNT = 4;
  * Shows the primary destinations as tabs and folds the rest behind a "More"
  * tab that opens a sheet just above the bar.
  */
-function BottomTabBar() {
+function BottomTabBar({ height, onHeight }: { height: number; onHeight: (h: number) => void }) {
 	const pathname = usePathname();
 	const router = useRouter();
 	const insets = useSafeAreaInsets();
@@ -314,14 +321,13 @@ function BottomTabBar() {
 	return (
 		<>
 			{moreOpen && overflow.length > 0 ? (
-				<MoreSheet
-					items={overflow}
-					bottomInset={insets.bottom}
-					onClose={() => setMoreOpen(false)}
-				/>
+				<MoreSheet items={overflow} barHeight={height} onClose={() => setMoreOpen(false)} />
 			) : null}
 
-			<View style={[styles.tabbar, { paddingBottom: insets.bottom + 6 }]}>
+			<View
+				style={[styles.tabbar, { paddingBottom: insets.bottom + 6 }]}
+				onLayout={(event) => onHeight(event.nativeEvent.layout.height)}
+			>
 				{primary.map((item) => (
 					<TabButton
 						key={item.href}
@@ -388,11 +394,11 @@ function TabButton({
 /** Overflow destinations (and sign-out) for the bottom bar's "More" tab. */
 function MoreSheet({
 	items,
-	bottomInset,
+	barHeight,
 	onClose,
 }: {
 	items: NavItem[];
-	bottomInset: number;
+	barHeight: number;
 	onClose: () => void;
 }) {
 	const pathname = usePathname();
@@ -409,7 +415,7 @@ function MoreSheet({
 				accessibilityRole="button"
 				accessibilityLabel="Close menu"
 			/>
-			<View style={[styles.sheet, { bottom: MOBILE_TABBAR_HEIGHT + bottomInset }]}>
+			<View style={[styles.sheet, { bottom: barHeight }]}>
 				<View style={styles.sheetHandle} />
 				{items.map((item) => {
 					const active = isActive(pathname, item.href);

@@ -36,9 +36,15 @@ interface DisplayMessage extends ChatMessage {
  * agent service (`@rivus/agent`). On first open it greets you — the end-to-end
  * proof that the app can reach the agent and get a reply back.
  */
+/**
+ * @param bottomOffset Height of bottom chrome the launcher must clear (e.g. the
+ * mobile tab bar). It already includes the safe-area inset, so we reserve the
+ * larger of it and the raw inset rather than summing the two.
+ */
 export function RivusChat({ bottomOffset = 0 }: { bottomOffset?: number }) {
 	const insets = useSafeAreaInsets();
 	const { width, height } = useWindowDimensions();
+	const bottomReserve = Math.max(insets.bottom, bottomOffset);
 
 	const { session } = useAuth();
 	// Web authenticates the agent via the shared session cookie; native forwards
@@ -100,7 +106,7 @@ export function RivusChat({ bottomOffset = 0 }: { bottomOffset?: number }) {
 	}
 
 	const panelWidth = Math.min(360, width - 24);
-	const panelHeight = Math.min(460, height - insets.top - insets.bottom - bottomOffset - 96);
+	const panelHeight = Math.min(460, height - insets.top - bottomReserve - 96);
 
 	return (
 		<KeyboardAvoidingView
@@ -109,7 +115,7 @@ export function RivusChat({ bottomOffset = 0 }: { bottomOffset?: number }) {
 			// to avoid, so the behavior is iOS-only.
 			behavior={Platform.OS === 'ios' ? 'padding' : undefined}
 			pointerEvents="box-none"
-			style={[styles.layer, { right: 18, bottom: insets.bottom + 18 + bottomOffset }]}
+			style={[styles.layer, { right: 18, bottom: bottomReserve + 18 }]}
 		>
 			{open ? (
 				<View style={[styles.panel, { width: panelWidth, height: panelHeight }]}>
