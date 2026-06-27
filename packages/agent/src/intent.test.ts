@@ -184,6 +184,14 @@ describe('parseIntent — natural FAQ create', () => {
 		});
 	});
 
+	it('handles German-style low-high double quotes (“„…“”)', () => {
+		expect(parseIntent('add a faq „Our Hours“. We open at 9am')).toEqual({
+			kind: 'faq_create',
+			question: 'Our Hours',
+			answer: 'We open at 9am',
+		});
+	});
+
 	it('takes a quoted title alone as the question and asks for the answer next', () => {
 		expect(parseIntent('add a faq "Do you deliver?"')).toEqual({
 			kind: 'faq_create',

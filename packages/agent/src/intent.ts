@@ -117,10 +117,12 @@ function parseFaqUpdate(text: string): { topic: string; answer: string | null } 
 /**
  * A double-quoted phrase used as the FAQ's title/question, e.g.
  * `add this FAQ. "Our Cancelation Policy". …`. Only *double* quotes (straight,
- * curly, or low) delimit a title — single quotes/apostrophes are left alone so
- * words like "don't" or "policy's" never look like an opening quote.
+ * curly, or German low-high „…“) delimit a title — single quotes/apostrophes are
+ * left alone so words like "don't" or "policy's" never look like an opening
+ * quote. Note U+201C (“) is both the English opening and the German closing
+ * quote, so it appears in both the opening and closing classes.
  */
-const QUOTED_TITLE = /["“„]([^"“”„]+)["”]/;
+const QUOTED_TITLE = /["“„]([^"“”„]+)["”“]/;
 
 /** Strip the leading "add/create/make … faq" preamble, leaving just the content. */
 function stripCreatePreamble(text: string): string {
@@ -134,7 +136,7 @@ function cleanAnswer(value: string): string {
 	return value
 		.replace(/^[\s,.:;()\-–—"“„]+/, '')
 		.replace(/^answer\s*[:=-]\s*/i, '')
-		.replace(/["”]+$/, '')
+		.replace(/["”“]+$/, '')
 		.replace(/[.!?]+\s*$/, '')
 		.replace(/\s+/g, ' ')
 		.trim();
