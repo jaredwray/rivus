@@ -135,8 +135,8 @@ export interface Customer {
 	email: string;
 	/** Empty string when not provided. */
 	phone: string;
-	/** Service area / neighborhood; empty string when not provided. */
-	area: string;
+	/** Street address; empty string when not provided. */
+	address: string;
 	status: CustomerStatus;
 	/** Lifetime value in integer cents. */
 	lifetimeValue: number;

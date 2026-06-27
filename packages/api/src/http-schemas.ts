@@ -166,7 +166,7 @@ export const customerResponseSchema = z
 		name: z.string(),
 		email: z.string(),
 		phone: z.string(),
-		area: z.string(),
+		address: z.string(),
 		status: customerStatusSchema,
 		lifetimeValue: z.number().int(),
 		balance: z.number().int(),

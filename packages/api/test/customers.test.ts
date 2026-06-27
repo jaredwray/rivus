@@ -37,7 +37,7 @@ describe('customers', () => {
 			name: 'Grace Kim',
 			email: '',
 			phone: '',
-			area: '',
+			address: '',
 			status: 'lead',
 			lifetimeValue: 0,
 			balance: 0,
@@ -50,7 +50,7 @@ describe('customers', () => {
 		const response = await createCustomer('Priya Anand', {
 			email: 'Priya@Example.com',
 			phone: '(206) 555-0119',
-			area: 'Capitol Hill',
+			address: 'Capitol Hill',
 			status: 'due',
 			lifetimeValue: 526_000,
 			balance: 54_000,
@@ -72,7 +72,7 @@ describe('customers', () => {
 			method: 'POST',
 			url: '/v1/customers',
 			headers: authHeader(token),
-			payload: { area: 'orphan' },
+			payload: { address: 'orphan' },
 		});
 
 		expect(response.statusCode).toBe(400);

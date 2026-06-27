@@ -5,7 +5,15 @@ export interface CustomerDocument {
 	name: string;
 	email: string;
 	phone: string;
-	area: string;
+	address: string;
+	/**
+	 * @deprecated Legacy location field from before it was renamed to `address`.
+	 * Retained in the schema only so documents written before the rename still
+	 * hydrate their stored value; `mapCustomer` falls back to it when `address`
+	 * is empty. It is never written to new documents and can be dropped once
+	 * existing customers have been backfilled.
+	 */
+	area?: string;
 	status: 'lead' | 'quote' | 'paid' | 'due';
 	lifetimeValue: number;
 	balance: number;
@@ -20,7 +28,11 @@ const customerSchema = new Schema<CustomerDocument>(
 		name: { type: String, required: true, trim: true },
 		email: { type: String, default: '', trim: true, lowercase: true },
 		phone: { type: String, default: '', trim: true },
-		area: { type: String, default: '', trim: true },
+		address: { type: String, default: '', trim: true },
+		// Legacy location field (renamed to `address`). No default, so it is never
+		// written to new documents, but it is still read back for pre-rename records
+		// (see the fallback in `mapCustomer`).
+		area: { type: String, trim: true },
 		status: { type: String, enum: ['lead', 'quote', 'paid', 'due'], default: 'lead' },
 		lifetimeValue: { type: Number, default: 0 },
 		balance: { type: Number, default: 0 },

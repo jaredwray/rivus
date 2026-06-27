@@ -2013,10 +2013,10 @@
                     "type": "string",
                     "maxLength": 40
                   },
-                  "area": {
+                  "address": {
                     "default": "",
                     "type": "string",
-                    "maxLength": 120
+                    "maxLength": 300
                   },
                   "status": {
                     "default": "lead",
@@ -2172,9 +2172,9 @@
                     "type": "string",
                     "maxLength": 40
                   },
-                  "area": {
+                  "address": {
                     "type": "string",
-                    "maxLength": 120
+                    "maxLength": 300
                   },
                   "status": {
                     "type": "string",
