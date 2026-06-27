@@ -120,12 +120,6 @@ export interface Faq {
 	updatedAt: IsoDateString;
 }
 
-/**
- * Where a customer sits in the sales/billing lifecycle: a fresh `lead`, a
- * `quote` awaiting approval, `paid` up, or with a balance `due`.
- */
-export type CustomerStatus = 'lead' | 'quote' | 'paid' | 'due';
-
 /** A CRM contact owned by an account; all members share the account's customers. */
 export interface Customer {
 	id: CustomerId;
@@ -137,7 +131,6 @@ export interface Customer {
 	phone: string;
 	/** Street address; empty string when not provided. */
 	address: string;
-	status: CustomerStatus;
 	/** Lifetime value in integer cents. */
 	lifetimeValue: number;
 	/** Outstanding balance in integer cents. */

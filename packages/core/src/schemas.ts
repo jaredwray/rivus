@@ -251,17 +251,11 @@ function moneyCents(label: string) {
 		.min(0, { error: `${label} can't be negative.` });
 }
 
-/** Where a customer sits in the sales/billing lifecycle. */
-export const customerStatusSchema = z.enum(['lead', 'quote', 'paid', 'due'], {
-	error: 'Choose a valid status.',
-});
-
 export const createCustomerSchema = z.object({
 	name: nameSchema,
 	email: optionalEmailSchema.default(''),
 	phone: phoneSchema.default(''),
 	address: addressSchema.default(''),
-	status: customerStatusSchema.default('lead'),
 	lifetimeValue: moneyCents('Lifetime value').default(0),
 	balance: moneyCents('Balance').default(0),
 	notes: optionalText('Notes', 2000).default(''),
@@ -279,7 +273,6 @@ export const updateCustomerSchema = z
 		email: optionalEmailSchema.optional(),
 		phone: phoneSchema.optional(),
 		address: addressSchema.optional(),
-		status: customerStatusSchema.optional(),
 		lifetimeValue: moneyCents('Lifetime value').optional(),
 		balance: moneyCents('Balance').optional(),
 		notes: optionalText('Notes', 2000).optional(),

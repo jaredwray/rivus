@@ -38,7 +38,6 @@ describe('customers', () => {
 			email: '',
 			phone: '',
 			address: '',
-			status: 'lead',
 			lifetimeValue: 0,
 			balance: 0,
 			notes: '',
@@ -51,7 +50,6 @@ describe('customers', () => {
 			email: 'Priya@Example.com',
 			phone: '(206) 555-0119',
 			address: 'Capitol Hill',
-			status: 'due',
 			lifetimeValue: 526_000,
 			balance: 54_000,
 			notes: 'Billing flag',
@@ -61,7 +59,6 @@ describe('customers', () => {
 		expect(response.json()).toMatchObject({
 			name: 'Priya Anand',
 			email: 'priya@example.com',
-			status: 'due',
 			lifetimeValue: 526_000,
 			balance: 54_000,
 		});
@@ -75,11 +72,6 @@ describe('customers', () => {
 			payload: { address: 'orphan' },
 		});
 
-		expect(response.statusCode).toBe(400);
-	});
-
-	it('rejects a create with an unknown status (400)', async () => {
-		const response = await createCustomer('Bad Status', { status: 'cold' });
 		expect(response.statusCode).toBe(400);
 	});
 
@@ -143,18 +135,18 @@ describe('customers', () => {
 	});
 
 	it('updates a customer', async () => {
-		const created = await createCustomer('before', { status: 'lead' });
+		const created = await createCustomer('before', { balance: 5_000 });
 		const id = created.json().id;
 
 		const response = await app.inject({
 			method: 'PATCH',
 			url: `/v1/customers/${id}`,
 			headers: authHeader(token),
-			payload: { status: 'paid', balance: 21_000 },
+			payload: { balance: 21_000 },
 		});
 
 		expect(response.statusCode).toBe(200);
-		expect(response.json()).toMatchObject({ name: 'before', status: 'paid', balance: 21_000 });
+		expect(response.json()).toMatchObject({ name: 'before', balance: 21_000 });
 	});
 
 	it('rejects an empty update (400)', async () => {
