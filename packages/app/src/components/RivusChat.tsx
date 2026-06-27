@@ -36,7 +36,7 @@ interface DisplayMessage extends ChatMessage {
  * agent service (`@rivus/agent`). On first open it greets you — the end-to-end
  * proof that the app can reach the agent and get a reply back.
  */
-export function RivusChat() {
+export function RivusChat({ bottomOffset = 0 }: { bottomOffset?: number }) {
 	const insets = useSafeAreaInsets();
 	const { width, height } = useWindowDimensions();
 
@@ -100,7 +100,7 @@ export function RivusChat() {
 	}
 
 	const panelWidth = Math.min(360, width - 24);
-	const panelHeight = Math.min(460, height - insets.top - insets.bottom - 96);
+	const panelHeight = Math.min(460, height - insets.top - insets.bottom - bottomOffset - 96);
 
 	return (
 		<KeyboardAvoidingView
@@ -109,7 +109,7 @@ export function RivusChat() {
 			// to avoid, so the behavior is iOS-only.
 			behavior={Platform.OS === 'ios' ? 'padding' : undefined}
 			pointerEvents="box-none"
-			style={[styles.layer, { right: 18, bottom: insets.bottom + 18 }]}
+			style={[styles.layer, { right: 18, bottom: insets.bottom + 18 + bottomOffset }]}
 		>
 			{open ? (
 				<View style={[styles.panel, { width: panelWidth, height: panelHeight }]}>

@@ -106,6 +106,11 @@ export const shadowSoft = {
 	elevation: 2,
 } as const;
 
-// Width below which the persistent sidebar collapses to a top nav.
+// Width below which the persistent sidebar collapses to the narrow (mobile)
+// layout with a bottom tab bar.
 export const SIDEBAR_BREAKPOINT = 880;
 export const SIDEBAR_WIDTH = 244;
+
+// Height of the narrow-layout bottom tab bar, excluding the safe-area inset that
+// is padded on below it. Shared so the floating chat button can clear the bar.
+export const MOBILE_TABBAR_HEIGHT = 56;

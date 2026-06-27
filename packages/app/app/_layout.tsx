@@ -9,15 +9,8 @@ import {
 } from '@expo-google-fonts/montserrat';
 import { Redirect, Slot, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
-import {
-	ActivityIndicator,
-	Pressable,
-	ScrollView,
-	StyleSheet,
-	useWindowDimensions,
-	View,
-} from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthProvider, initialsOf, roleLabel, useAuth } from '@/src/auth/AuthContext';
 import { AuthScreen } from '@/src/auth/AuthScreen';
@@ -27,7 +20,15 @@ import { BrandGradient } from '@/src/components/Gradient';
 import { RivusChat } from '@/src/components/RivusChat';
 import { Avatar, Dot, Icon, RivusStatusChip, Txt } from '@/src/components/ui';
 import { installFocusRing } from '@/src/theme/focusRing';
-import { colors, font, radii, SIDEBAR_BREAKPOINT, SIDEBAR_WIDTH } from '@/src/theme/tokens';
+import {
+	colors,
+	font,
+	MOBILE_TABBAR_HEIGHT,
+	radii,
+	SIDEBAR_BREAKPOINT,
+	SIDEBAR_WIDTH,
+	shadowSoft,
+} from '@/src/theme/tokens';
 
 type FeatherName = React.ComponentProps<typeof Feather>['name'];
 type NavItem = {
@@ -163,11 +164,12 @@ function Shell() {
 					<CompanySwitcher />
 				</View>
 			) : null}
-			<NavStrip />
 			<View style={styles.content}>
 				<Slot />
 			</View>
-			<RivusChat key={chatKey} />
+			<BottomTabBar />
+			{/* Lift the chat button clear of the bottom tab bar so they don't overlap. */}
+			<RivusChat key={chatKey} bottomOffset={MOBILE_TABBAR_HEIGHT} />
 		</View>
 	);
 }
@@ -278,44 +280,186 @@ function CompactBar() {
 	);
 }
 
-function NavStrip() {
+// How many destinations sit directly on the bar; the rest fold into "More".
+// Four primary tabs + More keeps the bar within the ~5-slot mobile convention.
+const PRIMARY_TAB_COUNT = 4;
+
+/**
+ * Fixed bottom tab bar — the narrow-layout counterpart to the wide Sidebar.
+ * Shows the primary destinations as tabs and folds the rest behind a "More"
+ * tab that opens a sheet just above the bar.
+ */
+function BottomTabBar() {
 	const pathname = usePathname();
 	const router = useRouter();
+	const insets = useSafeAreaInsets();
 	const { session } = useAuth();
+	const [moreOpen, setMoreOpen] = useState(false);
+
+	const items = navFor(session?.role);
+	const primary = items.slice(0, PRIMARY_TAB_COUNT);
+	const overflow = items.slice(PRIMARY_TAB_COUNT);
+
+	const overflowActive = overflow.some((item) => isActive(pathname, item.href));
+	const overflowHasBadge = overflow.some((item) => item.badge);
+
+	function go(href: string) {
+		setMoreOpen(false);
+		router.push(href);
+	}
+
 	return (
-		<View style={styles.navStripWrap}>
-			<ScrollView
-				horizontal
-				showsHorizontalScrollIndicator={false}
-				contentContainerStyle={styles.navStrip}
-			>
-				{navFor(session?.role).map((item) => {
+		<>
+			{moreOpen && overflow.length > 0 ? (
+				<MoreSheet
+					items={overflow}
+					bottomInset={insets.bottom}
+					onClose={() => setMoreOpen(false)}
+				/>
+			) : null}
+
+			<View style={[styles.tabbar, { paddingBottom: insets.bottom + 6 }]}>
+				{primary.map((item) => (
+					<TabButton
+						key={item.href}
+						icon={item.icon}
+						label={item.label}
+						badge={item.badge}
+						active={isActive(pathname, item.href)}
+						onPress={() => go(item.href)}
+					/>
+				))}
+				{overflow.length > 0 ? (
+					<TabButton
+						icon="more-horizontal"
+						label="More"
+						active={overflowActive || moreOpen}
+						dot={overflowHasBadge}
+						onPress={() => setMoreOpen((open) => !open)}
+					/>
+				) : null}
+			</View>
+		</>
+	);
+}
+
+function TabButton({
+	icon,
+	label,
+	active,
+	badge,
+	dot,
+	onPress,
+}: {
+	icon: FeatherName;
+	label: string;
+	active: boolean;
+	badge?: string;
+	dot?: boolean;
+	onPress: () => void;
+}) {
+	return (
+		<Pressable
+			style={styles.tab}
+			onPress={onPress}
+			accessibilityRole="button"
+			accessibilityState={{ selected: active }}
+			accessibilityLabel={label}
+		>
+			{active ? <BrandGradient style={styles.tabIndicator} /> : null}
+			<View>
+				<Feather name={icon} size={22} color={active ? colors.brandPurple : colors.textMuted} />
+				{badge ? (
+					<View style={styles.tabBadge}>
+						<Txt style={styles.tabBadgeTxt}>{badge}</Txt>
+					</View>
+				) : dot ? (
+					<View style={styles.tabDot} />
+				) : null}
+			</View>
+			<Txt style={[styles.tabLabel, active && styles.tabLabelActive]}>{label}</Txt>
+		</Pressable>
+	);
+}
+
+/** Overflow destinations (and sign-out) for the bottom bar's "More" tab. */
+function MoreSheet({
+	items,
+	bottomInset,
+	onClose,
+}: {
+	items: NavItem[];
+	bottomInset: number;
+	onClose: () => void;
+}) {
+	const pathname = usePathname();
+	const router = useRouter();
+	const { session, signOut } = useAuth();
+	const userName = session?.user.name ?? '';
+	const role = session ? roleLabel(session.role) : '';
+
+	return (
+		<>
+			<Pressable
+				style={styles.sheetBackdrop}
+				onPress={onClose}
+				accessibilityRole="button"
+				accessibilityLabel="Close menu"
+			/>
+			<View style={[styles.sheet, { bottom: MOBILE_TABBAR_HEIGHT + bottomInset }]}>
+				<View style={styles.sheetHandle} />
+				{items.map((item) => {
 					const active = isActive(pathname, item.href);
-					const content = (
-						<>
-							<Feather name={item.icon} size={15} color={active ? '#fff' : colors.textSub} />
-							<Txt style={[styles.chipTxt, active && styles.chipTxtActive]}>{item.label}</Txt>
-							{item.badge ? (
-								<View style={[styles.chipBadge, active && styles.chipBadgeActive]}>
-									<Txt style={[styles.chipBadgeTxt, active && styles.chipBadgeTxtActive]}>
-										{item.badge}
-									</Txt>
-								</View>
-							) : null}
-						</>
-					);
 					return (
-						<Pressable key={item.href} onPress={() => router.push(item.href)}>
-							{active ? (
-								<BrandGradient style={styles.chip}>{content}</BrandGradient>
-							) : (
-								<View style={[styles.chip, styles.chipInactive]}>{content}</View>
-							)}
+						<Pressable
+							key={item.href}
+							style={[styles.sheetRow, active && styles.sheetRowActive]}
+							onPress={() => {
+								onClose();
+								router.push(item.href);
+							}}
+							accessibilityRole="button"
+							accessibilityState={{ selected: active }}
+						>
+							<Feather
+								name={item.icon}
+								size={18}
+								color={active ? colors.brandPurple : colors.textSub}
+							/>
+							<Txt style={[styles.sheetLabel, active && styles.sheetLabelActive]}>{item.label}</Txt>
+							{item.badge ? (
+								<BrandGradient style={styles.sheetBadge}>
+									<Txt style={styles.sheetBadgeTxt}>{item.badge}</Txt>
+								</BrandGradient>
+							) : null}
 						</Pressable>
 					);
 				})}
-			</ScrollView>
-		</View>
+
+				<View style={styles.sheetDivider} />
+				<Pressable
+					style={styles.sheetUser}
+					onPress={() => {
+						onClose();
+						signOut();
+					}}
+					accessibilityRole="button"
+					accessibilityLabel="Sign out"
+				>
+					<Avatar
+						initials={userName ? initialsOf(userName) : '–'}
+						size={32}
+						background={colors.avatarBg}
+						color={colors.avatarText}
+					/>
+					<View style={{ flex: 1 }}>
+						<Txt style={styles.sheetUserName}>{userName}</Txt>
+						<Txt style={styles.sheetUserRole}>{role}</Txt>
+					</View>
+					<Feather name="log-out" size={16} color={colors.textMuted} />
+				</Pressable>
+			</View>
+		</>
 	);
 }
 
@@ -522,51 +666,149 @@ const styles = StyleSheet.create({
 		paddingHorizontal: 18,
 		paddingVertical: 10,
 	},
-	navStripWrap: {
-		backgroundColor: colors.surface,
-		borderBottomWidth: 1,
-		borderBottomColor: colors.border,
-	},
-	navStrip: {
+	// Bottom tab bar (narrow layout)
+	tabbar: {
 		flexDirection: 'row',
-		gap: 8,
-		paddingHorizontal: 16,
-		paddingVertical: 11,
+		alignItems: 'flex-start',
+		justifyContent: 'space-around',
+		backgroundColor: colors.surface,
+		borderTopWidth: 1,
+		borderTopColor: colors.border,
+		paddingTop: 8,
+		paddingHorizontal: 6,
 	},
-	chip: {
+	tab: {
+		flex: 1,
+		alignItems: 'center',
+		gap: 4,
+		paddingVertical: 2,
+	},
+	tabIndicator: {
+		position: 'absolute',
+		top: -8,
+		width: 26,
+		height: 3,
+		borderBottomLeftRadius: 3,
+		borderBottomRightRadius: 3,
+	},
+	tabLabel: {
+		fontFamily: font.semibold,
+		fontSize: 10.5,
+		color: colors.textMuted,
+	},
+	tabLabelActive: {
+		color: colors.brandPurple,
+	},
+	tabBadge: {
+		position: 'absolute',
+		top: -5,
+		right: -10,
+		minWidth: 16,
+		height: 16,
+		paddingHorizontal: 4,
+		borderRadius: radii.pill,
+		backgroundColor: colors.red,
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
+	tabBadgeTxt: {
+		fontFamily: font.semibold,
+		fontSize: 10,
+		color: '#fff',
+	},
+	tabDot: {
+		position: 'absolute',
+		top: -2,
+		right: -6,
+		width: 8,
+		height: 8,
+		borderRadius: 4,
+		backgroundColor: colors.red,
+	},
+
+	// "More" overflow sheet
+	sheetBackdrop: {
+		position: 'absolute',
+		top: 0,
+		left: 0,
+		right: 0,
+		bottom: 0,
+		backgroundColor: 'rgba(16,16,25,0.35)',
+	},
+	sheet: {
+		position: 'absolute',
+		left: 0,
+		right: 0,
+		backgroundColor: colors.surface,
+		borderTopLeftRadius: radii.card,
+		borderTopRightRadius: radii.card,
+		borderTopWidth: 1,
+		borderColor: colors.border,
+		paddingHorizontal: 14,
+		paddingTop: 8,
+		paddingBottom: 10,
+		...shadowSoft,
+	},
+	sheetHandle: {
+		alignSelf: 'center',
+		width: 38,
+		height: 4,
+		borderRadius: radii.pill,
+		backgroundColor: colors.border,
+		marginBottom: 8,
+	},
+	sheetRow: {
 		flexDirection: 'row',
 		alignItems: 'center',
-		gap: 7,
-		paddingVertical: 8,
-		paddingHorizontal: 13,
-		borderRadius: radii.pill,
+		gap: 12,
+		paddingVertical: 11,
+		paddingHorizontal: 8,
+		borderRadius: radii.md,
 	},
-	chipInactive: {
+	sheetRowActive: {
 		backgroundColor: colors.chipBg,
 	},
-	chipTxt: {
+	sheetLabel: {
+		flex: 1,
+		fontFamily: font.medium,
+		fontSize: 14,
+		color: colors.text,
+	},
+	sheetLabelActive: {
 		fontFamily: font.semibold,
-		fontSize: 12.5,
-		color: colors.textSub,
+		color: colors.brandPurple,
 	},
-	chipTxtActive: {
-		color: '#fff',
-	},
-	chipBadge: {
-		paddingVertical: 0,
-		paddingHorizontal: 6,
+	sheetBadge: {
+		paddingVertical: 1,
+		paddingHorizontal: 7,
 		borderRadius: radii.pill,
-		backgroundColor: 'rgba(255,255,255,0.3)',
 	},
-	chipBadgeActive: {
-		backgroundColor: 'rgba(255,255,255,0.3)',
-	},
-	chipBadgeTxt: {
+	sheetBadgeTxt: {
 		fontFamily: font.semibold,
 		fontSize: 11,
-		color: colors.textSub,
-	},
-	chipBadgeTxtActive: {
 		color: '#fff',
+	},
+	sheetDivider: {
+		height: 1,
+		backgroundColor: colors.border,
+		marginVertical: 6,
+	},
+	sheetUser: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 12,
+		paddingVertical: 8,
+		paddingHorizontal: 8,
+		borderRadius: radii.md,
+	},
+	sheetUserName: {
+		fontFamily: font.semibold,
+		fontSize: 13,
+		color: colors.text,
+	},
+	sheetUserRole: {
+		fontFamily: font.regular,
+		fontSize: 11,
+		color: colors.textMuted,
 	},
 });
