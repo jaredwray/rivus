@@ -139,6 +139,26 @@ describe('createRivusApiClient', () => {
 		expect(init?.body).toBe(JSON.stringify({ question: 'Do you offer refunds?', answer: '' }));
 	});
 
+	it('answers a question from the knowledge base', async () => {
+		const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+			jsonResponse({
+				answered: true,
+				answer: 'Our standard rate is $125 an hour, and $85 on weekends.',
+				sources: [{ id: 'faq_1', question: 'How much does your service cost?' }],
+			}),
+		);
+		const client = createRivusApiClient(BASE, TOKEN, fetch);
+
+		const result = await client.answerFromKnowledge({ question: "what's our best price?" });
+		expect(result.answered).toBe(true);
+		expect(result.answer).toContain('$125');
+		expect(result.sources[0]?.question).toBe('How much does your service cost?');
+		const { url, init } = nthCall(fetch, 0);
+		expect(url).toBe(`${BASE}/v1/faqs/answer`);
+		expect(init?.method).toBe('POST');
+		expect(init?.body).toBe(JSON.stringify({ question: "what's our best price?" }));
+	});
+
 	it('throws AgentApiError carrying the status and API message on non-2xx', async () => {
 		const fetch = vi
 			.fn<typeof globalThis.fetch>()

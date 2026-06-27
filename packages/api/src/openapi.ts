@@ -4,6 +4,7 @@ import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createInMemoryRepositories } from './repositories/memory';
 import { NoopMailer } from './services/email';
+import { NoopFaqAnswerService } from './services/faq-answer';
 import { NoopFaqSimilarityService } from './services/faq-similarity';
 
 /**
@@ -37,6 +38,7 @@ async function main(): Promise<void> {
 		verificationCodes,
 		mailer: new NoopMailer(),
 		faqSimilarity: new NoopFaqSimilarityService(),
+		faqAnswer: new NoopFaqAnswerService(),
 		ping: async () => ({ ready: true }),
 	});
 

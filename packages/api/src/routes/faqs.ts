@@ -3,6 +3,7 @@ import {
 	buildPaginationMeta,
 	createFaqSchema,
 	type FaqId,
+	faqAnswerQuerySchema,
 	faqSimilarityQuerySchema,
 	paginationQuerySchema,
 	updateFaqSchema,
@@ -12,6 +13,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
 	errorResponseSchema,
+	faqAnswerResponseSchema,
 	faqListResponseSchema,
 	faqResponseSchema,
 	faqSimilarityResponseSchema,
@@ -22,10 +24,14 @@ import {
 // single page covers exactly what the duplicate check will consider — fetching
 // more would only load rows the service discards.
 const SIMILARITY_CANDIDATE_LIMIT = 50;
+// The newest page of FAQs handed to the answering service as the knowledge base.
+// Its own cap is smaller, but a full page keeps the candidate set newest-first and
+// complete for a small business.
+const ANSWER_CANDIDATE_LIMIT = 100;
 
 export const faqRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
-	const { faqs, faqSimilarity } = app.deps;
+	const { faqs, faqSimilarity, faqAnswer } = app.deps;
 
 	// Every FAQ route requires a valid JWT.
 	app.addHook('onRequest', fastify.authenticate);
@@ -104,6 +110,49 @@ export const faqRoutes: FastifyPluginAsync = async (fastify) => {
 			}
 			const merged = await faqSimilarity.mergeSuggestion({ question, answer }, existing);
 			return { match: existing, reason: match.reason, merged };
+		},
+	);
+
+	// Registered before `/:id` so the literal path isn't shadowed by the param route.
+	app.post(
+		'/answer',
+		{
+			schema: {
+				tags: ['faqs'],
+				summary: 'Answer a question from the knowledge base (AI-assisted)',
+				security: [{ bearerAuth: [] }],
+				body: faqAnswerQuerySchema,
+				response: {
+					200: faqAnswerResponseSchema,
+					400: errorResponseSchema,
+					401: errorResponseSchema,
+				},
+			},
+		},
+		async (request) => {
+			const accountId = request.user.accountId as AccountId;
+			const { question } = request.body;
+
+			// The newest page of FAQs is the knowledge base the answer is grounded in.
+			const { faqs: page } = await faqs.list({
+				accountId,
+				page: 1,
+				pageSize: ANSWER_CANDIDATE_LIMIT,
+			});
+			// Only published FAQs are customer-facing. Drafts are staged and not yet
+			// live, so the answer must never be grounded in — or cite — draft content
+			// (e.g. unreleased pricing or policies).
+			const candidates = page.filter((faq) => faq.status === 'published');
+
+			const result = await faqAnswer.answer({ question }, candidates);
+			// Resolve the cited ids back to questions for the response, scoped to this
+			// account's candidates — a final guard against a stray id leaking through.
+			const byId = new Map(candidates.map((faq) => [faq.id, faq]));
+			const sources = result.sources
+				.map((id) => byId.get(id))
+				.filter((faq): faq is (typeof candidates)[number] => faq !== undefined)
+				.map((faq) => ({ id: faq.id, question: faq.question }));
+			return { answered: result.answered, answer: result.answer, sources };
 		},
 	);
 

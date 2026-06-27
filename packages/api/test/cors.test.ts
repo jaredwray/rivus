@@ -4,6 +4,7 @@ import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
 import { SESSION_COOKIE } from '../src/plugins/auth';
 import { createInMemoryRepositories } from '../src/repositories/memory';
+import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { authHeader, RecordingMailer, signupOwner } from './helpers';
 
@@ -19,6 +20,7 @@ function buildAppWithCors(corsOrigin: string): FastifyInstance {
 		...repos,
 		mailer: new RecordingMailer(),
 		faqSimilarity: new NoopFaqSimilarityService(),
+		faqAnswer: new NoopFaqAnswerService(),
 		ping: async () => ({ ready: true }),
 	});
 }
@@ -37,6 +39,7 @@ function buildProdApp(corsOrigin: string): FastifyInstance {
 		...repos,
 		mailer: new RecordingMailer(),
 		faqSimilarity: new NoopFaqSimilarityService(),
+		faqAnswer: new NoopFaqAnswerService(),
 		ping: async () => ({ ready: true }),
 	});
 }

@@ -226,6 +226,17 @@ export const faqSimilarityQuerySchema = z.object({
 });
 export type FaqSimilarityQueryInput = z.infer<typeof faqSimilarityQuerySchema>;
 
+/**
+ * Body for the "answer this question from the knowledge base" ask. The agent
+ * forwards a visitor's free-text question (a chat turn, so it can be longer and
+ * looser than an FAQ title) and the API answers it from the account's FAQs using
+ * AI. The cap is generous but bounded so a runaway prompt can't be submitted.
+ */
+export const faqAnswerQuerySchema = z.object({
+	question: requiredText('Question', 1000),
+});
+export type FaqAnswerQueryInput = z.infer<typeof faqAnswerQuerySchema>;
+
 // --- Customers ----------------------------------------------------------------
 
 /**
