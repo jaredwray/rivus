@@ -2,7 +2,7 @@ import { createFaqSchema, type Faq, updateFaqSchema } from '@rivus/core';
 import { AgentApiError, createRivusApiClient, type FetchLike, type RivusApiClient } from './api';
 import { authenticate } from './auth';
 import { GREETING, lastUserMessage } from './conversation';
-import { type CompanyField, type Intent, parseIntent } from './intent';
+import { type CompanyField, type Intent, resolveIntent } from './intent';
 import type { ChatMessage, Env, SessionClaims } from './types';
 
 /**
@@ -57,7 +57,9 @@ const FIELD_LABEL: Record<CompanyField, string> = {
 export async function respond(deps: RespondDeps): Promise<string> {
 	const { env, request, messages, fetchImpl } = deps;
 	const question = lastUserMessage(messages) ?? '';
-	const intent = parseIntent(question);
+	// Read the latest turn in the context of the conversation, so a bare follow-up
+	// ("what should I add?") is understood instead of brushed off.
+	const intent = resolveIntent(messages);
 	const session = await authenticate(request, env.JWT_SECRET);
 	const claims = session?.claims ?? null;
 

@@ -260,6 +260,40 @@ describe('respond — knowledge base answering', () => {
 	});
 });
 
+describe('respond — conversation context', () => {
+	const assistant = (content: string): ChatMessage => ({ role: 'assistant', content });
+
+	it('understands a bare follow-up from the prior knowledge-base turn', async () => {
+		// The screenshot case: after looking at the FAQs, "What should I add?" names no
+		// subject, but the conversation context routes it to an FAQ create — so the agent
+		// helps add one instead of brushing the question off. (faq_create with no parts
+		// replies straight away, so no API call is needed.)
+		const reply = await respond({
+			env: envWith(),
+			request: authedRequest(),
+			messages: [
+				user("what's my website?"),
+				assistant('Your website is https://acme.example.'),
+				user('how many faqs do we have?'),
+				assistant('Your knowledge base has 3 FAQs: …'),
+				user('What should I add?'),
+			],
+		});
+		expect(reply).toMatch(/what question should the FAQ answer/i);
+		expect(reply).not.toMatch(/not sure how to help/i);
+	});
+
+	it('still brushes off a subjectless follow-up with no topic to lean on', async () => {
+		const reply = await respond({
+			env: envWith(),
+			request: authedRequest(),
+			messages: [user('hello'), assistant(GREETING), user('what should I add?')],
+			fetchImpl: router([{ when: onAnswerFaq, body: noAnswer }]),
+		});
+		expect(reply).toMatch(/not sure how to help/i);
+	});
+});
+
 describe('respond — auth gating', () => {
 	it('requires sign-in for protected asks', async () => {
 		const reply = await ask('what is our website?');
