@@ -147,7 +147,7 @@ The agent's "while you were away" summary. Dark briefing surface.
 AI status pill for the agent's state.
 
 - **Props:** `label` · `variant(dot | check)`
-- Examples: "Rivus is online" (dot), "Rivus is handling" (dot),
+- Examples: "Rivus is handling" (dot),
   "Rivus auto-scheduled 6 jobs" (check)
 
 ### StatusBadge
