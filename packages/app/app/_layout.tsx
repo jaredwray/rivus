@@ -44,7 +44,7 @@ type NavItem = {
 	label: string;
 	icon: FeatherName;
 	badge?: string;
-	/** When true, only Owners see this destination (billing & account settings). */
+	/** When true, only Owners see this destination (account settings). */
 	ownerOnly?: boolean;
 };
 
@@ -56,7 +56,6 @@ const NAV: NavItem[] = [
 	{ href: '/marketing', label: 'Marketing', icon: 'trending-up' },
 	{ href: '/knowledge', label: 'Knowledge', icon: 'book' },
 	{ href: '/team', label: 'Team', icon: 'user-check' },
-	{ href: '/billing', label: 'Billing', icon: 'credit-card', ownerOnly: true },
 	{ href: '/settings', label: 'Settings', icon: 'settings', ownerOnly: true },
 ];
 
