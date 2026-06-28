@@ -189,17 +189,21 @@ export const jobRoutes: FastifyPluginAsync = async (fastify) => {
 		},
 		async (request) => {
 			const accountId = request.user.accountId as AccountId;
+			const id = request.params.id as JobId;
 			await assertReferencesExist(app, accountId, request.body);
-			const job = await jobs.update(accountId, request.params.id as JobId, request.body);
-			if (!job) {
+			// Capture the prior state so the notifier can diff what actually changed
+			// (the schedule form re-sends every field on each save).
+			const before = await jobs.findById(accountId, id);
+			const job = await jobs.update(accountId, id, request.body);
+			if (!job || !before) {
 				throw app.httpErrors.notFound('Job not found');
 			}
 			// Tell the assignee about a reassignment, reschedule, or cancellation.
 			await notifier.jobUpdated({
 				accountId,
 				actorId: request.user.sub as UserId,
+				before,
 				job,
-				changes: request.body,
 				logger: request.log,
 			});
 			return job;
@@ -225,7 +229,12 @@ export const jobRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!job) {
 				throw app.httpErrors.notFound('Job not found');
 			}
-			await jobs.delete(accountId, id);
+			// A concurrent delete may have removed it between the read and here; only
+			// the request that actually deletes it notifies and returns 204.
+			const deleted = await jobs.delete(accountId, id);
+			if (!deleted) {
+				throw app.httpErrors.notFound('Job not found');
+			}
 			await notifier.jobDeleted({
 				accountId,
 				actorId: request.user.sub as UserId,

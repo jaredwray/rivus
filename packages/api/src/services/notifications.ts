@@ -1,11 +1,4 @@
-import type {
-	AccountId,
-	CreateNotificationInput,
-	Job,
-	Role,
-	UpdateJobInput,
-	UserId,
-} from '@rivus/core';
+import type { AccountId, CreateNotificationInput, Job, Role, UserId } from '@rivus/core';
 import type { FastifyBaseLogger } from 'fastify';
 import type { NotificationRepository } from '../repositories/types';
 
@@ -34,8 +27,13 @@ export interface JobEventArgs extends BaseArgs {
 }
 
 export interface JobUpdatedArgs extends JobEventArgs {
-	/** The fields the caller actually changed, used to classify the update. */
-	changes: UpdateJobInput;
+	/**
+	 * The job as it was *before* the update. The edit is classified by diffing
+	 * `before` against `job` (the result), so a save that re-sends unchanged
+	 * fields — as the schedule form does on every edit — doesn't fire a spurious
+	 * "reassigned" / "rescheduled" notice.
+	 */
+	before: Job;
 }
 
 export interface InviteAcceptedArgs extends BaseArgs {
@@ -118,10 +116,16 @@ class NotificationServiceImpl implements NotificationService {
 		);
 	}
 
-	async jobUpdated({ accountId, actorId, job, changes, logger }: JobUpdatedArgs): Promise<void> {
+	async jobUpdated({ accountId, actorId, before, job, logger }: JobUpdatedArgs): Promise<void> {
+		// Classify by diffing before -> after (not by which fields were *sent*), so a
+		// save that re-submits unchanged fields doesn't raise a spurious notice.
 		// Cancellation wins over a reassignment, which wins over a reschedule, so a
 		// single edit raises at most one notification (the most consequential one).
-		if (changes.status === 'canceled') {
+		const newlyCanceled = before.status !== 'canceled' && job.status === 'canceled';
+		const reassigned = job.assignedUserId !== before.assignedUserId;
+		const rescheduled = job.startAt !== before.startAt;
+
+		if (newlyCanceled) {
 			const assignee = assigneeToNotify(job.assignedUserId, actorId);
 			if (assignee) {
 				await this.emit(
@@ -138,8 +142,10 @@ class NotificationServiceImpl implements NotificationService {
 			}
 			return;
 		}
-		if (changes.assignedUserId) {
-			const assignee = assigneeToNotify(changes.assignedUserId, actorId);
+		if (reassigned) {
+			// `assigneeToNotify` returns null when the new assignee is empty
+			// (unassigned) or the actor, so a clear-assignment edit notifies no one.
+			const assignee = assigneeToNotify(job.assignedUserId, actorId);
 			if (assignee) {
 				await this.emit(
 					accountId,
@@ -155,7 +161,7 @@ class NotificationServiceImpl implements NotificationService {
 			}
 			return;
 		}
-		if (changes.startAt !== undefined) {
+		if (rescheduled) {
 			const assignee = assigneeToNotify(job.assignedUserId, actorId);
 			if (assignee) {
 				await this.emit(

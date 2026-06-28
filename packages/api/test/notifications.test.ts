@@ -2,9 +2,9 @@ import type { AccountId, CreateNotificationInput, Job, JobId, UserId } from '@ri
 import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createInMemoryRepositories, type InMemoryRepositories } from '../src/repositories/memory';
-import type { NotificationRepository } from '../src/repositories/types';
+import type { JobRepository, NotificationRepository } from '../src/repositories/types';
 import { createNotificationService } from '../src/services/notifications';
-import { addMember, authHeader, buildTestAppWithRepos, signupOwner } from './helpers';
+import { addMember, authHeader, buildTestApp, buildTestAppWithRepos, signupOwner } from './helpers';
 
 /** Seed a notification straight through the repository (there is no create route). */
 function seed(
@@ -344,6 +344,23 @@ describe('notification emission from domain events', () => {
 		expect(memberNotifications[0]?.type).toBe('job_updated');
 	});
 
+	it('does not re-notify when an edit re-sends the assignee without changing it', async () => {
+		const job = await createJob({ assignedUserId: memberUserId });
+		// The schedule form re-sends the full payload (assignedUserId included) even
+		// for a note-only edit; that must not read as a reassignment or reschedule.
+		await app.inject({
+			method: 'PATCH',
+			url: `/v1/jobs/${job.id}`,
+			headers: authHeader(token),
+			payload: { assignedUserId: memberUserId, notes: 'gate code 1234' },
+		});
+
+		const memberNotifications = await listFor(memberToken);
+		// Only the original assignment — the note-only edit added nothing.
+		expect(memberNotifications.filter((n) => n.type === 'job_assigned')).toHaveLength(1);
+		expect(memberNotifications.some((n) => n.type === 'job_updated')).toBe(false);
+	});
+
 	it('notifies the assignee when their job is canceled', async () => {
 		const job = await createJob({ assignedUserId: memberUserId });
 		await app.inject({
@@ -446,28 +463,31 @@ describe('createNotificationService', () => {
 		expect(await unreadFor(repos, ACTOR)).toHaveLength(0);
 	});
 
-	it('jobUpdated classifies cancel, reassign, and reschedule', async () => {
+	it('jobUpdated classifies cancel, reassign, and reschedule by diffing before/after', async () => {
 		const repos = createInMemoryRepositories();
 		const notifier = createNotificationService({ notifications: repos.notifications });
-		const job = makeJob({ assignedUserId: ASSIGNEE });
+		const assigned = makeJob({ assignedUserId: ASSIGNEE });
 
+		// Newly canceled.
 		await notifier.jobUpdated({
 			accountId: ACCOUNT,
 			actorId: ACTOR,
-			job,
-			changes: { status: 'canceled' },
+			before: assigned,
+			job: makeJob({ assignedUserId: ASSIGNEE, status: 'canceled' }),
 		});
+		// Rescheduled (start moved, assignee unchanged).
 		await notifier.jobUpdated({
 			accountId: ACCOUNT,
 			actorId: ACTOR,
-			job,
-			changes: { startAt: '2026-07-02T10:00:00.000Z' },
+			before: assigned,
+			job: makeJob({ assignedUserId: ASSIGNEE, startAt: '2026-07-02T10:00:00.000Z' }),
 		});
+		// Reassigned from unassigned to ASSIGNEE.
 		await notifier.jobUpdated({
 			accountId: ACCOUNT,
 			actorId: ACTOR,
-			job,
-			changes: { assignedUserId: ASSIGNEE },
+			before: makeJob({ assignedUserId: '' }),
+			job: makeJob({ assignedUserId: ASSIGNEE }),
 		});
 
 		const got = await unreadFor(repos, ASSIGNEE);
@@ -475,14 +495,16 @@ describe('createNotificationService', () => {
 		expect(types).toEqual(['job_assigned', 'job_canceled', 'job_updated']);
 	});
 
-	it('jobUpdated does nothing for an unrelated change', async () => {
+	it('jobUpdated stays silent when a re-saved edit changes nothing relevant', async () => {
 		const repos = createInMemoryRepositories();
 		const notifier = createNotificationService({ notifications: repos.notifications });
+		// Same assignee, same start, same status — only the notes differ (as the
+		// schedule form re-sending the whole payload would look).
 		await notifier.jobUpdated({
 			accountId: ACCOUNT,
 			actorId: ACTOR,
-			job: makeJob({ assignedUserId: ASSIGNEE }),
-			changes: { notes: 'just a note' },
+			before: makeJob({ assignedUserId: ASSIGNEE, notes: 'old' }),
+			job: makeJob({ assignedUserId: ASSIGNEE, notes: 'new' }),
 		});
 		expect(await unreadFor(repos, ASSIGNEE)).toHaveLength(0);
 	});
@@ -561,5 +583,41 @@ describe('createNotificationService', () => {
 			notifier.jobCreated({ accountId: ACCOUNT, actorId: ACTOR, job, logger }),
 		).resolves.toBeUndefined();
 		expect(logged).toHaveLength(1);
+	});
+});
+
+describe('job delete race', () => {
+	it('returns 404 (and does not notify) when the job vanishes before the delete commits', async () => {
+		// Simulate a concurrent delete: findById still sees the job, but delete reports
+		// "nothing removed". The route must 404 rather than send a cancellation + 204.
+		const base = createInMemoryRepositories().jobs;
+		const jobs: JobRepository = {
+			create: (accountId, input) => base.create(accountId, input),
+			list: (options) => base.list(options),
+			findById: (accountId, id) => base.findById(accountId, id),
+			update: (accountId, id, input) => base.update(accountId, id, input),
+			delete: async () => false,
+			findOverlapping: (options) => base.findOverlapping(options),
+		};
+		const app = await buildTestApp({ jobs });
+		try {
+			const token = (await signupOwner(app)).token;
+			const created = await app.inject({
+				method: 'POST',
+				url: '/v1/jobs',
+				headers: authHeader(token),
+				payload: { title: 'Vanishing job', startAt: '2026-07-01T10:00:00.000Z' },
+			});
+			const id = created.json().id as string;
+
+			const response = await app.inject({
+				method: 'DELETE',
+				url: `/v1/jobs/${id}`,
+				headers: authHeader(token),
+			});
+			expect(response.statusCode).toBe(404);
+		} finally {
+			await app.close();
+		}
 	});
 });
