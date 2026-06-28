@@ -1,4 +1,10 @@
-import { accountStatusSchema, faqStatusSchema, itemStatusSchema, roleSchema } from '@rivus/core';
+import {
+	accountStatusSchema,
+	faqStatusSchema,
+	itemStatusSchema,
+	jobStatusSchema,
+	roleSchema,
+} from '@rivus/core';
 import { z } from 'zod';
 
 /** Public user projection — never includes the password hash. */
@@ -175,6 +181,38 @@ export const customerListResponseSchema = z
 		meta: paginationMetaSchema,
 	})
 	.meta({ id: 'CustomerList' });
+
+export const jobResponseSchema = z
+	.object({
+		id: z.string(),
+		accountId: z.string(),
+		customerId: z.string(),
+		assignedUserId: z.string(),
+		title: z.string(),
+		status: jobStatusSchema,
+		startAt: z.string(),
+		durationMinutes: z.number().int(),
+		address: z.string(),
+		notes: z.string(),
+		estimatedValue: z.number().int(),
+		createdAt: z.string(),
+		updatedAt: z.string(),
+	})
+	.meta({ id: 'Job' });
+
+export const jobListResponseSchema = z
+	.object({
+		data: z.array(jobResponseSchema),
+		meta: paginationMetaSchema,
+	})
+	.meta({ id: 'JobList' });
+
+/** The jobs that would overlap a proposed booking for one team member. */
+export const jobConflictResponseSchema = z
+	.object({
+		conflicts: z.array(jobResponseSchema),
+	})
+	.meta({ id: 'JobConflicts' });
 
 /**
  * Result of the AI duplicate check run before creating an FAQ. `match` is the
