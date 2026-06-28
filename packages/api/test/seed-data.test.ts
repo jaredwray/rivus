@@ -1,11 +1,17 @@
 import { faker } from '@faker-js/faker';
-import { createCustomerSchema, createFaqSchema, createJobSchema } from '@rivus/core';
+import {
+	createCustomerSchema,
+	createFaqSchema,
+	createJobSchema,
+	createNotificationSchema,
+} from '@rivus/core';
 import { describe, expect, it } from 'vitest';
 import {
 	buildAppointment,
 	FAQ_SEEDS,
 	generateAppointments,
 	generateCustomers,
+	generateNotifications,
 	normalizeFaqQuestion,
 	parseSeedArgs,
 	pickFaqSeeds,
@@ -13,6 +19,8 @@ import {
 	SEED_APPOINTMENT_MIN,
 	SEED_CUSTOMER_MAX,
 	SEED_CUSTOMER_MIN,
+	SEED_NOTIFICATION_MAX,
+	SEED_NOTIFICATION_MIN,
 	SeedArgError,
 	selectNewFaqs,
 } from '../src/seed-data';
@@ -28,6 +36,8 @@ describe('parseSeedArgs', () => {
 			'12',
 			'--appointments',
 			'20',
+			'--notifications',
+			'6',
 			'--seed',
 			'7',
 			'--dry-run',
@@ -37,6 +47,7 @@ describe('parseSeedArgs', () => {
 			customers: 25,
 			faqs: 12,
 			appointments: 20,
+			notifications: 6,
 			ai: true,
 			seed: 7,
 			dryRun: true,
@@ -45,11 +56,25 @@ describe('parseSeedArgs', () => {
 	});
 
 	it('supports short flags', () => {
-		const options = parseSeedArgs(['-a', 'acme-co', '-c', '30', '-f', '10', '-p', '15', '-s', '1']);
+		const options = parseSeedArgs([
+			'-a',
+			'acme-co',
+			'-c',
+			'30',
+			'-f',
+			'10',
+			'-p',
+			'15',
+			'-n',
+			'5',
+			'-s',
+			'1',
+		]);
 		expect(options.account).toBe('acme-co');
 		expect(options.customers).toBe(30);
 		expect(options.faqs).toBe(10);
 		expect(options.appointments).toBe(15);
+		expect(options.notifications).toBe(5);
 		expect(options.seed).toBe(1);
 	});
 
@@ -58,6 +83,7 @@ describe('parseSeedArgs', () => {
 		expect(options.customers).toBeUndefined();
 		expect(options.faqs).toBeUndefined();
 		expect(options.appointments).toBeUndefined();
+		expect(options.notifications).toBeUndefined();
 		expect(options.seed).toBeUndefined();
 		expect(options.ai).toBe(true);
 		expect(options.dryRun).toBe(false);
@@ -83,6 +109,7 @@ describe('parseSeedArgs', () => {
 		['non-integer', ['-a', 'x', '-c', '2.5']],
 		['not a number', ['-a', 'x', '-f', 'lots']],
 		['bad appointments', ['-a', 'x', '-p', '-3']],
+		['bad notifications', ['-a', 'x', '-n', '-2']],
 	])('throws SeedArgError on a %s count', (_label, argv) => {
 		expect(() => parseSeedArgs(argv)).toThrow(SeedArgError);
 	});
@@ -239,6 +266,58 @@ describe('generateAppointments', () => {
 	it('keeps the default range sane', () => {
 		expect(SEED_APPOINTMENT_MIN).toBeLessThanOrEqual(SEED_APPOINTMENT_MAX);
 		expect(SEED_APPOINTMENT_MIN).toBeGreaterThanOrEqual(1);
+	});
+});
+
+describe('generateNotifications', () => {
+	it('generates exactly the requested number of notifications', () => {
+		expect(generateNotifications(6)).toHaveLength(6);
+		expect(generateNotifications(0)).toHaveLength(0);
+		// A negative count is clamped to an empty batch rather than throwing.
+		expect(generateNotifications(-3)).toHaveLength(0);
+	});
+
+	it('produces notifications that satisfy the API create schema', () => {
+		faker.seed(7);
+		for (const notification of generateNotifications(40)) {
+			// Re-validating through the schema throws (failing the test) if a template
+			// ever drifts outside the bounds the API enforces.
+			expect(() => createNotificationSchema.parse(notification)).not.toThrow();
+			expect(notification.title.length).toBeGreaterThan(0);
+			expect(notification.title.length).toBeLessThanOrEqual(200);
+			expect(notification.body.length).toBeLessThanOrEqual(2000);
+			expect(notification.linkHref.length).toBeLessThanOrEqual(512);
+		}
+	});
+
+	it('spans every notification type across a full rotation', () => {
+		faker.seed(1);
+		// A batch at least as large as the template set hits every template, since the
+		// generator rotates through them from its starting offset.
+		const types = new Set(generateNotifications(24).map((notification) => notification.type));
+		expect(types).toEqual(
+			new Set([
+				'job_assigned',
+				'job_updated',
+				'job_canceled',
+				'invite_accepted',
+				'role_changed',
+				'system',
+			]),
+		);
+	});
+
+	it('is reproducible for a fixed faker seed', () => {
+		faker.seed(404);
+		const first = generateNotifications(8);
+		faker.seed(404);
+		const second = generateNotifications(8);
+		expect(first).toEqual(second);
+	});
+
+	it('keeps the default range sane', () => {
+		expect(SEED_NOTIFICATION_MIN).toBeLessThanOrEqual(SEED_NOTIFICATION_MAX);
+		expect(SEED_NOTIFICATION_MIN).toBeGreaterThanOrEqual(1);
 	});
 });
 
