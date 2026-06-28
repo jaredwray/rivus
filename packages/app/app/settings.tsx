@@ -75,24 +75,40 @@ export default function SettingsScreen() {
 	// signup form (see AuthScreen).
 	const mapsApiKey = useMemo(() => (Platform.OS === 'web' ? getGoogleMapsApiKey() : null), []);
 
-	const loadBilling = useCallback(async () => {
-		if (!session || !isOwner) {
-			setBillingLoading(false);
-			return;
-		}
-		setBillingLoading(true);
-		setBillingError(null);
-		try {
-			setBilling(await client.getBilling(session.token));
-		} catch (caught) {
-			setBillingError(messageFor(caught, 'Could not load billing.'));
-		} finally {
-			setBillingLoading(false);
-		}
-	}, [client, session, isOwner]);
+	const loadBilling = useCallback(
+		async (isActive: () => boolean) => {
+			if (!session || !isOwner) {
+				setBillingLoading(false);
+				return;
+			}
+			setBillingLoading(true);
+			setBillingError(null);
+			try {
+				const summary = await client.getBilling(session.token);
+				// Bail if the screen unmounted or the session changed mid-request, so a
+				// stale response can't overwrite newer state (mirrors the home screen).
+				if (isActive()) {
+					setBilling(summary);
+				}
+			} catch (caught) {
+				if (isActive()) {
+					setBillingError(messageFor(caught, 'Could not load billing.'));
+				}
+			} finally {
+				if (isActive()) {
+					setBillingLoading(false);
+				}
+			}
+		},
+		[client, session, isOwner],
+	);
 
 	useEffect(() => {
-		loadBilling();
+		let active = true;
+		loadBilling(() => active);
+		return () => {
+			active = false;
+		};
 	}, [loadBilling]);
 
 	if (!session) {
