@@ -1,8 +1,11 @@
 import {
 	accountStatusSchema,
+	conversationChannelSchema,
+	conversationStatusSchema,
 	faqStatusSchema,
 	itemStatusSchema,
 	jobStatusSchema,
+	messageAuthorSchema,
 	notificationReadStateSchema,
 	notificationTypeSchema,
 	roleSchema,
@@ -244,6 +247,58 @@ export const markAllReadResponseSchema = z
 		updated: z.number().int(),
 	})
 	.meta({ id: 'NotificationMarkAllRead' });
+
+export const conversationResponseSchema = z
+	.object({
+		id: z.string(),
+		accountId: z.string(),
+		customerId: z.string(),
+		contactName: z.string(),
+		contactPhone: z.string(),
+		channel: conversationChannelSchema,
+		status: conversationStatusSchema,
+		snippet: z.string(),
+		tags: z.array(z.string()),
+		lastInvoice: z.string(),
+		pendingReply: z.string(),
+		flagReason: z.string(),
+		lastMessageAt: z.string(),
+		createdAt: z.string(),
+		updatedAt: z.string(),
+	})
+	.meta({ id: 'Conversation' });
+
+export const conversationListResponseSchema = z
+	.object({
+		data: z.array(conversationResponseSchema),
+		meta: paginationMetaSchema,
+	})
+	.meta({ id: 'ConversationList' });
+
+export const messageResponseSchema = z
+	.object({
+		id: z.string(),
+		conversationId: z.string(),
+		author: messageAuthorSchema,
+		body: z.string(),
+		createdAt: z.string(),
+	})
+	.meta({ id: 'Message' });
+
+/** A conversation together with its full transcript (the thread detail view). */
+export const conversationDetailResponseSchema = z
+	.object({
+		conversation: conversationResponseSchema,
+		messages: z.array(messageResponseSchema),
+	})
+	.meta({ id: 'ConversationDetail' });
+
+/** How many conversations need a human, for the Inbox sidebar badge. */
+export const needsAttentionCountResponseSchema = z
+	.object({
+		count: z.number().int(),
+	})
+	.meta({ id: 'ConversationNeedsAttentionCount' });
 
 /** The jobs that would overlap a proposed booking for one team member. */
 export const jobConflictResponseSchema = z

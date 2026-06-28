@@ -1,0 +1,483 @@
+import type { AccountId, ConversationId } from '@rivus/core';
+import type { FastifyInstance } from 'fastify';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { InMemoryRepositories } from '../src/repositories/memory';
+import { addMember, authHeader, buildTestApp, buildTestAppWithRepos, signupOwner } from './helpers';
+
+describe('conversation routes', () => {
+	let app: FastifyInstance;
+	let repos: InMemoryRepositories;
+	let token: string;
+	let accountId: string;
+
+	beforeEach(async () => {
+		({ app, repos } = await buildTestAppWithRepos());
+		const owner = await signupOwner(app);
+		token = owner.token;
+		accountId = owner.account.id;
+	});
+
+	afterEach(async () => {
+		await app.close();
+	});
+
+	function createConversation(extra: Record<string, unknown> = {}) {
+		return app.inject({
+			method: 'POST',
+			url: '/v1/conversations',
+			headers: authHeader(token),
+			payload: { contactName: 'Dana Whitfield', channel: 'whatsapp', ...extra },
+		});
+	}
+
+	/** Add a message straight through the repository (e.g. an inbound customer turn). */
+	function addMessage(id: string, author: 'customer' | 'rivus' | 'agent' | 'note', body: string) {
+		return repos.conversations.addMessage(accountId as AccountId, id as ConversationId, {
+			author,
+			body,
+		});
+	}
+
+	function seedFaq(question: string, answer: string) {
+		return repos.faqs.create(accountId as AccountId, {
+			question,
+			answer,
+			category: '',
+			status: 'published',
+		});
+	}
+
+	it('requires authentication', async () => {
+		const response = await app.inject({ method: 'GET', url: '/v1/conversations' });
+		expect(response.statusCode).toBe(401);
+	});
+
+	it('creates a conversation with defaults', async () => {
+		const response = await createConversation();
+
+		expect(response.statusCode).toBe(201);
+		expect(response.json()).toMatchObject({
+			contactName: 'Dana Whitfield',
+			channel: 'whatsapp',
+			customerId: '',
+			contactPhone: '',
+			status: 'rivus_handling',
+			snippet: '',
+			tags: [],
+			lastInvoice: '',
+			pendingReply: '',
+			flagReason: '',
+		});
+		expect(response.json().id).toBeTypeOf('string');
+	});
+
+	it('rejects a create without a contact name or channel (400)', async () => {
+		expect((await createConversation({ contactName: '' })).statusCode).toBe(400);
+		const noChannel = await app.inject({
+			method: 'POST',
+			url: '/v1/conversations',
+			headers: authHeader(token),
+			payload: { contactName: 'Nameless' },
+		});
+		expect(noChannel.statusCode).toBe(400);
+	});
+
+	it('rejects a create that links to a customer outside the account (400)', async () => {
+		const response = await createConversation({ customerId: 'does-not-exist' });
+		expect(response.statusCode).toBe(400);
+	});
+
+	it('links a conversation to an existing customer', async () => {
+		const customer = await repos.customers.create(accountId as AccountId, {
+			name: 'Priya Anand',
+			email: '',
+			phone: '(206) 555-0119',
+			address: '',
+			lifetimeValue: 0,
+			balance: 0,
+			notes: '',
+		});
+		const response = await createConversation({
+			customerId: customer.id,
+			contactName: 'Priya Anand',
+		});
+		expect(response.statusCode).toBe(201);
+		expect(response.json().customerId).toBe(customer.id);
+	});
+
+	it('lists conversations newest-activity-first with pagination metadata', async () => {
+		await createConversation({ contactName: 'one' });
+		await createConversation({ contactName: 'two' });
+		await createConversation({ contactName: 'three' });
+
+		const response = await app.inject({
+			method: 'GET',
+			url: '/v1/conversations?page=1&pageSize=2',
+			headers: authHeader(token),
+		});
+
+		expect(response.statusCode).toBe(200);
+		const body = response.json();
+		expect(body.data).toHaveLength(2);
+		expect(body.data[0].contactName).toBe('three');
+		expect(body.meta).toMatchObject({ total: 3, totalPages: 2, hasNextPage: true });
+	});
+
+	it('filters the list by status', async () => {
+		await createConversation({ contactName: 'handled' });
+		await createConversation({ contactName: 'flagged', status: 'needs_attention' });
+
+		const response = await app.inject({
+			method: 'GET',
+			url: '/v1/conversations?status=needs_attention',
+			headers: authHeader(token),
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json().data).toHaveLength(1);
+		expect(response.json().data[0].contactName).toBe('flagged');
+	});
+
+	it('fetches a conversation with its full transcript', async () => {
+		const conversation = (await createConversation()).json();
+		await addMessage(conversation.id, 'customer', 'Hi there');
+		await addMessage(conversation.id, 'rivus', 'Hello!');
+
+		const response = await app.inject({
+			method: 'GET',
+			url: `/v1/conversations/${conversation.id}`,
+			headers: authHeader(token),
+		});
+
+		expect(response.statusCode).toBe(200);
+		const body = response.json();
+		expect(body.conversation.id).toBe(conversation.id);
+		expect(body.conversation.snippet).toBe('Hello!');
+		expect(body.messages.map((m: { body: string }) => m.body)).toEqual(['Hi there', 'Hello!']);
+	});
+
+	it('returns 404 for an unknown conversation', async () => {
+		const response = await app.inject({
+			method: 'GET',
+			url: '/v1/conversations/missing',
+			headers: authHeader(token),
+		});
+		expect(response.statusCode).toBe(404);
+	});
+
+	it('updates a conversation and rejects an empty update', async () => {
+		const conversation = (await createConversation()).json();
+
+		const updated = await app.inject({
+			method: 'PATCH',
+			url: `/v1/conversations/${conversation.id}`,
+			headers: authHeader(token),
+			payload: { tags: ['VIP'], status: 'resolved' },
+		});
+		expect(updated.statusCode).toBe(200);
+		expect(updated.json()).toMatchObject({ tags: ['VIP'], status: 'resolved' });
+
+		const empty = await app.inject({
+			method: 'PATCH',
+			url: `/v1/conversations/${conversation.id}`,
+			headers: authHeader(token),
+			payload: {},
+		});
+		expect(empty.statusCode).toBe(400);
+	});
+
+	it('rejects a patch that links to a missing customer (400)', async () => {
+		const conversation = (await createConversation()).json();
+		const response = await app.inject({
+			method: 'PATCH',
+			url: `/v1/conversations/${conversation.id}`,
+			headers: authHeader(token),
+			payload: { customerId: 'nope' },
+		});
+		expect(response.statusCode).toBe(400);
+	});
+
+	it('deletes a conversation, after which it is gone', async () => {
+		const conversation = (await createConversation()).json();
+		const del = await app.inject({
+			method: 'DELETE',
+			url: `/v1/conversations/${conversation.id}`,
+			headers: authHeader(token),
+		});
+		expect(del.statusCode).toBe(204);
+
+		const get = await app.inject({
+			method: 'GET',
+			url: `/v1/conversations/${conversation.id}`,
+			headers: authHeader(token),
+		});
+		expect(get.statusCode).toBe(404);
+	});
+
+	it('counts conversations that need a human for the badge', async () => {
+		await createConversation({ contactName: 'a', status: 'needs_attention' });
+		await createConversation({ contactName: 'b', status: 'needs_attention' });
+		await createConversation({ contactName: 'c' });
+
+		const response = await app.inject({
+			method: 'GET',
+			url: '/v1/conversations/needs-attention-count',
+			headers: authHeader(token),
+		});
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({ count: 2 });
+	});
+
+	describe('sending a team-member reply', () => {
+		it('appends an agent message and clears a flagged thread', async () => {
+			const conversation = (await createConversation({ status: 'needs_attention' })).json();
+			await repos.conversations.setReviewState(
+				accountId as AccountId,
+				conversation.id as ConversationId,
+				{ status: 'needs_attention', pendingReply: 'draft', flagReason: 'billing' },
+			);
+
+			const response = await app.inject({
+				method: 'POST',
+				url: `/v1/conversations/${conversation.id}/messages`,
+				headers: authHeader(token),
+				payload: { body: 'I will take this one personally.' },
+			});
+
+			expect(response.statusCode).toBe(201);
+			const body = response.json();
+			expect(body.messages.at(-1)).toMatchObject({
+				author: 'agent',
+				body: 'I will take this one personally.',
+			});
+			// A human handled it, so the thread is no longer waiting and the draft is cleared.
+			expect(body.conversation).toMatchObject({
+				status: 'rivus_handling',
+				pendingReply: '',
+				flagReason: '',
+			});
+		});
+
+		it('rejects an empty message (400) and 404s an unknown thread', async () => {
+			const conversation = (await createConversation()).json();
+			const empty = await app.inject({
+				method: 'POST',
+				url: `/v1/conversations/${conversation.id}/messages`,
+				headers: authHeader(token),
+				payload: { body: '   ' },
+			});
+			expect(empty.statusCode).toBe(400);
+
+			const missing = await app.inject({
+				method: 'POST',
+				url: '/v1/conversations/missing/messages',
+				headers: authHeader(token),
+				payload: { body: 'hello' },
+			});
+			expect(missing.statusCode).toBe(404);
+		});
+	});
+
+	describe('letting Rivus reply', () => {
+		it('409s when there is no customer message to answer', async () => {
+			const conversation = (await createConversation()).json();
+			const response = await app.inject({
+				method: 'POST',
+				url: `/v1/conversations/${conversation.id}/reply`,
+				headers: authHeader(token),
+			});
+			expect(response.statusCode).toBe(409);
+		});
+
+		it('sends a grounded answer for an everyday question', async () => {
+			await seedFaq('What are your business hours?', 'We are open Monday to Friday, 9 AM to 6 PM.');
+			const conversation = (await createConversation()).json();
+			await addMessage(conversation.id, 'customer', 'What are your hours?');
+
+			const response = await app.inject({
+				method: 'POST',
+				url: `/v1/conversations/${conversation.id}/reply`,
+				headers: authHeader(token),
+			});
+
+			expect(response.statusCode).toBe(200);
+			const body = response.json();
+			expect(body.conversation.status).toBe('rivus_handling');
+			expect(body.conversation.pendingReply).toBe('');
+			expect(body.messages.at(-1)).toMatchObject({ author: 'rivus' });
+			expect(body.messages.at(-1).body).toContain('9 AM to 6 PM');
+		});
+
+		it('holds a billing question for human review', async () => {
+			const conversation = (await createConversation()).json();
+			await addMessage(conversation.id, 'customer', 'Can you explain the charge on my invoice?');
+
+			const response = await app.inject({
+				method: 'POST',
+				url: `/v1/conversations/${conversation.id}/reply`,
+				headers: authHeader(token),
+			});
+
+			expect(response.statusCode).toBe(200);
+			const body = response.json();
+			expect(body.conversation.status).toBe('needs_attention');
+			expect(body.conversation.flagReason).toContain('billing dispute');
+			// The draft is held, not appended to the visible transcript.
+			expect(body.messages.every((m: { author: string }) => m.author !== 'rivus')).toBe(true);
+		});
+
+		it('holds a question the knowledge base cannot answer', async () => {
+			const conversation = (await createConversation()).json();
+			await addMessage(conversation.id, 'customer', 'Do you sell branded merchandise?');
+
+			const response = await app.inject({
+				method: 'POST',
+				url: `/v1/conversations/${conversation.id}/reply`,
+				headers: authHeader(token),
+			});
+
+			expect(response.statusCode).toBe(200);
+			expect(response.json().conversation.status).toBe('needs_attention');
+			expect(response.json().conversation.flagReason).toContain("wasn't sure");
+		});
+
+		it('alerts other members when Rivus pauses, but not the actor', async () => {
+			const teammate = await addMember(app, token, 'member', 'teammate@example.com');
+			const conversation = (await createConversation({ contactName: 'Priya' })).json();
+			await addMessage(conversation.id, 'customer', 'I want a refund for my last invoice.');
+
+			await app.inject({
+				method: 'POST',
+				url: `/v1/conversations/${conversation.id}/reply`,
+				headers: authHeader(token),
+			});
+
+			// Filter to inbox notifications so the owner's unrelated "invite accepted"
+			// notice (from adding the teammate) doesn't confuse the assertion.
+			const inboxNotices = async (asToken: string) => {
+				const response = await app.inject({
+					method: 'GET',
+					url: '/v1/notifications',
+					headers: authHeader(asToken),
+				});
+				return response
+					.json()
+					.data.filter((notice: { linkHref: string }) => notice.linkHref === '/inbox');
+			};
+
+			const theirs = await inboxNotices(teammate.token);
+			const mine = await inboxNotices(token);
+			expect(theirs).toHaveLength(1);
+			expect(theirs[0]).toMatchObject({ title: 'A conversation needs you' });
+			expect(mine).toHaveLength(0);
+		});
+	});
+
+	describe('approving a held draft', () => {
+		async function flaggedConversation(pendingReply: string) {
+			const conversation = (await createConversation()).json();
+			await addMessage(conversation.id, 'customer', 'Question about my invoice.');
+			await repos.conversations.setReviewState(
+				accountId as AccountId,
+				conversation.id as ConversationId,
+				{ status: 'needs_attention', pendingReply, flagReason: 'billing' },
+			);
+			return conversation;
+		}
+
+		it('sends the held draft as-is and resumes Rivus', async () => {
+			const conversation = await flaggedConversation('Here is the itemized breakdown.');
+			const response = await app.inject({
+				method: 'POST',
+				url: `/v1/conversations/${conversation.id}/approve`,
+				headers: authHeader(token),
+				payload: {},
+			});
+
+			expect(response.statusCode).toBe(200);
+			const body = response.json();
+			expect(body.messages.at(-1)).toMatchObject({
+				author: 'rivus',
+				body: 'Here is the itemized breakdown.',
+			});
+			expect(body.conversation).toMatchObject({
+				status: 'rivus_handling',
+				pendingReply: '',
+				flagReason: '',
+			});
+		});
+
+		it('sends an edited reply instead of the draft', async () => {
+			const conversation = await flaggedConversation('Original draft.');
+			const response = await app.inject({
+				method: 'POST',
+				url: `/v1/conversations/${conversation.id}/approve`,
+				headers: authHeader(token),
+				payload: { body: 'My edited reply.' },
+			});
+
+			expect(response.statusCode).toBe(200);
+			expect(response.json().messages.at(-1).body).toBe('My edited reply.');
+		});
+
+		it('rejects approving when there is nothing to send (400)', async () => {
+			const conversation = await flaggedConversation('');
+			const response = await app.inject({
+				method: 'POST',
+				url: `/v1/conversations/${conversation.id}/approve`,
+				headers: authHeader(token),
+				payload: {},
+			});
+			expect(response.statusCode).toBe(400);
+		});
+	});
+
+	it('does not leak conversations across accounts', async () => {
+		const conversation = (await createConversation()).json();
+		const otherToken = (await signupOwner(app)).token;
+
+		const get = await app.inject({
+			method: 'GET',
+			url: `/v1/conversations/${conversation.id}`,
+			headers: authHeader(otherToken),
+		});
+		expect(get.statusCode).toBe(404);
+
+		const del = await app.inject({
+			method: 'DELETE',
+			url: `/v1/conversations/${conversation.id}`,
+			headers: authHeader(otherToken),
+		});
+		expect(del.statusCode).toBe(404);
+	});
+});
+
+describe('conversation list isolation', () => {
+	let app: FastifyInstance;
+
+	beforeEach(async () => {
+		app = await buildTestApp();
+	});
+
+	afterEach(async () => {
+		await app.close();
+	});
+
+	it("does not show one account's conversations to another", async () => {
+		const owner = await signupOwner(app);
+		await app.inject({
+			method: 'POST',
+			url: '/v1/conversations',
+			headers: authHeader(owner.token),
+			payload: { contactName: 'Private', channel: 'sms' },
+		});
+
+		const other = await signupOwner(app);
+		const response = await app.inject({
+			method: 'GET',
+			url: '/v1/conversations',
+			headers: authHeader(other.token),
+		});
+		expect(response.json().data).toHaveLength(0);
+	});
+});

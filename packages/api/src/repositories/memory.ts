@@ -2,10 +2,15 @@ import { randomUUID } from 'node:crypto';
 import {
 	type Account,
 	type AccountId,
+	type Conversation,
+	type ConversationDetail,
+	type ConversationId,
+	type CreateConversationInput,
 	type CreateCustomerInput,
 	type CreateFaqInput,
 	type CreateItemInput,
 	type CreateJobInput,
+	type CreateMessageInput,
 	type CreateNotificationInput,
 	type Customer,
 	type CustomerId,
@@ -19,11 +24,14 @@ import {
 	type JobId,
 	type Membership,
 	type MembershipId,
+	type Message,
+	type MessageId,
 	type Notification,
 	type NotificationId,
 	normalizePagination,
 	pageToSkip,
 	type Role,
+	type UpdateConversationInput,
 	type UpdateCustomerInput,
 	type UpdateFaqInput,
 	type UpdateItemInput,
@@ -35,6 +43,8 @@ import type {
 	AcceptInviteInput,
 	AcceptInviteResult,
 	AccountRepository,
+	ConversationRepository,
+	ConversationReviewPatch,
 	CustomerRepository,
 	FaqRepository,
 	FindOverlappingJobsOptions,
@@ -42,6 +52,7 @@ import type {
 	ItemRepository,
 	JobRepository,
 	ListAccountsOptions,
+	ListConversationsOptions,
 	ListCustomersOptions,
 	ListFaqsOptions,
 	ListItemsOptions,
@@ -81,6 +92,8 @@ export interface InMemoryData {
 	customers: Map<string, Customer>;
 	jobs: Map<string, Job>;
 	notifications: Map<string, Notification>;
+	/** Conversations, each carrying its own embedded message transcript. */
+	conversations: Map<string, StoredConversation>;
 	/** Active one-time codes, keyed by normalized email (one per email). */
 	verificationCodes: Map<string, StoredVerificationCode>;
 }
@@ -96,6 +109,7 @@ export function createInMemoryData(): InMemoryData {
 		customers: new Map(),
 		jobs: new Map(),
 		notifications: new Map(),
+		conversations: new Map(),
 		verificationCodes: new Map(),
 	};
 }
@@ -874,6 +888,188 @@ export class InMemoryNotificationRepository implements NotificationRepository {
 	}
 }
 
+/** A conversation plus its embedded transcript — the in-memory storage shape. */
+interface StoredConversation extends Conversation {
+	messages: Message[];
+}
+
+/** Strip the embedded transcript so list/find return conversation metadata only. */
+function toPublicConversation(stored: StoredConversation): Conversation {
+	const { messages: _messages, ...conversation } = stored;
+	return structuredClone(conversation);
+}
+
+/** In-memory conversation (inbox) store, scoped by account. */
+export class InMemoryConversationRepository implements ConversationRepository {
+	constructor(private readonly data: InMemoryData) {}
+
+	async create(accountId: AccountId, input: CreateConversationInput): Promise<Conversation> {
+		const timestamp = now();
+		const conversation: StoredConversation = {
+			id: randomUUID() as ConversationId,
+			accountId,
+			customerId: input.customerId,
+			contactName: input.contactName,
+			contactPhone: input.contactPhone,
+			channel: input.channel,
+			status: input.status,
+			snippet: '',
+			tags: [...input.tags],
+			lastInvoice: input.lastInvoice,
+			pendingReply: '',
+			flagReason: '',
+			// No messages yet, so the thread sorts by when it was created.
+			lastMessageAt: timestamp,
+			createdAt: timestamp,
+			updatedAt: timestamp,
+			messages: [],
+		};
+		this.data.conversations.set(conversation.id, conversation);
+		return toPublicConversation(conversation);
+	}
+
+	/** This account's conversations, newest activity first (insertion order breaks ties). */
+	private owned(accountId: AccountId): StoredConversation[] {
+		// Start newest-inserted-first, then a *stable* sort by activity keeps that
+		// order for threads whose `lastMessageAt` collides within a millisecond.
+		const owned = [...this.data.conversations.values()]
+			.filter((conversation) => conversation.accountId === accountId)
+			.reverse();
+		owned.sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
+		return owned;
+	}
+
+	async list(
+		options: ListConversationsOptions,
+	): Promise<{ conversations: Conversation[]; total: number }> {
+		const matched = this.owned(options.accountId).filter(
+			(conversation) => !options.status || conversation.status === options.status,
+		);
+		const { pageSize } = normalizePagination(options.page, options.pageSize);
+		const skip = pageToSkip(options.page, options.pageSize);
+		return {
+			conversations: matched.slice(skip, skip + pageSize).map(toPublicConversation),
+			total: matched.length,
+		};
+	}
+
+	async findById(accountId: AccountId, id: ConversationId): Promise<Conversation | null> {
+		const conversation = this.data.conversations.get(id);
+		return conversation && conversation.accountId === accountId
+			? toPublicConversation(conversation)
+			: null;
+	}
+
+	async update(
+		accountId: AccountId,
+		id: ConversationId,
+		input: UpdateConversationInput,
+	): Promise<Conversation | null> {
+		const conversation = this.data.conversations.get(id);
+		if (!conversation || conversation.accountId !== accountId) {
+			return null;
+		}
+		const patch: Partial<StoredConversation> = {};
+		if (input.contactName !== undefined) {
+			patch.contactName = input.contactName;
+		}
+		if (input.channel !== undefined) {
+			patch.channel = input.channel;
+		}
+		if (input.customerId !== undefined) {
+			patch.customerId = input.customerId;
+		}
+		if (input.contactPhone !== undefined) {
+			patch.contactPhone = input.contactPhone;
+		}
+		if (input.status !== undefined) {
+			patch.status = input.status;
+		}
+		if (input.tags !== undefined) {
+			patch.tags = [...input.tags];
+		}
+		if (input.lastInvoice !== undefined) {
+			patch.lastInvoice = input.lastInvoice;
+		}
+		const updated: StoredConversation = { ...conversation, ...patch, updatedAt: now() };
+		this.data.conversations.set(id, updated);
+		return toPublicConversation(updated);
+	}
+
+	async delete(accountId: AccountId, id: ConversationId): Promise<boolean> {
+		const conversation = this.data.conversations.get(id);
+		if (!conversation || conversation.accountId !== accountId) {
+			return false;
+		}
+		return this.data.conversations.delete(id);
+	}
+
+	async needsAttentionCount(accountId: AccountId): Promise<number> {
+		return this.owned(accountId).filter((conversation) => conversation.status === 'needs_attention')
+			.length;
+	}
+
+	async listMessages(accountId: AccountId, id: ConversationId): Promise<Message[] | null> {
+		const conversation = this.data.conversations.get(id);
+		if (!conversation || conversation.accountId !== accountId) {
+			return null;
+		}
+		return conversation.messages.map((message) => structuredClone(message));
+	}
+
+	async addMessage(
+		accountId: AccountId,
+		id: ConversationId,
+		input: CreateMessageInput,
+	): Promise<ConversationDetail | null> {
+		const conversation = this.data.conversations.get(id);
+		if (!conversation || conversation.accountId !== accountId) {
+			return null;
+		}
+		const timestamp = now();
+		const message: Message = {
+			id: randomUUID() as MessageId,
+			conversationId: id,
+			author: input.author,
+			body: input.body,
+			createdAt: timestamp,
+		};
+		conversation.messages.push(message);
+		// A `note` is a system annotation, not a reply, so it bumps the activity time
+		// (it belongs in the timeline) but never becomes the list preview.
+		if (input.author !== 'note') {
+			conversation.snippet = input.body;
+		}
+		conversation.lastMessageAt = timestamp;
+		conversation.updatedAt = timestamp;
+		this.data.conversations.set(id, conversation);
+		return {
+			conversation: toPublicConversation(conversation),
+			messages: conversation.messages.map((entry) => structuredClone(entry)),
+		};
+	}
+
+	async setReviewState(
+		accountId: AccountId,
+		id: ConversationId,
+		patch: ConversationReviewPatch,
+	): Promise<Conversation | null> {
+		const conversation = this.data.conversations.get(id);
+		if (!conversation || conversation.accountId !== accountId) {
+			return null;
+		}
+		const updated: StoredConversation = {
+			...conversation,
+			status: patch.status,
+			pendingReply: patch.pendingReply,
+			flagReason: patch.flagReason,
+			updatedAt: now(),
+		};
+		this.data.conversations.set(id, updated);
+		return toPublicConversation(updated);
+	}
+}
+
 export interface InMemoryRepositories {
 	data: InMemoryData;
 	users: InMemoryUserRepository;
@@ -885,6 +1081,7 @@ export interface InMemoryRepositories {
 	customers: InMemoryCustomerRepository;
 	jobs: InMemoryJobRepository;
 	notifications: InMemoryNotificationRepository;
+	conversations: InMemoryConversationRepository;
 	verificationCodes: InMemoryVerificationCodeRepository;
 	onboarding: InMemoryOnboardingRepository;
 }
@@ -902,6 +1099,7 @@ export function createInMemoryRepositories(
 	const customers = new InMemoryCustomerRepository(data);
 	const jobs = new InMemoryJobRepository(data);
 	const notifications = new InMemoryNotificationRepository(data);
+	const conversations = new InMemoryConversationRepository(data);
 	const verificationCodes = new InMemoryVerificationCodeRepository(data);
 	const onboarding = new InMemoryOnboardingRepository(users, accounts, memberships, invites);
 	return {
@@ -915,6 +1113,7 @@ export function createInMemoryRepositories(
 		customers,
 		jobs,
 		notifications,
+		conversations,
 		verificationCodes,
 		onboarding,
 	};

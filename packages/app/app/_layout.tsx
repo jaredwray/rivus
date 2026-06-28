@@ -27,6 +27,7 @@ import { CompanySwitcher } from '@/src/components/CompanySwitcher';
 import { BrandGradient } from '@/src/components/Gradient';
 import { RivusChat } from '@/src/components/RivusChat';
 import { Avatar, Icon, Txt } from '@/src/components/ui';
+import { InboxProvider, useInbox } from '@/src/inbox/InboxContext';
 import { NotificationsBell } from '@/src/notifications/NotificationsBell';
 import { NotificationsProvider } from '@/src/notifications/NotificationsContext';
 import { installFocusRing } from '@/src/theme/focusRing';
@@ -52,7 +53,7 @@ type NavItem = {
 
 const NAV: NavItem[] = [
 	{ href: '/', label: 'Home', icon: 'home' },
-	{ href: '/inbox', label: 'Inbox', icon: 'inbox', badge: '2' },
+	{ href: '/inbox', label: 'Inbox', icon: 'inbox' },
 	{ href: '/schedule', label: 'Schedule', icon: 'calendar' },
 	{ href: '/customers', label: 'Customers', icon: 'users' },
 	{ href: '/marketing', label: 'Marketing', icon: 'trending-up' },
@@ -64,6 +65,18 @@ const NAV: NavItem[] = [
 /** Hide owner-only destinations from managers and members. */
 function navFor(role: string | undefined): NavItem[] {
 	return NAV.filter((item) => !item.ownerOnly || role === 'owner');
+}
+
+/**
+ * The badge to show on a nav item. The Inbox badge is live — the count of
+ * conversations that need a human — so it reflects the real backlog (and hides at
+ * zero) instead of a hard-coded number. Other items use their static badge.
+ */
+function badgeFor(item: NavItem, inboxCount: number): string | undefined {
+	if (item.href === '/inbox') {
+		return inboxCount > 0 ? String(inboxCount) : undefined;
+	}
+	return item.badge;
 }
 
 function isActive(pathname: string, href: string): boolean {
@@ -137,7 +150,9 @@ function Gate() {
 	}
 	return (
 		<NotificationsProvider>
-			<Shell />
+			<InboxProvider>
+				<Shell />
+			</InboxProvider>
 		</NotificationsProvider>
 	);
 }
@@ -230,6 +245,7 @@ function Sidebar() {
 	const pathname = usePathname();
 	const router = useRouter();
 	const { session, signOut } = useAuth();
+	const { needsAttentionCount } = useInbox();
 	const userName = session?.user.name ?? '';
 	const role = session ? roleLabel(session.role) : '';
 
@@ -240,6 +256,7 @@ function Sidebar() {
 			<View style={styles.nav}>
 				{navFor(session?.role).map((item) => {
 					const active = isActive(pathname, item.href);
+					const badge = badgeFor(item, needsAttentionCount);
 					return (
 						<Pressable
 							key={item.href}
@@ -253,9 +270,9 @@ function Sidebar() {
 								color={active ? colors.sidebarTextActive : colors.sidebarText}
 							/>
 							<Txt style={[styles.navLabel, active && styles.navLabelActive]}>{item.label}</Txt>
-							{item.badge ? (
+							{badge ? (
 								<BrandGradient style={styles.navBadge}>
-									<Txt style={styles.navBadgeTxt}>{item.badge}</Txt>
+									<Txt style={styles.navBadgeTxt}>{badge}</Txt>
 								</BrandGradient>
 							) : null}
 						</Pressable>
@@ -342,6 +359,7 @@ function BottomTabBar({ height, onHeight }: { height: number; onHeight: (h: numb
 	const router = useRouter();
 	const insets = useSafeAreaInsets();
 	const { session } = useAuth();
+	const { needsAttentionCount } = useInbox();
 	const [moreOpen, setMoreOpen] = useState(false);
 
 	const items = navFor(session?.role);
@@ -349,7 +367,7 @@ function BottomTabBar({ height, onHeight }: { height: number; onHeight: (h: numb
 	const overflow = items.slice(PRIMARY_TAB_COUNT);
 
 	const overflowActive = overflow.some((item) => isActive(pathname, item.href));
-	const overflowHasBadge = overflow.some((item) => item.badge);
+	const overflowHasBadge = overflow.some((item) => badgeFor(item, needsAttentionCount));
 
 	function go(href: string) {
 		setMoreOpen(false);
@@ -371,7 +389,7 @@ function BottomTabBar({ height, onHeight }: { height: number; onHeight: (h: numb
 						key={item.href}
 						icon={item.icon}
 						label={item.label}
-						badge={item.badge}
+						badge={badgeFor(item, needsAttentionCount)}
 						active={isActive(pathname, item.href)}
 						onPress={() => go(item.href)}
 					/>
@@ -444,6 +462,7 @@ function MoreSheet({
 	const pathname = usePathname();
 	const router = useRouter();
 	const { session, signOut } = useAuth();
+	const { needsAttentionCount } = useInbox();
 	const userName = session?.user.name ?? '';
 	const role = session ? roleLabel(session.role) : '';
 
@@ -459,6 +478,7 @@ function MoreSheet({
 				<View style={styles.sheetHandle} />
 				{items.map((item) => {
 					const active = isActive(pathname, item.href);
+					const badge = badgeFor(item, needsAttentionCount);
 					return (
 						<Pressable
 							key={item.href}
@@ -478,9 +498,9 @@ function MoreSheet({
 							<Txt style={[styles.sheetLabel, active && styles.sheetLabelActive]} numberOfLines={1}>
 								{item.label}
 							</Txt>
-							{item.badge ? (
+							{badge ? (
 								<BrandGradient style={styles.sheetBadge}>
-									<Txt style={styles.sheetBadgeTxt}>{item.badge}</Txt>
+									<Txt style={styles.sheetBadgeTxt}>{badge}</Txt>
 								</BrandGradient>
 							) : null}
 						</Pressable>

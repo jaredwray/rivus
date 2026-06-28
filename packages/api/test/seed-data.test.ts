@@ -1,15 +1,19 @@
 import { faker } from '@faker-js/faker';
 import {
+	createConversationSchema,
 	createCustomerSchema,
 	createFaqSchema,
 	createJobSchema,
+	createMessageSchema,
 	createNotificationSchema,
 } from '@rivus/core';
 import { describe, expect, it } from 'vitest';
 import {
 	buildAppointment,
+	type ConversationContact,
 	FAQ_SEEDS,
 	generateAppointments,
+	generateConversations,
 	generateCustomers,
 	generateNotifications,
 	normalizeFaqQuestion,
@@ -17,6 +21,8 @@ import {
 	pickFaqSeeds,
 	SEED_APPOINTMENT_MAX,
 	SEED_APPOINTMENT_MIN,
+	SEED_CONVERSATION_MAX,
+	SEED_CONVERSATION_MIN,
 	SEED_CUSTOMER_MAX,
 	SEED_CUSTOMER_MIN,
 	SEED_NOTIFICATION_MAX,
@@ -24,6 +30,7 @@ import {
 	SeedArgError,
 	selectNewFaqs,
 } from '../src/seed-data';
+import { BILLING_PAUSE_REASON } from '../src/services/inbox';
 
 describe('parseSeedArgs', () => {
 	it('parses long flags into a typed options object', () => {
@@ -99,6 +106,12 @@ describe('parseSeedArgs', () => {
 		expect(parseSeedArgs(['-a', 'acme-co', '-p', '0']).appointments).toBe(0);
 	});
 
+	it('parses the conversations flag (long and short)', () => {
+		expect(parseSeedArgs(['-a', 'acme-co', '--conversations', '7']).conversations).toBe(7);
+		expect(parseSeedArgs(['-a', 'acme-co', '-i', '0']).conversations).toBe(0);
+		expect(parseSeedArgs(['-a', 'acme-co']).conversations).toBeUndefined();
+	});
+
 	it('treats --help and --account-less invocations as parseable (validation happens later)', () => {
 		expect(parseSeedArgs(['--help']).help).toBe(true);
 		expect(parseSeedArgs([]).account).toBeUndefined();
@@ -110,6 +123,7 @@ describe('parseSeedArgs', () => {
 		['not a number', ['-a', 'x', '-f', 'lots']],
 		['bad appointments', ['-a', 'x', '-p', '-3']],
 		['bad notifications', ['-a', 'x', '-n', '-2']],
+		['bad conversations', ['-a', 'x', '-i', '-4']],
 	])('throws SeedArgError on a %s count', (_label, argv) => {
 		expect(() => parseSeedArgs(argv)).toThrow(SeedArgError);
 	});
@@ -318,6 +332,66 @@ describe('generateNotifications', () => {
 	it('keeps the default range sane', () => {
 		expect(SEED_NOTIFICATION_MIN).toBeLessThanOrEqual(SEED_NOTIFICATION_MAX);
 		expect(SEED_NOTIFICATION_MIN).toBeGreaterThanOrEqual(1);
+	});
+});
+
+describe('generateConversations', () => {
+	const contacts: ConversationContact[] = [
+		{ customerId: 'cust-1', name: 'Dana Whitfield', phone: '(206) 555-0142' },
+		{ customerId: 'cust-2', name: 'Priya Anand', phone: '(206) 555-0119' },
+	];
+
+	it('generates exactly the requested number of conversations', () => {
+		expect(generateConversations(6, contacts)).toHaveLength(6);
+		expect(generateConversations(0, contacts)).toHaveLength(0);
+		// A negative count is clamped to an empty batch rather than throwing.
+		expect(generateConversations(-2, contacts)).toHaveLength(0);
+	});
+
+	it('round-robins across the supplied customers and addresses them by name', () => {
+		const seeds = generateConversations(4, contacts);
+		expect(seeds.map((seed) => seed.conversation.customerId)).toEqual([
+			'cust-1',
+			'cust-2',
+			'cust-1',
+			'cust-2',
+		]);
+		expect(seeds[0]?.conversation.contactName).toBe('Dana Whitfield');
+		// The dialogue greets the contact by their first name.
+		const rivusTurn = seeds[0]?.messages.find((message) => message.author === 'rivus');
+		expect(rivusTurn?.body).toContain('Dana');
+	});
+
+	it('invents a lead with no customer link when there are no customers', () => {
+		faker.seed(11);
+		const [seed] = generateConversations(1, []);
+		expect(seed?.conversation.customerId).toBe('');
+		expect(seed?.conversation.contactName.length).toBeGreaterThan(0);
+	});
+
+	it('produces conversations and messages that satisfy the API schemas', () => {
+		const seeds = generateConversations(SEED_CONVERSATION_MAX, contacts);
+		for (const seed of seeds) {
+			expect(() => createConversationSchema.parse(seed.conversation)).not.toThrow();
+			expect(seed.messages.length).toBeGreaterThan(0);
+			for (const message of seed.messages) {
+				expect(() => createMessageSchema.parse(message)).not.toThrow();
+			}
+		}
+	});
+
+	it('flags the billing thread for review with a held draft', () => {
+		// The third script is the invoice question Rivus holds for a human.
+		const seeds = generateConversations(3, contacts);
+		const flagged = seeds.find((seed) => seed.review !== null);
+		expect(flagged?.conversation.status).toBe('needs_attention');
+		expect(flagged?.review?.flagReason).toBe(BILLING_PAUSE_REASON);
+		expect(flagged?.review?.pendingReply.length).toBeGreaterThan(0);
+	});
+
+	it('keeps the default range sane', () => {
+		expect(SEED_CONVERSATION_MIN).toBeLessThanOrEqual(SEED_CONVERSATION_MAX);
+		expect(SEED_CONVERSATION_MIN).toBeGreaterThanOrEqual(1);
 	});
 });
 

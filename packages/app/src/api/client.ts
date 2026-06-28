@@ -4,8 +4,17 @@ import {
 	type AccountId,
 	acceptInviteSchema,
 	accountStatusSchema,
+	approveReplySchema,
+	type Conversation,
+	type ConversationDetail,
+	type ConversationId,
+	type ConversationStatus,
 	type Customer,
 	type CustomerId,
+	conversationChannelSchema,
+	conversationListQuerySchema,
+	conversationStatusSchema,
+	createConversationSchema,
 	createCustomerSchema,
 	createFaqSchema,
 	createJobSchema,
@@ -26,6 +35,9 @@ import {
 	jobStatusSchema,
 	type LoginInput,
 	loginSchema,
+	type Message,
+	type MessageId,
+	messageAuthorSchema,
 	type Notification,
 	type NotificationId,
 	notificationReadStateSchema,
@@ -35,14 +47,18 @@ import {
 	paginationQuerySchema,
 	type Role,
 	roleSchema,
+	type SendMessageInput,
+	sendMessageSchema,
 	signupSchema,
 	type UpdateAccountInput,
+	type UpdateConversationInput,
 	type UpdateCustomerInput,
 	type UpdateFaqInput,
 	type UpdateJobInput,
 	type User,
 	type UserId,
 	updateAccountSchema,
+	updateConversationSchema,
 	updateCustomerSchema,
 	updateFaqSchema,
 	updateJobSchema,
@@ -84,6 +100,8 @@ const jobId = () => z.string().min(1) as unknown as z.ZodType<JobId>;
 const accountId = () => z.string().min(1) as unknown as z.ZodType<AccountId>;
 const userId = () => z.string().min(1) as unknown as z.ZodType<UserId>;
 const notificationId = () => z.string().min(1) as unknown as z.ZodType<NotificationId>;
+const conversationId = () => z.string().min(1) as unknown as z.ZodType<ConversationId>;
+const messageId = () => z.string().min(1) as unknown as z.ZodType<MessageId>;
 
 /**
  * Pure, runtime-agnostic API client for the Rivus REST API.
@@ -375,6 +393,58 @@ export type NotificationListQuery = Partial<PaginationQuery> & { unread?: boolea
 const unreadCountResponseSchema = z.object({ unread: z.number().int() });
 const markAllReadResponseSchema = z.object({ updated: z.number().int() });
 
+const conversationResponseSchema = z.object({
+	id: conversationId(),
+	accountId: accountId(),
+	customerId: z.string(),
+	contactName: z.string(),
+	contactPhone: z.string(),
+	channel: conversationChannelSchema,
+	status: conversationStatusSchema,
+	snippet: z.string(),
+	tags: z.array(z.string()),
+	lastInvoice: z.string(),
+	pendingReply: z.string(),
+	flagReason: z.string(),
+	lastMessageAt: z.string(),
+	createdAt: z.string(),
+	updatedAt: z.string(),
+}) satisfies z.ZodType<Conversation>;
+
+const conversationListResponseSchema = z.object({
+	data: z.array(conversationResponseSchema),
+	meta: paginationMetaSchema,
+});
+
+export interface ConversationListResponse {
+	data: Conversation[];
+	meta: PaginationMeta;
+}
+
+const messageResponseSchema = z.object({
+	id: messageId(),
+	conversationId: conversationId(),
+	author: messageAuthorSchema,
+	body: z.string(),
+	createdAt: z.string(),
+}) satisfies z.ZodType<Message>;
+
+const conversationDetailResponseSchema = z.object({
+	conversation: conversationResponseSchema,
+	messages: z.array(messageResponseSchema),
+}) satisfies z.ZodType<ConversationDetail>;
+
+const needsAttentionCountResponseSchema = z.object({ count: z.number().int() });
+
+/** Query for {@link RivusApiClient.listConversations}: pagination plus a status filter. */
+export type ConversationListQueryInput = Partial<PaginationQuery> & { status?: ConversationStatus };
+
+/** createConversation accepts the schema's *input* (every field but name/channel optional). */
+export type CreateConversationBody = z.input<typeof createConversationSchema>;
+
+/** approveReply accepts the schema's *input* (`body` optional — omit to send the held draft). */
+export type ApproveReplyBody = z.input<typeof approveReplySchema>;
+
 const faqSimilarityResponseSchema = z.object({
 	match: faqResponseSchema.nullable(),
 	reason: z.string(),
@@ -507,6 +577,39 @@ export interface RivusApiClient {
 	markAllNotificationsRead(token: string): Promise<number>;
 	/** Dismiss (delete) one of your notifications. */
 	dismissNotification(token: string, id: NotificationId): Promise<void>;
+	/** List the account's conversations (the inbox), optionally filtered by status. */
+	listConversations(
+		token: string,
+		query?: ConversationListQueryInput,
+	): Promise<ConversationListResponse>;
+	/** Open a conversation. */
+	createConversation(token: string, input: CreateConversationBody): Promise<Conversation>;
+	/** Fetch one conversation with its full message transcript. */
+	getConversation(token: string, id: ConversationId): Promise<ConversationDetail>;
+	/** Update a conversation's metadata (tags, status, contact, …). */
+	updateConversation(
+		token: string,
+		id: ConversationId,
+		input: UpdateConversationInput,
+	): Promise<Conversation>;
+	/** Delete a conversation. */
+	deleteConversation(token: string, id: ConversationId): Promise<void>;
+	/** Count conversations that need a human (for the Inbox sidebar badge). */
+	needsAttentionCount(token: string): Promise<number>;
+	/** Send a reply to a conversation as a team member. */
+	sendMessage(
+		token: string,
+		id: ConversationId,
+		input: SendMessageInput,
+	): Promise<ConversationDetail>;
+	/** Ask Rivus to draft (and send, or hold for review) a reply from the knowledge base. */
+	replyWithRivus(token: string, id: ConversationId): Promise<ConversationDetail>;
+	/** Approve and send Rivus's held draft, optionally replacing it with an edited body. */
+	approveReply(
+		token: string,
+		id: ConversationId,
+		input?: ApproveReplyBody,
+	): Promise<ConversationDetail>;
 	/**
 	 * List/search every company, for the staff company switcher. Restricted to Rivus
 	 * staff server-side (a regular customer gets 403).
@@ -868,6 +971,90 @@ export function createApiClient(
 			});
 		},
 
+		async listConversations(token: string, query?: ConversationListQueryInput) {
+			const parsed = parseInput(conversationListQuerySchema, query ?? {});
+			const params = new URLSearchParams({
+				page: String(parsed.page),
+				pageSize: String(parsed.pageSize),
+			});
+			// Only narrow by status when asked; otherwise the API returns the whole inbox.
+			if (parsed.status) {
+				params.set('status', parsed.status);
+			}
+			return request(`/v1/conversations?${params.toString()}`, conversationListResponseSchema, {
+				method: 'GET',
+				headers: authHeaders(token),
+			});
+		},
+
+		async createConversation(token: string, input: CreateConversationBody) {
+			const payload = parseInput(createConversationSchema, input);
+			return request(
+				'/v1/conversations',
+				conversationResponseSchema,
+				jsonInit('POST', payload, token),
+			);
+		},
+
+		getConversation(token: string, id: ConversationId) {
+			return request(
+				`/v1/conversations/${encodeURIComponent(id)}`,
+				conversationDetailResponseSchema,
+				{ method: 'GET', headers: authHeaders(token) },
+			);
+		},
+
+		async updateConversation(token: string, id: ConversationId, input: UpdateConversationInput) {
+			const payload = parseInput(updateConversationSchema, input);
+			return request(
+				`/v1/conversations/${encodeURIComponent(id)}`,
+				conversationResponseSchema,
+				jsonInit('PATCH', payload, token),
+			);
+		},
+
+		async deleteConversation(token: string, id: ConversationId) {
+			await request(`/v1/conversations/${encodeURIComponent(id)}`, noContentSchema, {
+				method: 'DELETE',
+				headers: authHeaders(token),
+			});
+		},
+
+		async needsAttentionCount(token: string) {
+			const { count } = await request(
+				'/v1/conversations/needs-attention-count',
+				needsAttentionCountResponseSchema,
+				{ method: 'GET', headers: authHeaders(token) },
+			);
+			return count;
+		},
+
+		async sendMessage(token: string, id: ConversationId, input: SendMessageInput) {
+			const payload = parseInput(sendMessageSchema, input);
+			return request(
+				`/v1/conversations/${encodeURIComponent(id)}/messages`,
+				conversationDetailResponseSchema,
+				jsonInit('POST', payload, token),
+			);
+		},
+
+		replyWithRivus(token: string, id: ConversationId) {
+			return request(
+				`/v1/conversations/${encodeURIComponent(id)}/reply`,
+				conversationDetailResponseSchema,
+				{ method: 'POST', headers: authHeaders(token) },
+			);
+		},
+
+		async approveReply(token: string, id: ConversationId, input: ApproveReplyBody = {}) {
+			const payload = parseInput(approveReplySchema, input);
+			return request(
+				`/v1/conversations/${encodeURIComponent(id)}/approve`,
+				conversationDetailResponseSchema,
+				jsonInit('POST', payload, token),
+			);
+		},
+
 		async listCompanies(token: string, query?: CompanyListQuery) {
 			const { page, pageSize } = parseInput(paginationQuerySchema, {
 				page: query?.page,
@@ -902,4 +1089,17 @@ function safeJsonParse(raw: string): unknown {
 	}
 }
 
-export type { Account, Customer, Faq, Item, Job, Notification, PaginationMeta, Role, User };
+export type {
+	Account,
+	Conversation,
+	ConversationDetail,
+	Customer,
+	Faq,
+	Item,
+	Job,
+	Message,
+	Notification,
+	PaginationMeta,
+	Role,
+	User,
+};

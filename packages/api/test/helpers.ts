@@ -41,6 +41,7 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		customers,
 		jobs,
 		notifications,
+		conversations,
 		verificationCodes,
 	} = createInMemoryRepositories();
 	const app = buildApp({
@@ -55,6 +56,7 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		customers,
 		jobs,
 		notifications,
+		conversations,
 		verificationCodes,
 		// A recording mailer by default so helpers can read back the emailed code.
 		mailer: new RecordingMailer(),
@@ -91,6 +93,7 @@ export async function buildTestAppWithRepos(): Promise<{
 		customers,
 		jobs,
 		notifications,
+		conversations,
 		verificationCodes,
 	} = repos;
 	const app = buildApp({
@@ -105,6 +108,7 @@ export async function buildTestAppWithRepos(): Promise<{
 		customers,
 		jobs,
 		notifications,
+		conversations,
 		verificationCodes,
 		mailer: new RecordingMailer(),
 		notifier: createNotificationService({ notifications }),

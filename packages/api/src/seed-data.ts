@@ -1,16 +1,24 @@
 import { parseArgs } from 'node:util';
 import { faker } from '@faker-js/faker';
 import {
+	type ConversationChannel,
+	type ConversationStatus,
+	type CreateConversationInput,
 	type CreateCustomerInput,
 	type CreateFaqInput,
 	type CreateJobInput,
+	type CreateMessageInput,
 	type CreateNotificationInput,
+	createConversationSchema,
 	createCustomerSchema,
 	createFaqSchema,
 	createJobSchema,
+	createMessageSchema,
 	createNotificationSchema,
 	type JobStatus,
+	type MessageAuthor,
 } from '@rivus/core';
+import { BILLING_PAUSE_REASON } from './services/inbox';
 
 /**
  * Pure, hermetic building blocks for the account seeder (`seed.ts`). Everything
@@ -507,6 +515,195 @@ export function generateNotifications(count: number): CreateNotificationInput[] 
 	return notifications;
 }
 
+// --- Conversations (inbox) ---------------------------------------------------
+
+// A demo account's inbox should read like a real day's work: Rivus quietly
+// booking jobs and answering FAQs across channels, plus one thread it paused on
+// for a human (a billing question). These scripts mirror the product's design
+// reference; `seed.ts` links each to one of the account's customers, then replays
+// the messages through the same repository the API uses.
+
+/** Default conversation count is a value in this (inclusive) range when not overridden. */
+export const SEED_CONVERSATION_MIN = 5;
+export const SEED_CONVERSATION_MAX = 8;
+
+/** One scripted conversation: its channel/status/tags plus the messages that fill it. */
+interface ConversationScript {
+	channel: ConversationChannel;
+	status: ConversationStatus;
+	tags: string[];
+	lastInvoice: string;
+	messages: Array<{ author: MessageAuthor; body: string }>;
+	/** Present only for the flagged thread: Rivus's held draft and why it paused. */
+	review?: { pendingReply: string; flagReason: string };
+}
+
+/**
+ * The scripts the demo inbox draws from, each a function of the contact's first
+ * name so the dialogue reads personally. Most are threads Rivus handled on its
+ * own; one (the invoice question) is held for human review.
+ */
+const CONVERSATION_SCRIPTS: ReadonlyArray<(firstName: string) => ConversationScript> = [
+	(firstName) => ({
+		channel: 'whatsapp',
+		status: 'rivus_handling',
+		tags: ['Repeat client', 'Membership'],
+		lastInvoice: '',
+		messages: [
+			{
+				author: 'customer',
+				body: 'Hi, my water heater is leaking from the bottom. How soon can someone come out?',
+			},
+			{
+				author: 'rivus',
+				body: `Hi ${firstName}! A leak from the bottom usually means the tank, so it's best to have a tech take a look. I have Tuesday 2:00 PM or Wednesday 10:00 AM open — which works for you?`,
+			},
+			{ author: 'customer', body: 'Tuesday 2 is great.' },
+			{
+				author: 'rivus',
+				body: "You're booked for Tuesday at 2:00 PM for a water heater inspection. I'll text a reminder the morning of. Anything else?",
+			},
+			{
+				author: 'note',
+				body: 'Rivus booked “Water heater inspection” · assigned to the on-call tech',
+			},
+			{ author: 'customer', body: 'Perfect, see you Tuesday!' },
+		],
+	}),
+	(firstName) => ({
+		channel: 'phone',
+		status: 'rivus_handling',
+		tags: ['New this year'],
+		lastInvoice: '',
+		messages: [
+			{ author: 'note', body: 'Inbound call · answered & transcribed by Rivus' },
+			{
+				author: 'customer',
+				body: `Hey, it's ${firstName}. My kitchen sink is totally clogged, water won't go down. Hoping someone could swing by today or tomorrow.`,
+			},
+			{
+				author: 'rivus',
+				body: `Called ${firstName} back and offered same-day 4:30 PM or tomorrow 9:00 AM — booked tomorrow at 9:00 AM.`,
+			},
+			{ author: 'note', body: 'Rivus booked “Drain cleaning”' },
+		],
+	}),
+	(firstName) => ({
+		channel: 'email',
+		status: 'needs_attention',
+		tags: ['Repeat client', 'Billing flag'],
+		lastInvoice: '#1051 · $540 · Due Jun 30',
+		messages: [
+			{
+				author: 'customer',
+				body: 'Hi, I just got invoice #1051 for $540 but I thought the quote was $480. Can you clarify the difference before I pay? Thanks.',
+			},
+		],
+		review: {
+			pendingReply: `Hi ${firstName}! The $60 difference is for an additional shut-off valve replaced during the visit (noted on the work order). I've attached the itemized breakdown — would you like a quick call to walk through it?`,
+			flagReason: BILLING_PAUSE_REASON,
+		},
+	}),
+	(firstName) => ({
+		channel: 'sms',
+		status: 'rivus_handling',
+		tags: ['New lead'],
+		lastInvoice: '',
+		messages: [
+			{ author: 'customer', body: 'Do you guys service the east side?' },
+			{
+				author: 'rivus',
+				body: `We sure do, ${firstName}! That's within our service area with no extra travel fee under 15 miles. Want me to set up a visit?`,
+			},
+			{ author: 'customer', body: 'Not yet, just checking. Thanks!' },
+			{ author: 'note', body: 'Answered from FAQ: “Service area”' },
+		],
+	}),
+	(firstName) => ({
+		channel: 'whatsapp',
+		status: 'rivus_handling',
+		tags: ['VIP', 'Membership'],
+		lastInvoice: '',
+		messages: [
+			{
+				author: 'customer',
+				body: 'Just wanted to say the tech who came out was fantastic. Thank you!',
+			},
+			{
+				author: 'rivus',
+				body: `That means a lot, ${firstName} — I'll pass it along to the team! If you have a minute, a quick review helps a small business like ours a ton.`,
+			},
+			{ author: 'note', body: `Rivus requested a review · ${firstName} left ★★★★★` },
+		],
+	}),
+];
+
+/** The contact a seeded conversation is for — a linked customer, or a bare lead. */
+export interface ConversationContact {
+	/** Linked customer id, or '' for a lead with no customer record. */
+	customerId: string;
+	name: string;
+	phone: string;
+}
+
+/** A built conversation: its metadata, the messages to replay, and any review state. */
+export interface ConversationSeed {
+	conversation: CreateConversationInput;
+	messages: CreateMessageInput[];
+	/** Set when the thread is flagged for a human (a held draft + reason); null otherwise. */
+	review: { pendingReply: string; flagReason: string } | null;
+}
+
+/** The first word of a name, used to address the contact in the scripted dialogue. */
+function firstNameOf(name: string): string {
+	return name.trim().split(/\s+/)[0] || name.trim();
+}
+
+/** Pick the contact for conversation `index`, inventing a lead when there are no customers. */
+function pickContact(contacts: ConversationContact[], index: number): ConversationContact {
+	if (contacts.length === 0) {
+		return { customerId: '', name: faker.person.fullName(), phone: '' };
+	}
+	return contacts[index % contacts.length] as ConversationContact;
+}
+
+/**
+ * Generate `count` validated conversations, rotating through the scripts and
+ * round-robining across the account's customers so the inbox spans channels,
+ * statuses, and contacts. Each conversation and message is validated through the
+ * same schemas the API applies, so seeded threads match ones created over HTTP.
+ * Seed faker beforehand (`faker.seed(n)`) for a reproducible batch.
+ */
+export function generateConversations(
+	count: number,
+	contacts: ConversationContact[],
+): ConversationSeed[] {
+	const total = Math.max(0, count);
+	const seeds: ConversationSeed[] = [];
+	for (let index = 0; index < total; index += 1) {
+		// The modulo always lands in range; the guard only satisfies the
+		// noUncheckedIndexedAccess type (the undefined branch never runs).
+		const build = CONVERSATION_SCRIPTS[index % CONVERSATION_SCRIPTS.length];
+		if (!build) {
+			continue;
+		}
+		const contact = pickContact(contacts, index);
+		const script = build(firstNameOf(contact.name));
+		const conversation = createConversationSchema.parse({
+			contactName: contact.name,
+			channel: script.channel,
+			customerId: contact.customerId,
+			contactPhone: contact.phone,
+			status: script.status,
+			tags: script.tags,
+			lastInvoice: script.lastInvoice,
+		});
+		const messages = script.messages.map((message) => createMessageSchema.parse(message));
+		seeds.push({ conversation, messages, review: script.review ?? null });
+	}
+	return seeds;
+}
+
 // --- CLI ---------------------------------------------------------------------
 
 /** Validated options parsed from the seed command line. */
@@ -521,6 +718,8 @@ export interface SeedOptions {
 	appointments?: number;
 	/** Notifications to create per member; `undefined` means "use the default range". */
 	notifications?: number;
+	/** Number of inbox conversations to create; `undefined` means "use the default range". */
+	conversations?: number;
 	/** Whether to use AI generation (when a provider key is set). `--no-ai` clears it. */
 	ai: boolean;
 	/** Optional faker seed for a reproducible batch. */
@@ -559,6 +758,9 @@ Options:
   -n, --notifications <n>     How many notifications to create per member.
                               Default: a random count in [${SEED_NOTIFICATION_MIN}, ${SEED_NOTIFICATION_MAX}].
                               Pass 0 to skip notifications.
+  -i, --conversations <n>     How many inbox conversations to create.
+                              Default: a random count in [${SEED_CONVERSATION_MIN}, ${SEED_CONVERSATION_MAX}].
+                              Pass 0 to skip conversations.
       --no-ai                 Force built-in faker/curated generation even when a
                               provider key is set.
   -s, --seed <n>              Seed the random generator for a reproducible batch.
@@ -601,6 +803,7 @@ export function parseSeedArgs(argv: string[]): SeedOptions {
 		faqs?: string;
 		appointments?: string;
 		notifications?: string;
+		conversations?: string;
 		'no-ai'?: boolean;
 		seed?: string;
 		'dry-run'?: boolean;
@@ -616,6 +819,7 @@ export function parseSeedArgs(argv: string[]): SeedOptions {
 				faqs: { type: 'string', short: 'f' },
 				appointments: { type: 'string', short: 'p' },
 				notifications: { type: 'string', short: 'n' },
+				conversations: { type: 'string', short: 'i' },
 				'no-ai': { type: 'boolean', default: false },
 				seed: { type: 'string', short: 's' },
 				'dry-run': { type: 'boolean', default: false },
@@ -631,6 +835,7 @@ export function parseSeedArgs(argv: string[]): SeedOptions {
 		faqs: parseCountOption(values.faqs, 'faqs'),
 		appointments: parseCountOption(values.appointments, 'appointments'),
 		notifications: parseCountOption(values.notifications, 'notifications'),
+		conversations: parseCountOption(values.conversations, 'conversations'),
 		ai: !(values['no-ai'] ?? false),
 		seed: parseCountOption(values.seed, 'seed'),
 		dryRun: values['dry-run'] ?? false,

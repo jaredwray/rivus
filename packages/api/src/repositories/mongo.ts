@@ -1,10 +1,15 @@
 import {
 	type Account,
 	type AccountId,
+	type Conversation,
+	type ConversationDetail,
+	type ConversationId,
+	type CreateConversationInput,
 	type CreateCustomerInput,
 	type CreateFaqInput,
 	type CreateItemInput,
 	type CreateJobInput,
+	type CreateMessageInput,
 	type CreateNotificationInput,
 	type Customer,
 	type CustomerId,
@@ -18,11 +23,14 @@ import {
 	type JobId,
 	type Membership,
 	type MembershipId,
+	type Message,
+	type MessageId,
 	type Notification,
 	type NotificationId,
 	normalizePagination,
 	pageToSkip,
 	type Role,
+	type UpdateConversationInput,
 	type UpdateCustomerInput,
 	type UpdateFaqInput,
 	type UpdateItemInput,
@@ -31,6 +39,11 @@ import {
 } from '@rivus/core';
 import mongoose, { type ClientSession, type HydratedDocument, Types } from 'mongoose';
 import { type AccountDocument, AccountModel } from '../db/models/account.model';
+import {
+	type ConversationDocument,
+	ConversationModel,
+	type MessageSubdocument,
+} from '../db/models/conversation.model';
 import { type CustomerDocument, CustomerModel } from '../db/models/customer.model';
 import { type FaqDocument, FaqModel } from '../db/models/faq.model';
 import { type InviteDocument, InviteModel } from '../db/models/invite.model';
@@ -48,6 +61,8 @@ import type {
 	AcceptInviteInput,
 	AcceptInviteResult,
 	AccountRepository,
+	ConversationRepository,
+	ConversationReviewPatch,
 	CustomerRepository,
 	FaqRepository,
 	FindOverlappingJobsOptions,
@@ -55,6 +70,7 @@ import type {
 	ItemRepository,
 	JobRepository,
 	ListAccountsOptions,
+	ListConversationsOptions,
 	ListCustomersOptions,
 	ListFaqsOptions,
 	ListItemsOptions,
@@ -206,6 +222,38 @@ function mapNotification(doc: HydratedDocument<NotificationDocument>): Notificat
 		linkHref: doc.linkHref,
 		createdAt: doc.createdAt.toISOString(),
 		updatedAt: doc.updatedAt.toISOString(),
+	};
+}
+
+/** Conversation metadata only — the embedded transcript is mapped separately. */
+function mapConversation(doc: HydratedDocument<ConversationDocument>): Conversation {
+	return {
+		id: doc._id.toString() as ConversationId,
+		accountId: doc.accountId.toString() as AccountId,
+		customerId: doc.customerId,
+		contactName: doc.contactName,
+		contactPhone: doc.contactPhone,
+		channel: doc.channel,
+		status: doc.status,
+		snippet: doc.snippet,
+		tags: [...doc.tags],
+		lastInvoice: doc.lastInvoice,
+		pendingReply: doc.pendingReply,
+		flagReason: doc.flagReason,
+		lastMessageAt: doc.lastMessageAt.toISOString(),
+		createdAt: doc.createdAt.toISOString(),
+		updatedAt: doc.updatedAt.toISOString(),
+	};
+}
+
+/** Map one embedded message subdocument to the public {@link Message}. */
+function mapMessage(subdoc: MessageSubdocument, conversationId: ConversationId): Message {
+	return {
+		id: subdoc._id.toString() as MessageId,
+		conversationId,
+		author: subdoc.author,
+		body: subdoc.body,
+		createdAt: subdoc.createdAt.toISOString(),
 	};
 }
 
@@ -1084,5 +1132,179 @@ export class MongoNotificationRepository implements NotificationRepository {
 			...this.scopedFilter(accountId, userId),
 		}).exec();
 		return result.deletedCount === 1;
+	}
+}
+
+export class MongoConversationRepository implements ConversationRepository {
+	async create(accountId: AccountId, input: CreateConversationInput): Promise<Conversation> {
+		const now = new Date();
+		const doc = await ConversationModel.create({
+			accountId: new Types.ObjectId(accountId),
+			customerId: input.customerId,
+			contactName: input.contactName,
+			contactPhone: input.contactPhone,
+			channel: input.channel,
+			status: input.status,
+			snippet: '',
+			tags: input.tags,
+			lastInvoice: input.lastInvoice,
+			pendingReply: '',
+			flagReason: '',
+			// No messages yet, so the thread sorts by when it was opened.
+			lastMessageAt: now,
+			messages: [],
+		});
+		return mapConversation(doc);
+	}
+
+	async list(
+		options: ListConversationsOptions,
+	): Promise<{ conversations: Conversation[]; total: number }> {
+		if (!Types.ObjectId.isValid(options.accountId)) {
+			return { conversations: [], total: 0 };
+		}
+		const { pageSize } = normalizePagination(options.page, options.pageSize);
+		const skip = pageToSkip(options.page, options.pageSize);
+		const filter: Record<string, unknown> = { accountId: new Types.ObjectId(options.accountId) };
+		if (options.status) {
+			filter.status = options.status;
+		}
+		const [docs, total] = await Promise.all([
+			// The transcript can be large; the list view never shows it, so exclude it.
+			ConversationModel.find(filter)
+				.select('-messages')
+				.sort({ lastMessageAt: -1, _id: -1 })
+				.skip(skip)
+				.limit(pageSize)
+				.exec(),
+			ConversationModel.countDocuments(filter).exec(),
+		]);
+		return { conversations: docs.map(mapConversation), total };
+	}
+
+	async findById(accountId: AccountId, id: ConversationId): Promise<Conversation | null> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return null;
+		}
+		const doc = await ConversationModel.findOne({
+			_id: id,
+			accountId: new Types.ObjectId(accountId),
+		})
+			.select('-messages')
+			.exec();
+		return doc ? mapConversation(doc) : null;
+	}
+
+	async update(
+		accountId: AccountId,
+		id: ConversationId,
+		input: UpdateConversationInput,
+	): Promise<Conversation | null> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return null;
+		}
+		const doc = await ConversationModel.findOneAndUpdate(
+			{ _id: id, accountId: new Types.ObjectId(accountId) },
+			{ $set: input },
+			{ new: true },
+		)
+			.select('-messages')
+			.exec();
+		return doc ? mapConversation(doc) : null;
+	}
+
+	async delete(accountId: AccountId, id: ConversationId): Promise<boolean> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return false;
+		}
+		const result = await ConversationModel.deleteOne({
+			_id: id,
+			accountId: new Types.ObjectId(accountId),
+		}).exec();
+		return result.deletedCount === 1;
+	}
+
+	async needsAttentionCount(accountId: AccountId): Promise<number> {
+		if (!Types.ObjectId.isValid(accountId)) {
+			return 0;
+		}
+		return ConversationModel.countDocuments({
+			accountId: new Types.ObjectId(accountId),
+			status: 'needs_attention',
+		}).exec();
+	}
+
+	async listMessages(accountId: AccountId, id: ConversationId): Promise<Message[] | null> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return null;
+		}
+		const doc = await ConversationModel.findOne({
+			_id: id,
+			accountId: new Types.ObjectId(accountId),
+		})
+			.select('messages')
+			.exec();
+		if (!doc) {
+			return null;
+		}
+		return doc.messages.map((message) => mapMessage(message, id));
+	}
+
+	async addMessage(
+		accountId: AccountId,
+		id: ConversationId,
+		input: CreateMessageInput,
+	): Promise<ConversationDetail | null> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return null;
+		}
+		const doc = await ConversationModel.findOne({
+			_id: id,
+			accountId: new Types.ObjectId(accountId),
+		}).exec();
+		if (!doc) {
+			return null;
+		}
+		const now = new Date();
+		doc.messages.push({
+			_id: new Types.ObjectId(),
+			author: input.author,
+			body: input.body,
+			createdAt: now,
+		});
+		// A `note` belongs in the timeline but never becomes the list preview.
+		if (input.author !== 'note') {
+			doc.snippet = input.body;
+		}
+		doc.lastMessageAt = now;
+		await doc.save();
+		return {
+			conversation: mapConversation(doc),
+			messages: doc.messages.map((message) => mapMessage(message, id)),
+		};
+	}
+
+	async setReviewState(
+		accountId: AccountId,
+		id: ConversationId,
+		patch: ConversationReviewPatch,
+	): Promise<Conversation | null> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return null;
+		}
+		const doc = await ConversationModel.findOneAndUpdate(
+			{ _id: id, accountId: new Types.ObjectId(accountId) },
+			{
+				$set: {
+					status: patch.status,
+					pendingReply: patch.pendingReply,
+					flagReason: patch.flagReason,
+				},
+			},
+			{ new: true },
+		)
+			.select('-messages')
+			.exec();
+		return doc ? mapConversation(doc) : null;
 	}
 }

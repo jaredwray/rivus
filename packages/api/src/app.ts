@@ -15,6 +15,7 @@ import { accountRoutes } from './routes/account';
 import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { billingRoutes } from './routes/billing';
+import { conversationRoutes } from './routes/conversations';
 import { customerRoutes } from './routes/customers';
 import { faqRoutes } from './routes/faqs';
 import { healthRoutes } from './routes/health';
@@ -184,6 +185,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 	app.register(customerRoutes, { prefix: '/v1/customers' });
 	app.register(jobRoutes, { prefix: '/v1/jobs' });
 	app.register(notificationRoutes, { prefix: '/v1/notifications' });
+	app.register(conversationRoutes, { prefix: '/v1/conversations' });
 
 	return app;
 }

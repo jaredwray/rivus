@@ -4,6 +4,7 @@ import { loadConfig } from './config';
 import { checkDatabaseReady, connectMongoose, disconnectMongoose } from './db/mongoose';
 import {
 	MongoAccountRepository,
+	MongoConversationRepository,
 	MongoCustomerRepository,
 	MongoFaqRepository,
 	MongoInviteRepository,
@@ -38,6 +39,7 @@ export async function start(): Promise<void> {
 		customers: new MongoCustomerRepository(),
 		jobs: new MongoJobRepository(),
 		notifications,
+		conversations: new MongoConversationRepository(),
 		verificationCodes: new MongoVerificationCodeRepository(),
 		mailer: createMailer(config),
 		notifier: createNotificationService({ notifications }),

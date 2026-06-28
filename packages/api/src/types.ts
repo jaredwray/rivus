@@ -3,6 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Config } from './config';
 import type {
 	AccountRepository,
+	ConversationRepository,
 	CustomerRepository,
 	FaqRepository,
 	InviteRepository,
@@ -41,6 +42,8 @@ export interface AppDeps {
 	jobs: JobRepository;
 	/** Per-user notifications (the bell). */
 	notifications: NotificationRepository;
+	/** Customer conversations (the inbox). */
+	conversations: ConversationRepository;
 	/** Stores one-time sign-in codes for passwordless auth. */
 	verificationCodes: VerificationCodeRepository;
 	/** Sends transactional email (invitations and sign-in codes). */
