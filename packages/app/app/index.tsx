@@ -150,6 +150,8 @@ export default function HomeScreen() {
 	}, [jobs, members, customers]);
 
 	const todayLabel = useMemo(() => formatDayLabel(new Date()), []);
+	// Greet by first name, falling back to a plain greeting before the session loads.
+	const firstName = useMemo(() => session?.user.name?.trim().split(/\s+/)[0] ?? '', [session]);
 	const bookedCount = todayRows.length;
 	const pipeline = useMemo(
 		() =>
@@ -197,7 +199,7 @@ export default function HomeScreen() {
 				<View style={styles.head}>
 					<View>
 						<SectionLabel>{todayLabel}</SectionLabel>
-						<Txt style={styles.h1}>Good morning, Marcus</Txt>
+						<Txt style={styles.h1}>{firstName ? `Good morning, ${firstName}` : 'Good morning'}</Txt>
 					</View>
 					<GradientButton label="New job" icon="plus" onPress={() => router.push('/schedule')} />
 				</View>
