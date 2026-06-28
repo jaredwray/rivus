@@ -292,7 +292,10 @@ function ChatConversation({
 					placeholder="Message Rivus…"
 					placeholderTextColor={colors.textHint}
 					returnKeyType="send"
-					style={styles.input}
+					// Mobile Safari zooms the page when a focused input's font is under
+					// 16px, which shoves the send button off-screen. Hold the input at
+					// 16px on web to suppress that; native keeps the designed 14px.
+					style={[styles.input, IS_WEB && styles.inputWeb]}
 				/>
 				<Pressable
 					onPress={onSubmit}
@@ -470,6 +473,10 @@ const styles = StyleSheet.create({
 		borderRadius: radii.md,
 		paddingVertical: 10,
 		paddingHorizontal: 12,
+	},
+	// 16px is the threshold below which mobile Safari auto-zooms a focused input.
+	inputWeb: {
+		fontSize: 16,
 	},
 	sendBtnWrap: {
 		borderRadius: radii.md,
