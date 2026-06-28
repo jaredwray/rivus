@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
 	ActivityIndicator,
 	KeyboardAvoidingView,
+	Modal,
 	Platform,
 	Pressable,
 	ScrollView,
@@ -31,17 +32,37 @@ interface DisplayMessage extends ChatMessage {
 }
 
 /**
- * A floating "chat with Rivus" launcher pinned to the bottom-right of every
- * signed-in screen. Tapping it opens a small chat panel that talks to the Rivus
- * agent service (`@rivus/agent`). On first open it greets you — the end-to-end
- * proof that the app can reach the agent and get a reply back.
+ * The Rivus agent chat. It talks to the Rivus agent service (`@rivus/agent`);
+ * on first open it greets you — the end-to-end proof that the app can reach the
+ * agent and get a reply back.
+ *
+ * Two presentations share the same conversation logic:
+ *
+ * - `floating` (the wide layout): a launcher pinned to the bottom-right of every
+ *   signed-in screen that opens a small panel above itself. It owns its own open
+ *   state.
+ * - `fullscreen` (the narrow/mobile layout): no launcher of its own — the chat
+ *   icon lives in the top bar, and tapping it opens the conversation full screen.
+ *   The host owns the open state and passes it in via `open` / `onClose`.
+ *
+ * @param bottomOffset Height of bottom chrome the floating launcher must clear
+ * (e.g. the mobile tab bar). It already includes the safe-area inset, so we
+ * reserve the larger of it and the raw inset rather than summing the two.
+ * @param variant Which presentation to render (defaults to `floating`).
+ * @param open Controlled open state — only used (and required) for `fullscreen`.
+ * @param onClose Called when the `fullscreen` chat asks to close.
  */
-/**
- * @param bottomOffset Height of bottom chrome the launcher must clear (e.g. the
- * mobile tab bar). It already includes the safe-area inset, so we reserve the
- * larger of it and the raw inset rather than summing the two.
- */
-export function RivusChat({ bottomOffset = 0 }: { bottomOffset?: number }) {
+export function RivusChat({
+	bottomOffset = 0,
+	variant = 'floating',
+	open: openProp,
+	onClose,
+}: {
+	bottomOffset?: number;
+	variant?: 'floating' | 'fullscreen';
+	open?: boolean;
+	onClose?: () => void;
+}) {
 	const insets = useSafeAreaInsets();
 	const { width, height } = useWindowDimensions();
 	const bottomReserve = Math.max(insets.bottom, bottomOffset);
@@ -52,7 +73,18 @@ export function RivusChat({ bottomOffset = 0 }: { bottomOffset?: number }) {
 	// user and can answer from their company + knowledge base.
 	const token = session?.token ?? '';
 
-	const [open, setOpen] = useState(false);
+	// `floating` owns its open state; `fullscreen` is controlled by the host.
+	const isFullscreen = variant === 'fullscreen';
+	const [internalOpen, setInternalOpen] = useState(false);
+	const open = isFullscreen ? openProp === true : internalOpen;
+	const close = useCallback(() => {
+		if (isFullscreen) {
+			onClose?.();
+		} else {
+			setInternalOpen(false);
+		}
+	}, [isFullscreen, onClose]);
+
 	const [greeted, setGreeted] = useState(false);
 	const [messages, setMessages] = useState<DisplayMessage[]>([]);
 	const [draft, setDraft] = useState('');
@@ -105,6 +137,50 @@ export function RivusChat({ bottomOffset = 0 }: { bottomOffset?: number }) {
 		void send(next);
 	}
 
+	const conversation = (
+		<ChatConversation
+			messages={messages}
+			status={status}
+			draft={draft}
+			onDraft={setDraft}
+			onSubmit={submit}
+			onClose={close}
+			scrollRef={scrollRef}
+		/>
+	);
+
+	// Mobile: open over the whole screen with a clear close affordance in the
+	// header. The chat icon that opens it lives in the top bar (see CompactBar).
+	if (isFullscreen) {
+		return (
+			<Modal
+				visible={open}
+				animationType="slide"
+				onRequestClose={close}
+				presentationStyle="overFullScreen"
+				transparent={false}
+			>
+				<KeyboardAvoidingView
+					behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+					style={styles.fullscreen}
+				>
+					{/* Hold the safe-area insets on an inner View: with behavior="padding"
+					    KeyboardAvoidingView overwrites its own paddingBottom with the
+					    keyboard height (0 when closed), which would otherwise wipe out the
+					    bottom inset and let the composer collide with the home indicator. */}
+					<View
+						style={[
+							styles.fullscreenInner,
+							{ paddingTop: insets.top, paddingBottom: insets.bottom },
+						]}
+					>
+						{conversation}
+					</View>
+				</KeyboardAvoidingView>
+			</Modal>
+		);
+	}
+
 	const panelWidth = Math.min(360, width - 24);
 	const panelHeight = Math.min(460, height - insets.top - bottomReserve - 96);
 
@@ -119,75 +195,12 @@ export function RivusChat({ bottomOffset = 0 }: { bottomOffset?: number }) {
 		>
 			{open ? (
 				<View style={[styles.panel, { width: panelWidth, height: panelHeight }]}>
-					<View style={styles.header}>
-						<BrandGradient style={styles.headerMark}>
-							<RivusSymbol size={18} />
-						</BrandGradient>
-						<View style={styles.headerText}>
-							<Txt style={styles.headerTitle}>Rivus</Txt>
-							<View style={styles.headerStatus}>
-								<Dot color={colors.green} size={6} />
-								<Txt style={styles.headerStatusTxt}>AI assistant</Txt>
-							</View>
-						</View>
-						<Pressable
-							onPress={() => setOpen(false)}
-							accessibilityRole="button"
-							accessibilityLabel="Close Rivus chat"
-							style={styles.headerClose}
-						>
-							<Feather name="x" size={18} color={colors.textMuted} />
-						</Pressable>
-					</View>
-
-					<ScrollView
-						ref={scrollRef}
-						style={styles.thread}
-						contentContainerStyle={styles.threadContent}
-						onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
-					>
-						{messages.map((message) => (
-							<MessageBubble key={message.id} message={message} />
-						))}
-						{status === 'sending' ? (
-							<View style={[styles.bubble, styles.assistantBubble]}>
-								<ActivityIndicator color={colors.brandPurple} size="small" />
-							</View>
-						) : null}
-						{status === 'error' ? (
-							<Txt style={styles.errorTxt}>
-								Couldn't reach Rivus. Check that the agent is running, then try again.
-							</Txt>
-						) : null}
-					</ScrollView>
-
-					<View style={styles.composer}>
-						<TextInput
-							value={draft}
-							onChangeText={setDraft}
-							onSubmitEditing={submit}
-							placeholder="Message Rivus…"
-							placeholderTextColor={colors.textHint}
-							returnKeyType="send"
-							style={styles.input}
-						/>
-						<Pressable
-							onPress={submit}
-							accessibilityRole="button"
-							accessibilityLabel="Send message"
-							disabled={status === 'sending'}
-							style={({ pressed }) => [styles.sendBtnWrap, pressed && styles.pressed]}
-						>
-							<BrandGradient style={styles.sendBtn}>
-								<Feather name="arrow-up" size={18} color="#fff" />
-							</BrandGradient>
-						</Pressable>
-					</View>
+					{conversation}
 				</View>
 			) : null}
 
 			<Pressable
-				onPress={() => setOpen((value) => !value)}
+				onPress={() => setInternalOpen((value) => !value)}
 				accessibilityRole="button"
 				accessibilityLabel={open ? 'Close Rivus chat' : 'Open Rivus chat'}
 				style={({ pressed }) => [styles.fabWrap, pressed && styles.pressed]}
@@ -201,6 +214,99 @@ export function RivusChat({ bottomOffset = 0 }: { bottomOffset?: number }) {
 				</BrandGradient>
 			</Pressable>
 		</KeyboardAvoidingView>
+	);
+}
+
+/**
+ * The shared chat surface — header, message thread and composer — laid out to
+ * fill its parent. Both the floating panel and the fullscreen modal wrap this so
+ * the conversation looks and behaves identically in either presentation.
+ */
+function ChatConversation({
+	messages,
+	status,
+	draft,
+	onDraft,
+	onSubmit,
+	onClose,
+	scrollRef,
+}: {
+	messages: DisplayMessage[];
+	status: Status;
+	draft: string;
+	onDraft: (value: string) => void;
+	onSubmit: () => void;
+	onClose: () => void;
+	scrollRef: React.RefObject<ScrollView | null>;
+}) {
+	return (
+		<>
+			<View style={styles.header}>
+				<BrandGradient style={styles.headerMark}>
+					<RivusSymbol size={18} />
+				</BrandGradient>
+				<View style={styles.headerText}>
+					<Txt style={styles.headerTitle}>Rivus</Txt>
+					<View style={styles.headerStatus}>
+						<Dot color={colors.green} size={6} />
+						<Txt style={styles.headerStatusTxt}>AI assistant</Txt>
+					</View>
+				</View>
+				<Pressable
+					onPress={onClose}
+					accessibilityRole="button"
+					accessibilityLabel="Close Rivus chat"
+					hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+					style={styles.headerClose}
+				>
+					<Feather name="x" size={18} color={colors.textMuted} />
+				</Pressable>
+			</View>
+
+			<ScrollView
+				ref={scrollRef}
+				style={styles.thread}
+				contentContainerStyle={styles.threadContent}
+				onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+			>
+				{messages.map((message) => (
+					<MessageBubble key={message.id} message={message} />
+				))}
+				{status === 'sending' ? (
+					<View style={[styles.bubble, styles.assistantBubble]}>
+						<ActivityIndicator color={colors.brandPurple} size="small" />
+					</View>
+				) : null}
+				{status === 'error' ? (
+					<Txt style={styles.errorTxt}>
+						Couldn't reach Rivus. Check that the agent is running, then try again.
+					</Txt>
+				) : null}
+			</ScrollView>
+
+			<View style={styles.composer}>
+				<TextInput
+					value={draft}
+					onChangeText={onDraft}
+					onSubmitEditing={onSubmit}
+					placeholder="Message Rivus…"
+					placeholderTextColor={colors.textHint}
+					returnKeyType="send"
+					style={styles.input}
+				/>
+				<Pressable
+					onPress={onSubmit}
+					accessibilityRole="button"
+					accessibilityLabel="Send message"
+					disabled={status === 'sending'}
+					style={({ pressed }) => [styles.sendBtnWrap, pressed && styles.pressed]}
+				>
+					<BrandGradient style={styles.sendBtn}>
+						<Feather name="arrow-up" size={18} color="#fff" />
+					</BrandGradient>
+				</Pressable>
+			</View>
+		</>
 	);
 }
 
@@ -252,6 +358,15 @@ const styles = StyleSheet.create({
 		borderColor: colors.border,
 		overflow: 'hidden',
 		...shadowSoft,
+	},
+	// Fullscreen (mobile) container: fills the screen and pads the safe-area insets
+	// applied by the wrapping KeyboardAvoidingView.
+	fullscreen: {
+		flex: 1,
+		backgroundColor: colors.surface,
+	},
+	fullscreenInner: {
+		flex: 1,
 	},
 	header: {
 		flexDirection: 'row',
