@@ -1,6 +1,13 @@
-import { useMemo, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
-import { ApiError } from '@/src/api/client';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+	ActivityIndicator,
+	Platform,
+	ScrollView,
+	StyleSheet,
+	useWindowDimensions,
+	View,
+} from 'react-native';
+import { ApiError, type Billing } from '@/src/api/client';
 import { getGoogleMapsApiKey } from '@/src/api/config';
 import { deviceTimezone, listTimezones } from '@/src/api/timezones';
 import { useAuth } from '@/src/auth/AuthContext';
@@ -9,12 +16,17 @@ import {
 	Card,
 	GradientButton,
 	OutlineButton,
+	Pill,
 	SectionLabel,
 	Select,
 	TextField,
 	Txt,
 } from '@/src/components/ui';
 import { colors, font } from '@/src/theme/tokens';
+
+const PLAN_LABELS: Record<Billing['plan'], string> = {
+	free: 'Free',
+};
 
 function messageFor(error: unknown, fallback: string): string {
 	if (error instanceof ApiError || error instanceof Error) {
@@ -24,8 +36,9 @@ function messageFor(error: unknown, fallback: string): string {
 }
 
 export default function SettingsScreen() {
-	const { session, updateAccount, cancelAccount } = useAuth();
+	const { session, client, updateAccount, cancelAccount } = useAuth();
 	const account = session?.account;
+	const isOwner = session?.role === 'owner';
 	// Stack the danger-zone buttons once the row is too narrow to hold both
 	// without wrapping their labels.
 	const { width } = useWindowDimensions();
@@ -45,6 +58,12 @@ export default function SettingsScreen() {
 	const [canceling, setCanceling] = useState(false);
 	const [cancelError, setCancelError] = useState<string | null>(null);
 
+	// Billing now lives here as a section rather than its own screen. Only Owners
+	// can read it (the API rejects everyone else), so non-owners never load it.
+	const [billing, setBilling] = useState<Billing | null>(null);
+	const [billingLoading, setBillingLoading] = useState(true);
+	const [billingError, setBillingError] = useState<string | null>(null);
+
 	const timezoneOptions = useMemo(
 		() => listTimezones().map((zone) => ({ label: zone.replace(/_/g, ' '), value: zone })),
 		[],
@@ -56,11 +75,31 @@ export default function SettingsScreen() {
 	// signup form (see AuthScreen).
 	const mapsApiKey = useMemo(() => (Platform.OS === 'web' ? getGoogleMapsApiKey() : null), []);
 
+	const loadBilling = useCallback(async () => {
+		if (!session || !isOwner) {
+			setBillingLoading(false);
+			return;
+		}
+		setBillingLoading(true);
+		setBillingError(null);
+		try {
+			setBilling(await client.getBilling(session.token));
+		} catch (caught) {
+			setBillingError(messageFor(caught, 'Could not load billing.'));
+		} finally {
+			setBillingLoading(false);
+		}
+	}, [client, session, isOwner]);
+
+	useEffect(() => {
+		loadBilling();
+	}, [loadBilling]);
+
 	if (!session) {
 		return null;
 	}
 
-	if (session.role !== 'owner') {
+	if (!isOwner) {
 		return (
 			<ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 				<Txt style={styles.h1}>Account settings</Txt>
@@ -175,6 +214,34 @@ export default function SettingsScreen() {
 				</View>
 			</Card>
 
+			<Card style={styles.card}>
+				<SectionLabel>Plan &amp; billing</SectionLabel>
+				{billingLoading ? (
+					<ActivityIndicator color={colors.brandPurple} style={styles.billingLoading} />
+				) : billingError ? (
+					<Txt style={styles.errorTxt}>{billingError}</Txt>
+				) : billing ? (
+					<>
+						<View style={styles.planRow}>
+							<Txt style={styles.plan}>{PLAN_LABELS[billing.plan]}</Txt>
+							<Pill
+								label={billing.status === 'active' ? 'Active' : 'Canceled'}
+								color={colors.brandPurpleInk}
+								background="rgba(110,30,200,0.08)"
+							/>
+						</View>
+						<View style={styles.statRow}>
+							<Txt style={styles.statLabel}>Seats in use</Txt>
+							<Txt style={styles.statValue}>{billing.seats}</Txt>
+						</View>
+						<Txt style={styles.note}>
+							Paid plans aren’t available yet — every account is on the free plan while we finish
+							wiring up billing.
+						</Txt>
+					</>
+				) : null}
+			</Card>
+
 			<Card style={[styles.card, styles.dangerCard]}>
 				<SectionLabel style={styles.dangerLabel}>Danger zone</SectionLabel>
 				<Txt style={styles.rowSub}>
@@ -250,6 +317,42 @@ const styles = StyleSheet.create({
 		fontFamily: font.medium,
 		fontSize: 12.5,
 		color: colors.green,
+	},
+	billingLoading: {
+		paddingVertical: 12,
+	},
+	planRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+	},
+	plan: {
+		fontFamily: font.bold,
+		fontSize: 20,
+		color: colors.text,
+	},
+	statRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		borderTopWidth: 1,
+		borderTopColor: colors.border,
+		paddingTop: 12,
+	},
+	statLabel: {
+		fontFamily: font.regular,
+		fontSize: 13,
+		color: colors.textMuted,
+	},
+	statValue: {
+		fontFamily: font.semibold,
+		fontSize: 15,
+		color: colors.text,
+	},
+	note: {
+		fontFamily: font.regular,
+		fontSize: 12,
+		color: colors.textFaint,
 	},
 	dangerCard: {
 		borderColor: 'rgba(240,88,75,0.35)',
