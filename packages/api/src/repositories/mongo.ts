@@ -762,9 +762,19 @@ export class MongoCustomerRepository implements CustomerRepository {
 		}
 		const limit = Math.max(1, Math.trunc(options.limit));
 		const rx = new RegExp(escapeRegex(term), 'i');
+		// `area` is the legacy location field that `mapCustomer` still surfaces as
+		// `address` for customers created before the rename — match it too so those
+		// records are findable by the location the app shows for them.
 		const docs = await CustomerModel.find({
 			accountId: new Types.ObjectId(options.accountId),
-			$or: [{ name: rx }, { email: rx }, { phone: rx }, { address: rx }, { notes: rx }],
+			$or: [
+				{ name: rx },
+				{ email: rx },
+				{ phone: rx },
+				{ address: rx },
+				{ area: rx },
+				{ notes: rx },
+			],
 		})
 			.sort({ createdAt: -1, _id: -1 })
 			.limit(limit)
