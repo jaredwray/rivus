@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { parseIntent } from './intent';
+import { parseIntent, resolveIntent } from './intent';
+import type { ChatMessage } from './types';
+
+const user = (content: string): ChatMessage => ({ role: 'user', content });
+const assistant = (content: string): ChatMessage => ({ role: 'assistant', content });
 
 describe('parseIntent — conversational', () => {
 	it('treats an empty message as a greeting', () => {
@@ -286,5 +290,84 @@ describe('parseIntent — natural FAQ create', () => {
 			question: 'Hours',
 			answer: 'we open at 9',
 		});
+	});
+});
+
+describe('parseIntent — conversation context', () => {
+	it('reads a subjectless FAQ action as an FAQ ask when the topic is faq', () => {
+		// "what should I add?" names no subject, but with the conversation on the
+		// knowledge base the "add" verb routes it to a create.
+		expect(parseIntent('What should I add?', { topic: 'faq' })).toEqual({
+			kind: 'faq_create',
+			question: null,
+			answer: null,
+		});
+		expect(parseIntent('can you list them?', { topic: 'faq' })).toEqual({ kind: 'faq_list' });
+		expect(parseIntent('anything about refunds?', { topic: 'faq' })).toEqual({
+			kind: 'faq_search',
+			query: 'refunds',
+		});
+	});
+
+	it('does not attach a bare pleasantry to an active FAQ topic', () => {
+		// No FAQ action, so context must not turn "thanks" into a list dump.
+		expect(parseIntent('thanks!', { topic: 'faq' })).toEqual({ kind: 'unknown' });
+	});
+
+	it('lets a self-named ask win over the context', () => {
+		// The message names a company field, so faq context does not hijack it.
+		expect(parseIntent("what's our website?", { topic: 'faq' })).toEqual({
+			kind: 'company_info',
+			fields: ['website'],
+		});
+	});
+
+	it('ignores context it does not act on (company is tracked, not routed)', () => {
+		expect(parseIntent('what should I add?', { topic: 'company' })).toEqual({ kind: 'unknown' });
+	});
+});
+
+describe('resolveIntent — multi-turn', () => {
+	it('answers a bare follow-up using the prior FAQ turn', () => {
+		const conversation = [
+			user("what's my website?"),
+			assistant('Your website is https://example.com.'),
+			user('how many faqs do we have?'),
+			assistant('Your knowledge base has 3 FAQs: …'),
+			user('What should I add?'),
+		];
+		expect(resolveIntent(conversation)).toEqual({
+			kind: 'faq_create',
+			question: null,
+			answer: null,
+		});
+	});
+
+	it('leaves a turn that stands on its own untouched', () => {
+		const conversation = [
+			user('how many faqs do we have?'),
+			assistant('Your knowledge base has 3 FAQs: …'),
+			user("what's our phone number?"),
+		];
+		expect(resolveIntent(conversation)).toEqual({ kind: 'company_info', fields: ['phone'] });
+	});
+
+	it('falls back to unknown when no earlier turn set a topic', () => {
+		const conversation = [user('hello'), assistant('Hi!'), user('what should I add?')];
+		expect(resolveIntent(conversation)).toEqual({ kind: 'unknown' });
+	});
+
+	it('uses the most recent topic when the conversation moved on', () => {
+		// The chat drifted from FAQs to the company record; a bare "add" follow-up
+		// should not be pulled back to the older FAQ topic.
+		const conversation = [
+			user('list our faqs'),
+			assistant('…'),
+			user('what about our address?'),
+			assistant('1 Main St.'),
+			user('what should I add?'),
+		];
+		// Most recent topic is company, which we do not route, so it stays unknown.
+		expect(resolveIntent(conversation)).toEqual({ kind: 'unknown' });
 	});
 });

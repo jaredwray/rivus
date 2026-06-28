@@ -8,7 +8,15 @@
  * routing beats an opaque classifier. Swapping in an LLM later means replacing
  * only this function — the orchestration in `assistant.ts` consumes the same
  * `Intent` shape.
+ *
+ * A single message is read on its own, but {@link resolveIntent} layers the
+ * conversation on top: a follow-up that names no subject ("what should I add?")
+ * inherits the topic the chat is already on, so it's understood instead of being
+ * brushed off.
  */
+
+import { lastUserMessage } from './conversation';
+import type { ChatMessage } from './types';
 
 /** A field of the company/account record the user can ask about. */
 export type CompanyField =
@@ -34,6 +42,19 @@ export type Intent =
 	/** Add an FAQ; `question`/`answer` are null when the user didn't supply them. */
 	| { kind: 'faq_create'; question: string | null; answer: string | null }
 	| { kind: 'unknown' };
+
+/** The subject a conversation is on, carried forward to resolve bare follow-ups. */
+export type ConversationTopic = 'faq' | 'company';
+
+/**
+ * What earlier turns established, so a message that names no subject of its own
+ * can still be understood. Only `'faq'` currently changes parsing — it lets a
+ * follow-up like "what should I add?" be read as a knowledge-base ask; `'company'`
+ * is tracked for symmetry and future use.
+ */
+export interface IntentContext {
+	topic?: ConversationTopic;
+}
 
 /** Keywords that put a message in "knowledge base" context. */
 const FAQ_CONTEXT = /\b(faqs?|knowledge[ -]?base|knowledge)\b/;
@@ -207,11 +228,31 @@ function parseFaqCreate(text: string): { question: string | null; answer: string
 }
 
 /**
+ * True when a message carries a knowledge-base *action* (add/update/search/list,
+ * or an "about …" subject) — as opposed to a bare "thanks". Used to decide whether
+ * an otherwise-subjectless message should attach to an active FAQ conversation, so
+ * a pleasantry doesn't get mistaken for "show me the FAQs".
+ */
+function hasFaqAction(lower: string): boolean {
+	return (
+		UPDATE_VERB.test(lower) ||
+		CREATE_VERB.test(lower) ||
+		SEARCH_VERB.test(lower) ||
+		LIST_VERB.test(lower) ||
+		afterPreposition(lower) !== null
+	);
+}
+
+/**
  * Classify a single user message. Precedence matters: knowledge-base asks are
  * matched before company facts (so "search the FAQ about our hours" routes to
  * search, not the company record), and the most specific verbs win within each.
+ *
+ * `context` lets the caller say what the conversation is already about. When it's
+ * `'faq'`, a message that carries an FAQ action but doesn't name the knowledge base
+ * ("what should I add?") is still routed there — see {@link resolveIntent}.
  */
-export function parseIntent(raw: string): Intent {
+export function parseIntent(raw: string, context: IntentContext = {}): Intent {
 	const text = raw.trim();
 	const lower = text.toLowerCase();
 
@@ -228,7 +269,10 @@ export function parseIntent(raw: string): Intent {
 		return { kind: 'greeting' };
 	}
 
-	if (FAQ_CONTEXT.test(lower)) {
+	// Enter the knowledge-base branch when the message names it outright, or when
+	// the conversation is already on it and this turn carries an FAQ action.
+	const faqByContext = context.topic === 'faq' && hasFaqAction(lower);
+	if (FAQ_CONTEXT.test(lower) || faqByContext) {
 		if (UPDATE_VERB.test(lower)) {
 			return { kind: 'faq_update', ...parseFaqUpdate(text) };
 		}
@@ -259,4 +303,61 @@ export function parseIntent(raw: string): Intent {
 	}
 
 	return { kind: 'unknown' };
+}
+
+/** The conversation topic an intent puts us on, or `null` if it sets none. */
+function topicOf(intent: Intent): ConversationTopic | null {
+	switch (intent.kind) {
+		case 'faq_list':
+		case 'faq_search':
+		case 'faq_update':
+		case 'faq_create':
+			return 'faq';
+		case 'company_info':
+			return 'company';
+		default:
+			return null;
+	}
+}
+
+/**
+ * The subject the conversation is already on, read from the most recent *earlier*
+ * user turn that established one. The latest turn is skipped — it's the one we
+ * couldn't read on its own and are trying to give context to.
+ */
+function recentTopic(messages: ChatMessage[]): ConversationTopic | null {
+	const userTurns = messages.filter((message) => message.role === 'user');
+	for (let i = userTurns.length - 2; i >= 0; i--) {
+		const turn = userTurns[i];
+		if (!turn) {
+			continue;
+		}
+		const topic = topicOf(parseIntent(turn.content));
+		if (topic) {
+			return topic;
+		}
+	}
+	return null;
+}
+
+/**
+ * Understand the latest user turn *in the context of the conversation*. Most
+ * turns name their own subject and are read on their own. But a natural follow-up
+ * — "what should I add?" right after looking at the FAQs — names nothing, so on its
+ * own it's `unknown` and the user gets a generic brush-off. Here we notice the
+ * conversation was already about the knowledge base and re-read the turn with that
+ * context, so the follow-up lands where the user meant it.
+ *
+ * This is the single seam the agent uses, so making understanding conversational
+ * (or model-backed) later means changing only this layer.
+ */
+export function resolveIntent(messages: ChatMessage[]): Intent {
+	const latest = lastUserMessage(messages) ?? '';
+	const direct = parseIntent(latest);
+	// A turn that already stands on its own needs no help from earlier ones.
+	if (direct.kind !== 'unknown') {
+		return direct;
+	}
+	const topic = recentTopic(messages);
+	return topic ? parseIntent(latest, { topic }) : direct;
 }
