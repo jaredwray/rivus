@@ -19,6 +19,7 @@ export default defineConfig({
 				'src/api.ts',
 				'src/intent.ts',
 				'src/assistant.ts',
+				'src/decide.ts',
 			],
 			exclude: ['src/**/*.test.ts'],
 			thresholds: {

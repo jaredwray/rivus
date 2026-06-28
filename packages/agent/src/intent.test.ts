@@ -294,18 +294,23 @@ describe('parseIntent — natural FAQ create', () => {
 });
 
 describe('parseIntent — conversation context', () => {
-	it('reads a subjectless FAQ action as an FAQ ask when the topic is faq', () => {
-		// "what should I add?" names no subject, but with the conversation on the
-		// knowledge base the "add" verb routes it to a create.
-		expect(parseIntent('What should I add?', { topic: 'faq' })).toEqual({
-			kind: 'faq_create',
-			question: null,
-			answer: null,
-		});
+	it('reads a subjectless browse/search as an FAQ ask when the topic is faq', () => {
+		// A bare "list them" / "anything about refunds?" names no subject, but with the
+		// conversation on the knowledge base these resolve against it.
 		expect(parseIntent('can you list them?', { topic: 'faq' })).toEqual({ kind: 'faq_list' });
 		expect(parseIntent('anything about refunds?', { topic: 'faq' })).toEqual({
 			kind: 'faq_search',
 			query: 'refunds',
+		});
+	});
+
+	it('does not infer FAQ creation from context (a create verb is usually a question)', () => {
+		// "what should I add?" / "how do I create an invoice?" merely contain a create
+		// verb; the rule-based router does NOT turn that into faq_create from context —
+		// it leaves them for the knowledge-answer path. Creating needs explicit phrasing.
+		expect(parseIntent('What should I add?', { topic: 'faq' })).toEqual({ kind: 'unknown' });
+		expect(parseIntent('how do I create an invoice?', { topic: 'faq' })).toEqual({
+			kind: 'unknown',
 		});
 	});
 
@@ -340,19 +345,27 @@ describe('parseIntent — conversation context', () => {
 });
 
 describe('resolveIntent — multi-turn', () => {
-	it('answers a bare follow-up using the prior FAQ turn', () => {
+	it('resolves a bare browse follow-up using the prior FAQ turn', () => {
 		const conversation = [
 			user("what's my website?"),
 			assistant('Your website is https://example.com.'),
 			user('how many faqs do we have?'),
 			assistant('Your knowledge base has 3 FAQs: …'),
-			user('What should I add?'),
+			user('show me them'),
 		];
-		expect(resolveIntent(conversation)).toEqual({
-			kind: 'faq_create',
-			question: null,
-			answer: null,
-		});
+		expect(resolveIntent(conversation)).toEqual({ kind: 'faq_list' });
+	});
+
+	it('inherits FAQ context from an assistant knowledge answer, not just user turns', () => {
+		// The user's prior turn ("what's our best price?") parses as unknown; the proof
+		// the chat is on the knowledge base is the assistant's cited answer. A bare
+		// search follow-up should still resolve against the FAQs.
+		const conversation = [
+			user("what's our best price?"),
+			assistant('Our basic plan is $9/mo.\n\n(From your FAQ “How much does it cost?”.)'),
+			user('anything about refunds?'),
+		];
+		expect(resolveIntent(conversation)).toEqual({ kind: 'faq_search', query: 'refunds' });
 	});
 
 	it('leaves a turn that stands on its own untouched', () => {

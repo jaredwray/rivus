@@ -260,37 +260,92 @@ describe('respond — knowledge base answering', () => {
 	});
 });
 
-describe('respond — conversation context', () => {
+describe('respond — conversation context (rule-based router)', () => {
 	const assistant = (content: string): ChatMessage => ({ role: 'assistant', content });
 
-	it('understands a bare follow-up from the prior knowledge-base turn', async () => {
-		// The screenshot case: after looking at the FAQs, "What should I add?" names no
-		// subject, but the conversation context routes it to an FAQ create — so the agent
-		// helps add one instead of brushing the question off. (faq_create with no parts
-		// replies straight away, so no API call is needed.)
+	it('resolves a bare browse follow-up from the prior knowledge-base turn', async () => {
+		// After looking at the FAQs, "show me them" names no subject; context routes it
+		// to the list, so the agent shows the knowledge base rather than brushing it off.
 		const reply = await respond({
 			env: envWith(),
 			request: authedRequest(),
 			messages: [
-				user("what's my website?"),
-				assistant('Your website is https://acme.example.'),
+				user('how many faqs do we have?'),
+				assistant('Your knowledge base has 3 FAQs: …'),
+				user('show me them'),
+			],
+			fetchImpl: router([{ when: onListFaqs, body: page([makeFaq()]) }]),
+		});
+		expect(reply).toMatch(/knowledge base has/i);
+	});
+
+	it('defers a bare "what should I add?" to the knowledge-answer path, not a create', async () => {
+		// Creating an FAQ isn't inferred from context, so this flows to the AI answer
+		// path and degrades to the friendly nudge when the KB has nothing — it does not
+		// jump straight into "add an FAQ".
+		const reply = await respond({
+			env: envWith(),
+			request: authedRequest(),
+			messages: [
 				user('how many faqs do we have?'),
 				assistant('Your knowledge base has 3 FAQs: …'),
 				user('What should I add?'),
 			],
-		});
-		expect(reply).toMatch(/what question should the FAQ answer/i);
-		expect(reply).not.toMatch(/not sure how to help/i);
-	});
-
-	it('still brushes off a subjectless follow-up with no topic to lean on', async () => {
-		const reply = await respond({
-			env: envWith(),
-			request: authedRequest(),
-			messages: [user('hello'), assistant(GREETING), user('what should I add?')],
 			fetchImpl: router([{ when: onAnswerFaq, body: noAnswer }]),
 		});
 		expect(reply).toMatch(/not sure how to help/i);
+		expect(reply).not.toMatch(/what question should the FAQ answer/i);
+	});
+});
+
+describe('respond — model-routed decisions', () => {
+	it('adds an FAQ when the model decides the user wants to create one', async () => {
+		// The model router resolves a bare "what should I add?" to a create; the agent
+		// then helps add one. (faq_create with no parts replies straight away.)
+		const reply = await respond({
+			env: envWith(),
+			request: authedRequest(),
+			messages: [user('What should I add?')],
+			decide: async () => ({ kind: 'faq_create', question: null, answer: null }),
+		});
+		expect(reply).toMatch(/what question should the FAQ answer/i);
+	});
+
+	it('answers from the knowledge base when the model reads a create-word as a question', async () => {
+		// "How do I create an invoice?" contains "create" but is a question; the model
+		// routes it to faq_answer, so it's answered from the FAQs, not turned into one.
+		const faqs = [
+			makeFaq({ question: 'Creating invoices', answer: 'Open Billing → New invoice.' }),
+		];
+		const reply = await respond({
+			env: envWith(),
+			request: authedRequest(),
+			messages: [user('How do I create an invoice?')],
+			decide: async () => ({ kind: 'faq_answer', question: 'How do I create an invoice?' }),
+			fetchImpl: router([
+				{
+					when: onAnswerFaq,
+					body: {
+						answered: true,
+						answer: 'Open Billing, then New invoice.',
+						sources: [{ id: faqs[0]?.id, question: faqs[0]?.question }],
+					},
+				},
+			]),
+		});
+		expect(reply).toMatch(/open billing/i);
+		expect(reply).toMatch(/from your faq/i);
+	});
+
+	it('falls back to the rule-based router when no model and no decide override', async () => {
+		// Default deps, no ANTHROPIC_API_KEY: a clear ask still routes deterministically.
+		const reply = await respond({
+			env: envWith(),
+			request: authedRequest(),
+			messages: [user('what is our website?')],
+			fetchImpl: router([{ when: onGetMe, body: sessionBody() }]),
+		});
+		expect(reply).toMatch(/your website is/i);
 	});
 });
 

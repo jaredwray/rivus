@@ -32,6 +32,20 @@ export interface Env {
 	 * in wrangler.jsonc; unset locally (treated as development).
 	 */
 	NODE_ENV?: string;
+	/**
+	 * Anthropic API key used to route the agent — i.e. to let the model decide which
+	 * of the agent's tools (company facts, knowledge-base search/answer/edits) the
+	 * latest message calls for. A deploy-time secret (`wrangler secret put
+	 * ANTHROPIC_API_KEY`), never a plaintext var. When unset, routing degrades to the
+	 * deterministic rule-based parser, so the agent still works without a model.
+	 */
+	ANTHROPIC_API_KEY?: string;
+	/**
+	 * The model used for routing, e.g. `claude-haiku-4-5` (small and fast — it only
+	 * picks an action, it doesn't write the reply). Set per environment in
+	 * wrangler.jsonc; defaults to a fast model when unset.
+	 */
+	ANTHROPIC_MODEL?: string;
 }
 
 /**
