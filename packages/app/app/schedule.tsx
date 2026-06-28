@@ -124,9 +124,12 @@ export default function ScheduleScreen() {
 	const narrow = width < SIDEBAR_BREAKPOINT;
 
 	// Open on the day view on the mobile layout (the week is too cramped on a phone)
-	// and on the week view when the sidebar layout has room. Lazily initialized off
-	// the width at mount so it only sets the default — switching views still sticks.
-	const [view, setView] = useState<ScheduleView>(() => defaultScheduleView(width));
+	// and on the week view when the sidebar layout has room. Only a manual choice lives
+	// in state; until then the view derives from the current width, so the static-web
+	// first paint (width 0 before hydration) and later device rotation both resolve
+	// correctly instead of latching to the mount-time default. Picking a view sticks.
+	const [manualView, setView] = useState<ScheduleView | null>(null);
+	const view = manualView ?? defaultScheduleView(width);
 	const [anchor, setAnchor] = useState<Date>(() => startOfDay(new Date()));
 	const [jobs, setJobs] = useState<Job[]>([]);
 	const [customers, setCustomers] = useState<Customer[]>([]);
