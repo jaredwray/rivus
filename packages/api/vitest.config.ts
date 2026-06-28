@@ -12,6 +12,8 @@ export default defineConfig({
 				'src/index.ts',
 				'src/server.ts',
 				'src/openapi.ts',
+				// Thin Mongo wrapper around the unit-tested pure logic in seed-data.ts.
+				'src/seed.ts',
 				'src/db/**',
 				'src/repositories/mongo.ts',
 				'src/types.ts',
