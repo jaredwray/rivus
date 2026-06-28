@@ -144,10 +144,14 @@ function Shell() {
 	const wide = width >= SIDEBAR_BREAKPOINT;
 
 	// Measured height of the bottom tab bar (it has no fixed height, so larger
-	// text settings or a wrapped label can grow it). The chat button and the
-	// "More" sheet anchor to this so they always clear the real bar; the constant
-	// is just the pre-measurement default.
+	// text settings or a wrapped label can grow it). The "More" sheet anchors to
+	// this so it always clears the real bar; the constant is the pre-measure
+	// default.
 	const [tabBarHeight, setTabBarHeight] = useState(MOBILE_TABBAR_HEIGHT + insets.bottom);
+
+	// Narrow layout opens the agent chat full screen from the top bar's chat icon
+	// (there's no floating launcher on mobile), so the Shell owns the open state.
+	const [chatOpen, setChatOpen] = useState(false);
 
 	// Remount the agent chat when the active account changes (a staff "switch
 	// company" swaps the session in place). Its transcript and answers are
@@ -172,7 +176,7 @@ function Shell() {
 
 	return (
 		<View style={styles.rootColumn}>
-			<CompactBar />
+			<CompactBar onOpenChat={() => setChatOpen(true)} />
 			{/* Only staff get the company switcher; non-staff have no company row at all. */}
 			{isStaff ? (
 				<View style={styles.compactCompany}>
@@ -182,11 +186,14 @@ function Shell() {
 			<View style={styles.content}>
 				<Slot />
 			</View>
-			{/* Render the chat button before the tab bar so the "More" sheet and its
-			    backdrop layer above — and dim — the chat button while the sheet is open.
-			    The button is lifted by the measured bar height so the two never overlap
-			    when the sheet is closed. */}
-			<RivusChat key={chatKey} bottomOffset={tabBarHeight} />
+			{/* On mobile the chat opens full screen from the top bar's chat icon rather
+			    than from a floating launcher, so there's nothing to clear the tab bar. */}
+			<RivusChat
+				key={chatKey}
+				variant="fullscreen"
+				open={chatOpen}
+				onClose={() => setChatOpen(false)}
+			/>
 			<BottomTabBar height={tabBarHeight} onHeight={setTabBarHeight} />
 		</View>
 	);
@@ -297,7 +304,7 @@ function TopBar() {
 
 /* ------------------------------ Narrow layout ----------------------------- */
 
-function CompactBar() {
+function CompactBar({ onOpenChat }: { onOpenChat: () => void }) {
 	const insets = useSafeAreaInsets();
 	return (
 		<View style={[styles.compactBar, { paddingTop: insets.top + 12 }]}>
@@ -307,7 +314,23 @@ function CompactBar() {
 					<Dot color={colors.green} size={7} />
 					<Txt style={styles.compactStatusTxt}>Online</Txt>
 				</View>
-				<Pressable style={styles.compactBell}>
+				{/* Chat with Rivus — sits right before the bell and opens the agent chat
+				    full screen (the mobile layout has no floating chat launcher). */}
+				<Pressable
+					style={styles.compactIconBtn}
+					onPress={onOpenChat}
+					accessibilityRole="button"
+					accessibilityLabel="Open Rivus chat"
+					hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+				>
+					<Feather name="message-circle" size={18} color="#cfd0dc" />
+				</Pressable>
+				<Pressable
+					style={styles.compactIconBtn}
+					accessibilityRole="button"
+					accessibilityLabel="Notifications"
+					hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+				>
 					<Feather name="bell" size={18} color="#cfd0dc" />
 					<View style={styles.bellDot} />
 				</Pressable>
@@ -688,7 +711,7 @@ const styles = StyleSheet.create({
 		fontSize: 12,
 		color: '#cfd0dc',
 	},
-	compactBell: {
+	compactIconBtn: {
 		width: 34,
 		height: 34,
 		alignItems: 'center',
