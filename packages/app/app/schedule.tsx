@@ -444,41 +444,43 @@ export default function ScheduleScreen() {
 		<View style={styles.screen}>
 			<View style={[styles.header, narrow && styles.headerNarrow]}>
 				<View style={styles.headerLeft}>
-					<Txt style={styles.title}>Schedule</Txt>
-					{view !== 'list' ? (
-						<View style={styles.dateNav}>
-							<Pressable
-								style={styles.navBtn}
-								onPress={() => setAnchor((current) => addDays(current, -navStep))}
-								accessibilityRole="button"
-								accessibilityLabel="Previous"
-								hitSlop={NAV_HIT_SLOP}
-							>
-								<Icon name="chevron-left" size={16} color={colors.textSub} />
-							</Pressable>
-							<Pressable style={styles.todayBtn} onPress={() => setAnchor(today)}>
-								<Txt style={styles.todayBtnTxt}>Today</Txt>
-							</Pressable>
-							<Pressable
-								style={styles.navBtn}
-								onPress={() => setAnchor((current) => addDays(current, navStep))}
-								accessibilityRole="button"
-								accessibilityLabel="Next"
-								hitSlop={NAV_HIT_SLOP}
-							>
-								<Icon name="chevron-right" size={16} color={colors.textSub} />
-							</Pressable>
-						</View>
-					) : null}
-					<Pressable
-						style={styles.addBtn}
-						onPress={() => openCreate(localDateKey(view === 'list' ? today : anchor), 540)}
-						accessibilityRole="button"
-						accessibilityLabel="New job"
-						hitSlop={NAV_HIT_SLOP}
-					>
-						<GradientMark size={36} radius={radii.md} icon="plus" iconSize={20} />
-					</Pressable>
+					<View style={styles.titleRow}>
+						<Txt style={styles.title}>Schedule</Txt>
+						{view !== 'list' ? (
+							<View style={styles.dateNav}>
+								<Pressable
+									style={styles.navBtn}
+									onPress={() => setAnchor((current) => addDays(current, -navStep))}
+									accessibilityRole="button"
+									accessibilityLabel="Previous"
+									hitSlop={NAV_HIT_SLOP}
+								>
+									<Icon name="chevron-left" size={16} color={colors.textSub} />
+								</Pressable>
+								<Pressable style={styles.todayBtn} onPress={() => setAnchor(today)}>
+									<Txt style={styles.todayBtnTxt}>Today</Txt>
+								</Pressable>
+								<Pressable
+									style={styles.navBtn}
+									onPress={() => setAnchor((current) => addDays(current, navStep))}
+									accessibilityRole="button"
+									accessibilityLabel="Next"
+									hitSlop={NAV_HIT_SLOP}
+								>
+									<Icon name="chevron-right" size={16} color={colors.textSub} />
+								</Pressable>
+							</View>
+						) : null}
+						<Pressable
+							style={styles.addBtn}
+							onPress={() => openCreate(localDateKey(view === 'list' ? today : anchor), 540)}
+							accessibilityRole="button"
+							accessibilityLabel="New job"
+							hitSlop={NAV_HIT_SLOP}
+						>
+							<GradientMark size={36} radius={radii.md} icon="plus" iconSize={20} />
+						</Pressable>
+					</View>
 					<Txt style={styles.rangeLabel}>{view === 'list' ? 'Next 30 days' : rangeLabel}</Txt>
 				</View>
 				<View style={styles.headerRight}>
@@ -970,10 +972,13 @@ const styles = StyleSheet.create({
 	// Mobile: stack the title and controls; `stretch` gives each group a definite
 	// full width so `headerRight` wraps its children instead of overflowing.
 	headerNarrow: { flexDirection: 'column', alignItems: 'stretch', gap: 14 },
-	headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 16, flexWrap: 'wrap' },
+	headerLeft: { gap: 8 },
+	// Title, date nav and the create button share one row; the range label sits on
+	// its own line beneath. On mobile the row stretches full width so the button
+	// lands at the far right of the title/nav row.
+	titleRow: { flexDirection: 'row', alignItems: 'center', gap: 16, flexWrap: 'wrap' },
 	title: { fontFamily: font.semibold, fontSize: 20 },
-	// Push the create button to the far right of the title row; the range label
-	// then wraps onto its own line beneath it on the mobile layout.
+	// Push the create button to the far right of the title row.
 	addBtn: { marginLeft: 'auto', borderRadius: radii.md },
 	dateNav: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 	navBtn: {
