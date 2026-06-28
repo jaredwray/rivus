@@ -2,7 +2,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { generateObject, type LanguageModel } from 'ai';
 import { z } from 'zod';
 import { lastUserMessage } from './conversation';
-import { type CompanyField, type Intent, resolveIntent } from './intent';
+import { type CompanyField, type Intent, isExistenceCheck, resolveIntent } from './intent';
 import type { ChatMessage, Env } from './types';
 
 /**
@@ -163,9 +163,15 @@ export function decisionToIntent(decision: AgentDecision, latestUserText: string
 		case 'faq_list':
 			return { kind: 'faq_list' };
 		case 'faq_search':
-			// A search with no subject is really just "show me the FAQs".
+			// A search with no subject is really just "show me the FAQs". Existence-check
+			// phrasing ("do we have an FAQ about X?") is read from the raw turn so it stays
+			// on the list path even when the model routes it here.
 			return decision.query.trim().length > 0
-				? { kind: 'faq_search', query: decision.query.trim() }
+				? {
+						kind: 'faq_search',
+						query: decision.query.trim(),
+						existence: isExistenceCheck(latestUserText),
+					}
 				: { kind: 'faq_list' };
 		case 'faq_answer': {
 			// Fall back to the raw user text when the model didn't restate the question.

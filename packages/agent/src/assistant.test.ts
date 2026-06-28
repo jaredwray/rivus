@@ -458,7 +458,31 @@ describe('respond — knowledge base reads', () => {
 		expect(reply).toMatch(/knowledge base is empty/i);
 	});
 
-	it('searches and ranks by relevance', async () => {
+	it('answers a knowledge-base question semantically and cites the FAQ', async () => {
+		// "what does the knowledge base say about our best price?" mentions the KB, so it
+		// parses as faq_search — but it's a question, so the agent tries the grounded AI
+		// answer first (which connects "best price" to a differently-worded cost FAQ)
+		// rather than the keyword list.
+		const reply = await ask('what does the knowledge base say about our best price?', {
+			token: TOKEN,
+			fetchImpl: router([
+				{
+					when: onAnswerFaq,
+					body: {
+						answered: true,
+						answer: 'Our standard rate is $125 an hour, and $85 on weekends.',
+						sources: [{ id: 'faq_1', question: 'How much does your service cost?' }],
+					},
+				},
+			]),
+		});
+		expect(reply).toContain('$125 an hour');
+		expect(reply).toContain('How much does your service cost?');
+		// It's the grounded answer, not the keyword "here's what I found" list.
+		expect(reply).not.toMatch(/here’s what i found/i);
+	});
+
+	it('falls back to the keyword list when the question has no grounded answer', async () => {
 		const faqs = [
 			makeFaq({
 				id: 'faq_1',
@@ -469,14 +493,53 @@ describe('respond — knowledge base reads', () => {
 		];
 		const reply = await ask('search the FAQ for refund', {
 			token: TOKEN,
-			fetchImpl: router([{ when: onListFaqs, body: page(faqs) }]),
+			fetchImpl: router([
+				{ when: onAnswerFaq, body: noAnswer },
+				{ when: onListFaqs, body: page(faqs) },
+			]),
 		});
 		expect(reply).toMatch(/found about “refund”/i);
 		expect(reply).toContain('What is your refund policy?');
 		expect(reply).not.toContain('Where are you located?');
 	});
 
+	it('keeps an existence check on the list instead of a synthesized answer', async () => {
+		// "do we have an FAQ about X?" asks *whether* one exists; the matching list is the
+		// better reply, so the agent must NOT route it through the AI answer endpoint.
+		const faqs = [
+			makeFaq({ question: 'What is your refund policy?', answer: 'Refunds in 30 days.' }),
+		];
+		const reply = await ask('do we have an FAQ about refunds?', {
+			token: TOKEN,
+			fetchImpl: router([
+				// If the existence check wrongly hit the answer endpoint, this would surface.
+				{ when: onAnswerFaq, body: { answered: true, answer: 'SHOULD NOT APPEAR', sources: [] } },
+				{ when: onListFaqs, body: page(faqs) },
+			]),
+		});
+		expect(reply).toMatch(/found about “refunds”/i);
+		expect(reply).toContain('What is your refund policy?');
+		expect(reply).not.toContain('SHOULD NOT APPEAR');
+	});
+
+	it('degrades to the keyword list when the answer call fails', async () => {
+		// A flaky answer endpoint must never break search — it falls back to the keyword
+		// scan, which still surfaces the matching FAQ.
+		const faqs = [
+			makeFaq({ question: 'What is your refund policy?', answer: 'Refunds in 30 days.' }),
+		];
+		const reply = await ask('search the FAQ for refund', {
+			token: TOKEN,
+			fetchImpl: router([
+				{ when: onAnswerFaq, body: { message: 'boom' }, status: 500 },
+				{ when: onListFaqs, body: page(faqs) },
+			]),
+		});
+		expect(reply).toContain('What is your refund policy?');
+	});
+
 	it('falls back to a substring match for a short query', async () => {
+		// "do we have …" is an existence check, so this goes straight to the keyword list.
 		const faqs = [makeFaq({ question: 'What are your HR policies?', answer: 'See the handbook.' })];
 		const reply = await ask('do we have an faq about hr', {
 			token: TOKEN,
@@ -489,7 +552,10 @@ describe('respond — knowledge base reads', () => {
 		const faqs = [makeFaq({ question: 'Café opening hours?', answer: 'We open at 8am.' })];
 		const reply = await ask('search faqs for café', {
 			token: TOKEN,
-			fetchImpl: router([{ when: onListFaqs, body: page(faqs) }]),
+			fetchImpl: router([
+				{ when: onAnswerFaq, body: noAnswer },
+				{ when: onListFaqs, body: page(faqs) },
+			]),
 		});
 		expect(reply).toContain('Café opening hours?');
 	});
@@ -497,7 +563,10 @@ describe('respond — knowledge base reads', () => {
 	it('says when a search finds nothing', async () => {
 		const reply = await ask('search faqs for skydiving', {
 			token: TOKEN,
-			fetchImpl: router([{ when: onListFaqs, body: page([makeFaq()]) }]),
+			fetchImpl: router([
+				{ when: onAnswerFaq, body: noAnswer },
+				{ when: onListFaqs, body: page([makeFaq()]) },
+			]),
 		});
 		expect(reply).toMatch(/couldn’t find anything/i);
 	});
@@ -507,7 +576,10 @@ describe('respond — knowledge base reads', () => {
 		const faqs = [makeFaq({ question: 'Refund policy?', answer: longAnswer })];
 		const reply = await ask('search faqs for refund', {
 			token: TOKEN,
-			fetchImpl: router([{ when: onListFaqs, body: page(faqs) }]),
+			fetchImpl: router([
+				{ when: onAnswerFaq, body: noAnswer },
+				{ when: onListFaqs, body: page(faqs) },
+			]),
 		});
 		expect(reply).toContain('…');
 		expect(reply).not.toContain('END');
@@ -669,6 +741,7 @@ describe('respond — knowledge base writes', () => {
 		const target = makeFaq({ id: 'target', question: 'What is your refund policy?', answer: 'X.' });
 		const firstPage = page(filler);
 		const fetchImpl = router([
+			{ when: onAnswerFaq, body: noAnswer },
 			{
 				when: (url, method) => method === 'GET' && url.includes('page=1'),
 				body: { data: filler, meta: { ...firstPage.meta, hasNextPage: true } },
@@ -716,9 +789,14 @@ describe('respond — API error handling', () => {
 	});
 
 	it('handles an unexpected API failure (500)', async () => {
+		// The grounded answer comes back empty, so the search falls to the keyword scan —
+		// whose list call fails, surfacing the generic data-unreachable message.
 		const reply = await ask('search faqs for refund', {
 			token: TOKEN,
-			fetchImpl: router([{ when: onListFaqs, body: { message: 'boom' }, status: 500 }]),
+			fetchImpl: router([
+				{ when: onAnswerFaq, body: noAnswer },
+				{ when: onListFaqs, body: { message: 'boom' }, status: 500 },
+			]),
 		});
 		expect(reply).toMatch(/couldn’t reach your Rivus data/i);
 	});
