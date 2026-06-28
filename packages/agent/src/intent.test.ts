@@ -78,14 +78,32 @@ describe('parseIntent — knowledge base', () => {
 		expect(parseIntent('search the FAQ for refunds')).toEqual({
 			kind: 'faq_search',
 			query: 'refunds',
-		});
-		expect(parseIntent('do we have an FAQ about parking?')).toEqual({
-			kind: 'faq_search',
-			query: 'parking',
+			existence: false,
 		});
 		expect(parseIntent('find FAQs about pricing')).toEqual({
 			kind: 'faq_search',
 			query: 'pricing',
+			existence: false,
+		});
+	});
+
+	it('flags existence-check phrasing so the assistant prefers a list', () => {
+		// "do we have …" / "is there …" / "are there …" ask *whether* an FAQ exists, so
+		// the matching list beats a synthesized answer. The flag carries that distinction.
+		expect(parseIntent('do we have an FAQ about parking?')).toEqual({
+			kind: 'faq_search',
+			query: 'parking',
+			existence: true,
+		});
+		expect(parseIntent('is there an FAQ about refunds?')).toEqual({
+			kind: 'faq_search',
+			query: 'refunds',
+			existence: true,
+		});
+		expect(parseIntent('are there any FAQs about parking?')).toEqual({
+			kind: 'faq_search',
+			query: 'parking',
+			existence: true,
 		});
 	});
 
@@ -165,6 +183,7 @@ describe('parseIntent — knowledge base', () => {
 		expect(parseIntent('knowledge base about onboarding')).toEqual({
 			kind: 'faq_search',
 			query: 'onboarding',
+			existence: false,
 		});
 	});
 });
@@ -301,6 +320,7 @@ describe('parseIntent — conversation context', () => {
 		expect(parseIntent('anything about refunds?', { topic: 'faq' })).toEqual({
 			kind: 'faq_search',
 			query: 'refunds',
+			existence: false,
 		});
 	});
 
@@ -365,7 +385,11 @@ describe('resolveIntent — multi-turn', () => {
 			assistant('Our basic plan is $9/mo.\n\n(From your FAQ “How much does it cost?”.)'),
 			user('anything about refunds?'),
 		];
-		expect(resolveIntent(conversation)).toEqual({ kind: 'faq_search', query: 'refunds' });
+		expect(resolveIntent(conversation)).toEqual({
+			kind: 'faq_search',
+			query: 'refunds',
+			existence: false,
+		});
 	});
 
 	it('leaves a turn that stands on its own untouched', () => {

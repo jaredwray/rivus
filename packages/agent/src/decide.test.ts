@@ -50,6 +50,7 @@ describe('decisionToIntent', () => {
 		expect(decisionToIntent(decision({ action: 'faq_search', query: 'refunds' }), '')).toEqual({
 			kind: 'faq_search',
 			query: 'refunds',
+			existence: false,
 		});
 		expect(
 			decisionToIntent(decision({ action: 'faq_update', topic: 'returns', answer: '30 days' }), ''),
@@ -67,6 +68,17 @@ describe('decisionToIntent', () => {
 		expect(decisionToIntent(decision({ action: 'faq_search', query: '   ' }), '')).toEqual({
 			kind: 'faq_list',
 		});
+	});
+
+	it('flags an existence-check faq_search from the raw user turn', () => {
+		// The model routes "do we have an FAQ about X?" to faq_search; reading the raw turn
+		// marks it as an existence check so the assistant keeps it on the list path.
+		expect(
+			decisionToIntent(
+				decision({ action: 'faq_search', query: 'parking' }),
+				'do we have an FAQ about parking?',
+			),
+		).toEqual({ kind: 'faq_search', query: 'parking', existence: true });
 	});
 
 	it('drops an answer with no question so a create never breaks schema validation', () => {

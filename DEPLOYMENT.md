@@ -104,18 +104,21 @@ secret exists), the **production** `deploy-api` job **fails fast** if either
 `PROD_MONGODB_URI` or `PROD_JWT_SECRET` is missing — the container always boots
 with `NODE_ENV=production` and would crash-loop without them.
 
-### Optional secrets (AI duplicate-FAQ detection)
+### Optional secrets (AI knowledge-base features)
 
 | Secret                 | Environment | Notes                                                     |
 | ---------------------- | ----------- | --------------------------------------------------------- |
-| `DEV_OPENAI_API_KEY`   | development | OpenAI key for the knowledge-base duplicate check. Pushed as the `OPENAI_API_KEY` Worker secret by `deploy-api`. |
+| `DEV_OPENAI_API_KEY`   | development | OpenAI key for the knowledge-base AI features (duplicate check, question answering, and embedding retrieval). Pushed as the `OPENAI_API_KEY` Worker secret by `deploy-api`. |
 | `PROD_OPENAI_API_KEY`  | production  | Same, for production. |
 
 These are **optional**: the `deploy-api` job pushes `OPENAI_API_KEY` only when the
-secret is set, and when no key is present the "is this a duplicate?" check simply
-no-ops (FAQs are still created normally). The model defaults to `gpt-5.4-mini`; since
-the model id isn't sensitive, override it — if needed — by adding `OPENAI_MODEL` to
-the relevant environment's `vars` in `packages/api/wrangler.jsonc` rather than as a secret.
+secret is set. With no key, the "is this a duplicate?" check no-ops (FAQs are still
+created normally) and question-answering degrades to a deterministic keyword match.
+The chat model defaults to `gpt-5.4-mini` and the embedding model (used to rank FAQs
+by relevance once a knowledge base outgrows the answerer's candidate cap) to
+`text-embedding-3-small`; since model ids aren't sensitive, override them — if needed —
+by adding `OPENAI_MODEL` / `OPENAI_EMBEDDING_MODEL` to the relevant environment's
+`vars` in `packages/api/wrangler.jsonc` rather than as secrets.
 
 The production API also restricts CORS to Rivus origins: `CORS_ORIGIN` is set to
 `https://rivus.ai,*.rivus.ai`, which the API parses into the exact apex origin

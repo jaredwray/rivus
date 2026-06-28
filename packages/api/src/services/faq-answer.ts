@@ -3,7 +3,13 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createXai } from '@ai-sdk/xai';
 import type { Faq, FaqId } from '@rivus/core';
-import { generateObject, type LanguageModel } from 'ai';
+import {
+	cosineSimilarity,
+	type EmbeddingModel,
+	embedMany,
+	generateObject,
+	type LanguageModel,
+} from 'ai';
 import { z } from 'zod';
 import type { Config } from '../config';
 
@@ -24,6 +30,17 @@ const MAX_OUTPUT_TOKENS = 700;
 const MAX_ANSWER_IN_PROMPT = 4000;
 /** Keep the composed answer chat-sized. */
 const MAX_ANSWER_LENGTH = 1200;
+
+// --- Embedding retrieval (for knowledge bases larger than MAX_CANDIDATES) ---
+// Cap the text embedded per FAQ. Embedding models accept far more, but a tight bound
+// keeps cost and latency predictable — an FAQ's question plus the start of its answer
+// carries the topic signal retrieval needs.
+const MAX_EMBED_CHARS = 2000;
+// How many FAQ vectors to keep in the in-process cache. Keyed by id + updatedAt, so an
+// edited FAQ re-embeds on next use and its stale vector ages out. Sized well above any
+// single request's candidate set so one large account can't evict its own vectors
+// mid-rank.
+const VECTOR_CACHE_CAPACITY = 5000;
 
 /** What the model returns when asked to answer from the knowledge base. */
 const answerSchema = z.object({
@@ -56,6 +73,21 @@ export interface FaqAnswerService {
 	 * a model outage degrades to a deterministic keyword match, not an error.
 	 */
 	answer(input: { question: string }, candidates: Faq[]): Promise<FaqAnswer>;
+}
+
+/**
+ * Narrows a candidate set down to the FAQs most relevant to a question before they're
+ * sent to the model. The answer service caps how many FAQs it can prompt with; for a
+ * small business that's the whole knowledge base, but once an account grows past the
+ * cap, picking the newest FAQs can miss the answer if it lives in an older one.
+ * A retriever ranks by *relevance* instead, so the right FAQs survive the cap.
+ */
+export interface FaqRetriever {
+	/**
+	 * Return up to `limit` of `candidates` most relevant to `query`, best first. Never
+	 * throws — an embedding outage degrades to the first `limit` (newest) candidates.
+	 */
+	retrieve(query: string, candidates: Faq[], limit: number): Promise<Faq[]>;
 }
 
 /**
@@ -106,26 +138,30 @@ export class AiFaqAnswerService implements FaqAnswerService {
 	private readonly models: LanguageModel[];
 	private readonly generate: GenerateObjectFn;
 	private readonly logger?: FaqAnswerLogger;
+	private readonly retriever?: FaqRetriever;
 
 	constructor(options: {
 		models: LanguageModel[];
 		generate?: GenerateObjectFn;
 		logger?: FaqAnswerLogger;
+		/**
+		 * Optional semantic retriever. When set and the candidate set is larger than the
+		 * prompt cap, the most *relevant* FAQs are sent to the model instead of the
+		 * newest. When absent, the newest are used (the small-business default).
+		 */
+		retriever?: FaqRetriever;
 	}) {
 		this.models = options.models;
 		this.generate = options.generate ?? defaultGenerateObject;
 		this.logger = options.logger;
+		this.retriever = options.retriever;
 	}
 
 	async answer(input: { question: string }, candidates: Faq[]): Promise<FaqAnswer> {
 		if (candidates.length === 0) {
 			return { answered: false, answer: '', sources: [] };
 		}
-		// Newest-first from the caller; send the most recent so the whole knowledge
-		// base of a small business is considered semantically (no keyword pre-filter,
-		// which would drop matches like "best price" → a "cost" FAQ before the model
-		// ever sees them).
-		const shortlist = candidates.slice(0, MAX_CANDIDATES);
+		const shortlist = await this.shortlist(input.question, candidates);
 		const ids = new Set<string>(shortlist.map((faq) => faq.id));
 		const knowledge = shortlist.map((faq) => ({
 			id: faq.id,
@@ -165,6 +201,20 @@ export class AiFaqAnswerService implements FaqAnswerService {
 		return { answered: true, answer, sources };
 	}
 
+	/**
+	 * Pick the FAQs to ground the answer in. For a small knowledge base (at or under
+	 * the prompt cap) that's all of them, newest-first — the existing behavior, with no
+	 * embedding cost. For a larger one, a configured retriever ranks by relevance so an
+	 * answer living in an older FAQ isn't dropped just for being old; without a
+	 * retriever we keep the newest, exactly as before.
+	 */
+	private async shortlist(question: string, candidates: Faq[]): Promise<Faq[]> {
+		if (!this.retriever || candidates.length <= MAX_CANDIDATES) {
+			return candidates.slice(0, MAX_CANDIDATES);
+		}
+		return this.retriever.retrieve(question, candidates, MAX_CANDIDATES);
+	}
+
 	/** Try each model in turn; return the first success, or null if all fail. */
 	private async generateWithFallback<T>(options: {
 		schema: z.ZodType<T>;
@@ -192,6 +242,149 @@ export class AiFaqAnswerService implements FaqAnswerService {
 			}
 		}
 		return null;
+	}
+}
+
+/* -------------------------------------------------------------------------- */
+/* Embedding-based retrieval                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The single embedding call this retriever makes, narrowed to what we use. Injectable
+ * so tests can drive ranking and the cache without a model or the network. Defaults to
+ * the AI SDK's {@link embedMany}.
+ */
+export type EmbedManyFn = (options: {
+	model: EmbeddingModel;
+	values: string[];
+}) => Promise<{ embeddings: number[][] }>;
+
+const defaultEmbedMany: EmbedManyFn = async (options) => {
+	const { embeddings } = await embedMany({ model: options.model, values: options.values });
+	return { embeddings };
+};
+
+/**
+ * A tiny bounded LRU cache for FAQ vectors. Keyed by `${id}:${updatedAt}` so a vector
+ * is reused across answers, but a fresh edit (new `updatedAt`) misses and re-embeds —
+ * the "refresh" half of storing vectors. Capacity-bounded so a long-lived process
+ * can't grow it without limit; the least-recently-used entry is evicted first.
+ */
+class VectorCache {
+	private readonly store = new Map<string, number[]>();
+
+	constructor(private readonly capacity: number) {}
+
+	get(key: string): number[] | undefined {
+		const value = this.store.get(key);
+		if (value !== undefined) {
+			// Re-insert so it counts as most-recently-used.
+			this.store.delete(key);
+			this.store.set(key, value);
+		}
+		return value;
+	}
+
+	set(key: string, value: number[]): void {
+		this.store.delete(key);
+		this.store.set(key, value);
+		if (this.store.size > this.capacity) {
+			const oldest = this.store.keys().next().value;
+			if (oldest !== undefined) {
+				this.store.delete(oldest);
+			}
+		}
+	}
+}
+
+/** The cache key for an FAQ: its id plus the timestamp that changes on every edit. */
+function vectorCacheKey(faq: Faq): string {
+	return `${faq.id}:${faq.updatedAt}`;
+}
+
+/** The text embedded for an FAQ — question, answer, and category carry the topic. */
+function faqEmbeddingText(faq: Faq): string {
+	return snippet(`${faq.question}\n${faq.answer}\n${faq.category}`, MAX_EMBED_CHARS);
+}
+
+/**
+ * Semantic retrieval over a candidate set using text embeddings. The question and each
+ * not-yet-cached FAQ are embedded in a single batch; FAQs are then ranked by cosine
+ * similarity to the question and the top `limit` returned. FAQ vectors are cached
+ * (keyed by id + `updatedAt`) so repeat questions don't re-embed and edits refresh on
+ * their own. Any failure degrades to the newest `limit` candidates — retrieval is an
+ * optimization, never a hard dependency of answering.
+ */
+export class EmbeddingFaqRetriever implements FaqRetriever {
+	private readonly model: EmbeddingModel;
+	private readonly embed: EmbedManyFn;
+	private readonly logger?: FaqAnswerLogger;
+	private readonly cache: VectorCache;
+
+	constructor(options: {
+		model: EmbeddingModel;
+		embed?: EmbedManyFn;
+		logger?: FaqAnswerLogger;
+		cacheCapacity?: number;
+	}) {
+		this.model = options.model;
+		this.embed = options.embed ?? defaultEmbedMany;
+		this.logger = options.logger;
+		this.cache = new VectorCache(options.cacheCapacity ?? VECTOR_CACHE_CAPACITY);
+	}
+
+	async retrieve(query: string, candidates: Faq[], limit: number): Promise<Faq[]> {
+		// Nothing to gain: the model would see them all anyway, so skip embedding.
+		if (candidates.length <= limit) {
+			return candidates.slice(0, limit);
+		}
+		try {
+			// Resolve a vector for every candidate, embedding only cache misses. The query
+			// rides in the same batch (always a miss — questions vary) at index 0.
+			const vectors = new Map<string, number[]>();
+			const misses: Faq[] = [];
+			for (const faq of candidates) {
+				const cached = this.cache.get(vectorCacheKey(faq));
+				if (cached) {
+					vectors.set(faq.id, cached);
+				} else {
+					misses.push(faq);
+				}
+			}
+			const { embeddings } = await this.embed({
+				model: this.model,
+				values: [query, ...misses.map(faqEmbeddingText)],
+			});
+			const queryVector = embeddings[0];
+			if (!queryVector) {
+				return candidates.slice(0, limit);
+			}
+			misses.forEach((faq, index) => {
+				const vector = embeddings[index + 1];
+				if (vector) {
+					this.cache.set(vectorCacheKey(faq), vector);
+					vectors.set(faq.id, vector);
+				}
+			});
+			return candidates
+				.map((faq) => {
+					const vector = vectors.get(faq.id);
+					// A candidate left without a vector (a short embedding batch) sinks below
+					// any scored one, but stays eligible if the limit isn't otherwise filled.
+					const score = vector ? cosineSimilarity(queryVector, vector) : Number.NEGATIVE_INFINITY;
+					return { faq, score };
+				})
+				.sort((a, b) => b.score - a.score)
+				.slice(0, limit)
+				.map((entry) => entry.faq);
+		} catch (error) {
+			// Retrieval is best-effort: log and fall back to the newest candidates so a
+			// flaky embeddings provider degrades to recency rather than failing the answer.
+			this.logger?.warn(
+				`Knowledge-base answer: embedding retrieval failed, using newest FAQs — ${String(error)}`,
+			);
+			return candidates.slice(0, limit);
+		}
 	}
 }
 
@@ -281,19 +474,54 @@ function snippet(text: string, max: number): string {
 }
 
 /**
+ * Build the embedding retriever from config, or undefined when no embeddings provider
+ * is configured (the answer service then keeps its newest-first behavior). The query
+ * and FAQs must be embedded by the same model, so retrieval uses a single provider:
+ * OpenAI when its key is set, otherwise Google. xAI and Anthropic have no first-party
+ * text-embedding model in the AI SDK, so they don't serve retrieval.
+ */
+export function createFaqRetriever(
+	config: Pick<
+		Config,
+		| 'OPENAI_API_KEY'
+		| 'OPENAI_EMBEDDING_MODEL'
+		| 'GOOGLE_GENERATIVE_AI_API_KEY'
+		| 'GOOGLE_EMBEDDING_MODEL'
+	>,
+): FaqRetriever | undefined {
+	if (config.OPENAI_API_KEY) {
+		const model = createOpenAI({ apiKey: config.OPENAI_API_KEY }).textEmbeddingModel(
+			config.OPENAI_EMBEDDING_MODEL,
+		);
+		return new EmbeddingFaqRetriever({ model, logger: console });
+	}
+	if (config.GOOGLE_GENERATIVE_AI_API_KEY) {
+		const model = createGoogleGenerativeAI({
+			apiKey: config.GOOGLE_GENERATIVE_AI_API_KEY,
+		}).textEmbeddingModel(config.GOOGLE_EMBEDDING_MODEL);
+		return new EmbeddingFaqRetriever({ model, logger: console });
+	}
+	return undefined;
+}
+
+/**
  * Build the knowledge-base answering service from config. Reuses the same ordered
  * provider list as the duplicate-FAQ check — OpenAI primary, then Google, xAI, and
- * Anthropic as backups. When no key is set at all, returns a
- * {@link NoopFaqAnswerService} so the feature degrades to deterministic keyword
- * matching and the API still boots.
+ * Anthropic as backups. For accounts whose knowledge base outgrows the prompt cap, an
+ * embedding retriever (when a provider supports embeddings) ranks FAQs by relevance so
+ * the answer isn't missed just because it lives in an older FAQ. When no key is set at
+ * all, returns a {@link NoopFaqAnswerService} so the feature degrades to deterministic
+ * keyword matching and the API still boots.
  */
 export function createFaqAnswerService(
 	config: Pick<
 		Config,
 		| 'OPENAI_API_KEY'
 		| 'OPENAI_MODEL'
+		| 'OPENAI_EMBEDDING_MODEL'
 		| 'GOOGLE_GENERATIVE_AI_API_KEY'
 		| 'GEMINI_MODEL'
+		| 'GOOGLE_EMBEDDING_MODEL'
 		| 'XAI_API_KEY'
 		| 'XAI_MODEL'
 		| 'ANTHROPIC_API_KEY'
@@ -320,5 +548,5 @@ export function createFaqAnswerService(
 	if (models.length === 0) {
 		return new NoopFaqAnswerService();
 	}
-	return new AiFaqAnswerService({ models, logger: console });
+	return new AiFaqAnswerService({ models, logger: console, retriever: createFaqRetriever(config) });
 }

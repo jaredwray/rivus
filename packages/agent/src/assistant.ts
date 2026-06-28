@@ -112,7 +112,7 @@ export async function respond(deps: RespondDeps): Promise<string> {
 			case 'faq_list':
 				return await faqListReply(api);
 			case 'faq_search':
-				return await faqSearchReply(api, intent.query);
+				return await faqSearchReply(api, intent, question);
 			case 'faq_update':
 				return await faqUpdateReply(api, intent);
 			case 'faq_create':
@@ -176,11 +176,16 @@ async function knowledgeAnswerReply(
 	if (!answered || text === '') {
 		return unknownReply(claims);
 	}
+	return formatGroundedAnswer(text, sources);
+}
+
+/** Present a grounded answer, citing the source FAQ so the user sees where it came from. */
+function formatGroundedAnswer(
+	answer: string,
+	sources: ReadonlyArray<{ question: string }>,
+): string {
 	const [source] = sources;
-	if (source) {
-		return `${text}\n\n(From your FAQ “${source.question}”.)`;
-	}
-	return text;
+	return source ? `${answer}\n\n(From your FAQ “${source.question}”.)` : answer;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -302,18 +307,53 @@ async function faqListReply(api: RivusApiClient): Promise<string> {
 	return lines.join('\n');
 }
 
-async function faqSearchReply(api: RivusApiClient, query: string): Promise<string> {
+/**
+ * Reply to a knowledge-base search. A *question* about the knowledge base ("what
+ * does the FAQ say about our best price?") is best served by a grounded AI answer —
+ * keyword search alone can't connect "best price" to a differently-worded "cost"
+ * FAQ. So unless the ask is an existence check, we try the AI answer first and fall
+ * back to the keyword list when the knowledge base has no grounded answer (or the
+ * answer call fails). Existence checks ("do we have an FAQ about X?") skip straight
+ * to the list, where the matching FAQ titles are the better reply.
+ */
+async function faqSearchReply(
+	api: RivusApiClient,
+	intent: Extract<Intent, { kind: 'faq_search' }>,
+	rawQuestion: string,
+): Promise<string> {
+	if (!intent.existence) {
+		const grounded = await groundedSearchAnswer(api, rawQuestion);
+		if (grounded) {
+			return grounded;
+		}
+	}
 	const { faqs, complete } = await scanFaqs(api);
 	if (faqs.length === 0) {
 		return EMPTY_KB;
 	}
-	const ranked = rankFaqs(faqs, query);
+	const ranked = rankFaqs(faqs, intent.query);
 	if (ranked.length === 0) {
 		const scope = complete ? 'your knowledge base' : `the ${faqs.length} most recent FAQs`;
-		return `I couldn’t find anything in ${scope} about “${query}”. Try different wording, or ask me to list all your FAQs.`;
+		return `I couldn’t find anything in ${scope} about “${intent.query}”. Try different wording, or ask me to list all your FAQs.`;
 	}
 	const lines = ranked.slice(0, 3).map((faq) => `• ${faq.question}\n  ${snippet(faq.answer)}`);
-	return [`Here’s what I found about “${query}”:`, ...lines].join('\n');
+	return [`Here’s what I found about “${intent.query}”:`, ...lines].join('\n');
+}
+
+/**
+ * Try to answer `question` from the knowledge base, returning the formatted, cited
+ * answer — or null when the knowledge base doesn't cover it, the answer is blank, or
+ * the answer call fails. A failure returns null (not an error) so the caller falls
+ * back to the keyword list rather than breaking the search.
+ */
+async function groundedSearchAnswer(api: RivusApiClient, question: string): Promise<string | null> {
+	try {
+		const { answered, answer, sources } = await api.answerFromKnowledge({ question });
+		const text = answer.trim();
+		return answered && text !== '' ? formatGroundedAnswer(text, sources) : null;
+	} catch {
+		return null;
+	}
 }
 
 async function faqUpdateReply(

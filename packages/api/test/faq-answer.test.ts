@@ -1,11 +1,15 @@
 import type { AccountId, Faq, FaqId } from '@rivus/core';
-import type { LanguageModel } from 'ai';
+import type { EmbeddingModel, LanguageModel } from 'ai';
 import { describe, expect, it, vi } from 'vitest';
 import {
 	AiFaqAnswerService,
 	createFaqAnswerService,
+	createFaqRetriever,
 	deterministicFaqAnswer,
+	EmbeddingFaqRetriever,
+	type EmbedManyFn,
 	type FaqAnswerService,
+	type FaqRetriever,
 	type GenerateObjectFn,
 	NoopFaqAnswerService,
 } from '../src/services/faq-answer';
@@ -230,7 +234,9 @@ describe('AiFaqAnswerService.answer', () => {
 describe('createFaqAnswerService', () => {
 	const baseConfig = {
 		OPENAI_MODEL: 'gpt-5.4-mini',
+		OPENAI_EMBEDDING_MODEL: 'text-embedding-3-small',
 		GEMINI_MODEL: 'gemini-2.5-flash',
+		GOOGLE_EMBEDDING_MODEL: 'text-embedding-004',
 		XAI_MODEL: 'grok-4-fast',
 		ANTHROPIC_MODEL: 'claude-haiku-4-5',
 	};
@@ -280,5 +286,231 @@ describe('deterministicFaqAnswer / NoopFaqAnswerService', () => {
 			answer: '',
 			sources: [],
 		});
+	});
+});
+
+// EmbeddingModel is a union that includes `string`, so a label stands in for a model;
+// the injected `embed` never resolves it.
+const EMBED_MODEL: EmbeddingModel = 'test-embedding-model';
+
+/** A deterministic stand-in for an embedding model: orthogonal vectors per topic. */
+function vectorFor(text: string): number[] {
+	const t = text.toLowerCase();
+	if (t.includes('pric') || t.includes('cost') || t.includes('rate')) return [1, 0, 0, 0];
+	if (t.includes('hour') || t.includes('open')) return [0, 1, 0, 0];
+	if (t.includes('refund') || t.includes('return')) return [0, 0, 1, 0];
+	return [0, 0, 0, 1];
+}
+
+/** A fake {@link EmbedManyFn} that records each batch's values and embeds them by topic. */
+function fakeEmbed(): { embed: EmbedManyFn; calls: string[][] } {
+	const calls: string[][] = [];
+	const embed: EmbedManyFn = async ({ values }) => {
+		calls.push(values);
+		return { embeddings: values.map(vectorFor) };
+	};
+	return { embed, calls };
+}
+
+describe('AiFaqAnswerService.answer — with a retriever', () => {
+	it('lets the retriever pick which FAQs reach the model for a large knowledge base', async () => {
+		// 30 newest-but-irrelevant FAQs plus the one that actually answers, oldest (last).
+		// Newest-first slicing would drop it past the cap; the retriever keeps it.
+		const filler = Array.from({ length: 30 }, (_, i) =>
+			makeFaq({ id: `faq-${i}` as FaqId, question: `Filler ${i}`, answer: 'n/a' }),
+		);
+		const target = makeFaq({
+			id: 'faq-target' as FaqId,
+			question: 'How much does your service cost?',
+			answer: 'Our rate is $125 an hour.',
+		});
+		const retrieve = vi.fn(async () => [target]);
+		const { generate, mock } = fakeGenerate(() => ({
+			object: { answered: true, answer: 'It is $125 an hour.', faqIds: ['faq-target'] },
+		}));
+		const service = new AiFaqAnswerService({
+			models: [PRIMARY],
+			generate,
+			retriever: { retrieve },
+		});
+
+		const result = await service.answer({ question: "what's our best price?" }, [
+			...filler,
+			target,
+		]);
+
+		// The retriever was asked for the cap's worth of the full candidate set…
+		expect(retrieve).toHaveBeenCalledWith("what's our best price?", expect.any(Array), 24);
+		// …and only its picks were sent to the model (a non-retrieved FAQ never appears).
+		const options = mock.mock.calls[0]?.[0] as { prompt: string };
+		expect(options.prompt).toContain('faq-target');
+		expect(options.prompt).not.toContain('Filler 0');
+		expect(result.sources).toEqual(['faq-target']);
+	});
+
+	it('skips the retriever when the knowledge base fits the prompt cap', async () => {
+		const retrieve = vi.fn(async () => [] as Faq[]);
+		const { generate } = fakeGenerate(() => ({
+			object: { answered: false, answer: '', faqIds: [] },
+		}));
+		const service = new AiFaqAnswerService({
+			models: [PRIMARY],
+			generate,
+			retriever: { retrieve },
+		});
+
+		await service.answer({ question: 'cost?' }, [makeFaq(), makeFaq({ id: 'faq-2' as FaqId })]);
+
+		// Two FAQs are under the cap, so there's nothing to rank — the retriever is untouched.
+		expect(retrieve).not.toHaveBeenCalled();
+	});
+});
+
+describe('EmbeddingFaqRetriever.retrieve', () => {
+	// Distinct categories: makeFaq defaults category to 'Pricing', which would otherwise
+	// make every FAQ's embedding text read as a pricing topic to the fake embedder.
+	const hours = makeFaq({
+		id: 'a' as FaqId,
+		question: 'What are your hours?',
+		answer: 'Open 9-5.',
+		category: 'General',
+	});
+	const where = makeFaq({
+		id: 'b' as FaqId,
+		question: 'Where are you?',
+		answer: 'Seattle.',
+		category: 'General',
+	});
+	const cost = makeFaq({
+		id: 'c' as FaqId,
+		question: 'How much does it cost?',
+		answer: 'Our rate is $125.',
+		category: 'Pricing',
+	});
+
+	it('ranks by semantic similarity, surfacing a relevant older FAQ over newer ones', async () => {
+		const { embed } = fakeEmbed();
+		const retriever = new EmbeddingFaqRetriever({ model: EMBED_MODEL, embed });
+
+		// Newest-first: hours, where, then the (oldest) pricing FAQ that answers the ask.
+		const result = await retriever.retrieve("what's our best price?", [hours, where, cost], 2);
+
+		expect(result).toHaveLength(2);
+		expect(result[0]?.id).toBe('c');
+	});
+
+	it('passes the candidates through, unembedded, when they fit the limit', async () => {
+		const { embed, calls } = fakeEmbed();
+		const retriever = new EmbeddingFaqRetriever({ model: EMBED_MODEL, embed });
+
+		const result = await retriever.retrieve('best price', [hours, where], 2);
+
+		expect(result).toEqual([hours, where]);
+		expect(calls).toHaveLength(0);
+	});
+
+	it('caches FAQ vectors so a repeat search re-embeds only the query', async () => {
+		const { embed, calls } = fakeEmbed();
+		const retriever = new EmbeddingFaqRetriever({ model: EMBED_MODEL, embed });
+
+		await retriever.retrieve('best price', [hours, where, cost], 2);
+		const second = await retriever.retrieve('opening hours', [hours, where, cost], 2);
+
+		expect(calls[0]).toHaveLength(4); // query + three FAQs
+		expect(calls[1]).toHaveLength(1); // FAQs cached; only the new query is embedded
+		expect(second[0]?.id).toBe('a'); // and the cached vectors still rank correctly
+	});
+
+	it('re-embeds an FAQ after it is edited (its updatedAt changes)', async () => {
+		const { embed, calls } = fakeEmbed();
+		const retriever = new EmbeddingFaqRetriever({ model: EMBED_MODEL, embed });
+		const editedCost = makeFaq({
+			id: 'c' as FaqId,
+			question: 'How much does it cost?',
+			answer: 'Our rate is now $150.',
+			updatedAt: '2026-02-01T00:00:00.000Z',
+		});
+
+		await retriever.retrieve('best price', [hours, where, cost], 2);
+		await retriever.retrieve('best price', [hours, where, editedCost], 2);
+
+		expect(calls[0]).toHaveLength(4); // query + three FAQs
+		expect(calls[1]).toHaveLength(2); // hours/where cached; only the edited FAQ re-embeds
+	});
+
+	it('evicts the least-recently-used vector when the cache is full', async () => {
+		const { embed, calls } = fakeEmbed();
+		const retriever = new EmbeddingFaqRetriever({ model: EMBED_MODEL, embed, cacheCapacity: 1 });
+
+		await retriever.retrieve('best price', [hours, cost], 1);
+		await retriever.retrieve('best price', [hours, cost], 1);
+
+		expect(calls[0]).toHaveLength(3); // query + both FAQs
+		// Capacity 1 evicted `hours`, so the second search re-embeds it (plus the query).
+		expect(calls[1]).toHaveLength(2);
+	});
+
+	it('degrades to the newest candidates when embedding fails', async () => {
+		const warnings: string[] = [];
+		const embed: EmbedManyFn = async () => {
+			throw new Error('embed down');
+		};
+		const retriever = new EmbeddingFaqRetriever({
+			model: EMBED_MODEL,
+			embed,
+			logger: { warn: (message) => warnings.push(message) },
+		});
+
+		const result = await retriever.retrieve('best price', [hours, where, cost], 2);
+
+		expect(result.map((faq) => faq.id)).toEqual(['a', 'b']);
+		expect(warnings[0]).toMatch(/embedding retrieval/i);
+	});
+
+	it('degrades to the newest candidates when the batch returns no query vector', async () => {
+		const embed: EmbedManyFn = async () => ({ embeddings: [] });
+		const retriever = new EmbeddingFaqRetriever({ model: EMBED_MODEL, embed });
+
+		const result = await retriever.retrieve('best price', [hours, where, cost], 2);
+
+		expect(result.map((faq) => faq.id)).toEqual(['a', 'b']);
+	});
+
+	it('keeps unscored candidates eligible when the batch is short a vector', async () => {
+		// Only the query comes back embedded; the FAQ vectors are missing, so none can be
+		// scored — retrieval still returns a full `limit` worth, in candidate order.
+		const embed: EmbedManyFn = async ({ values }) => ({ embeddings: [vectorFor(values[0] ?? '')] });
+		const retriever = new EmbeddingFaqRetriever({ model: EMBED_MODEL, embed });
+
+		const result = await retriever.retrieve('best price', [hours, where, cost], 2);
+
+		expect(result.map((faq) => faq.id)).toEqual(['a', 'b']);
+	});
+});
+
+describe('createFaqRetriever', () => {
+	const embedConfig = {
+		OPENAI_EMBEDDING_MODEL: 'text-embedding-3-small',
+		GOOGLE_EMBEDDING_MODEL: 'text-embedding-004',
+	};
+
+	it('returns undefined when no embeddings provider key is set', () => {
+		expect(createFaqRetriever({ ...embedConfig })).toBeUndefined();
+	});
+
+	it('builds a retriever from OpenAI when its key is set', () => {
+		const retriever: FaqRetriever | undefined = createFaqRetriever({
+			...embedConfig,
+			OPENAI_API_KEY: 'sk-test',
+		});
+		expect(retriever).toBeInstanceOf(EmbeddingFaqRetriever);
+	});
+
+	it('falls back to Google embeddings when only its key is set', () => {
+		const retriever = createFaqRetriever({
+			...embedConfig,
+			GOOGLE_GENERATIVE_AI_API_KEY: 'g-test',
+		});
+		expect(retriever).toBeInstanceOf(EmbeddingFaqRetriever);
 	});
 });

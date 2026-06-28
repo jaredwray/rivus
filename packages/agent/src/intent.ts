@@ -35,8 +35,13 @@ export type Intent =
 	| { kind: 'company_info'; fields: CompanyField[] }
 	/** Browse the whole knowledge base. */
 	| { kind: 'faq_list' }
-	/** Search the knowledge base for `query`. */
-	| { kind: 'faq_search'; query: string }
+	/**
+	 * Search the knowledge base for `query`. `existence` is true for existence-check
+	 * phrasing ("do we have an FAQ about X?", "is there one on Y?"), where a list of
+	 * matching FAQs is the better response than a synthesized answer — the assistant
+	 * uses it to skip the semantic answer path and go straight to the keyword list.
+	 */
+	| { kind: 'faq_search'; query: string; existence: boolean }
 	/** Edit an FAQ identified by `topic`; `answer` is the new text, or null if unsaid. */
 	| { kind: 'faq_update'; topic: string; answer: string | null }
 	/** Add an FAQ; `question`/`answer` are null when the user didn't supply them. */
@@ -87,6 +92,21 @@ const UPDATE_VERB = /\b(update|change|edit|revise|modify|fix)\b/;
 const CREATE_VERB = /\b(add|create|new|make|insert)\b/;
 const LIST_VERB = /\b(list|show|view|see|browse|all (of )?(my|our|the)?)\b/;
 const SEARCH_VERB = /\b(search|find|look ?up|lookup|do we have|is there|tell me about)\b/;
+
+/**
+ * Existence-check / confirmation phrasing — "do we have an FAQ about X?", "is there
+ * one on Y?", "are there any covering Z?". The user wants to know *whether* an FAQ
+ * exists, so the matching list is a better answer than a synthesized one. Used to
+ * flag a {@link Intent} of kind `faq_search` so the assistant keeps these on the
+ * keyword list path instead of trying the AI answer first.
+ */
+const EXISTENCE_CHECK =
+	/\b(do (?:we|you|i) have|do we got|is there|are there|have (?:we|you) got)\b/;
+
+/** True when a message reads as an existence check rather than a question to answer. */
+export function isExistenceCheck(text: string): boolean {
+	return EXISTENCE_CHECK.test(text.toLowerCase());
+}
 
 /** Strip a leading article so an extracted topic reads cleanly. */
 function trimTopic(value: string): string {
@@ -301,7 +321,9 @@ export function parseIntent(raw: string, context: IntentContext = {}): Intent {
 		// Search wins over list when there's an actual subject to search for.
 		if (SEARCH_VERB.test(lower) || afterPreposition(lower)) {
 			const query = extractSearchQuery(text);
-			return query.length > 0 ? { kind: 'faq_search', query } : { kind: 'faq_list' };
+			return query.length > 0
+				? { kind: 'faq_search', query, existence: EXISTENCE_CHECK.test(lower) }
+				: { kind: 'faq_list' };
 		}
 		if (LIST_VERB.test(lower)) {
 			return { kind: 'faq_list' };
