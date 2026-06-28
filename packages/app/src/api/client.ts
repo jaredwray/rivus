@@ -26,6 +26,10 @@ import {
 	jobStatusSchema,
 	type LoginInput,
 	loginSchema,
+	type Notification,
+	type NotificationId,
+	notificationReadStateSchema,
+	notificationTypeSchema,
 	type PaginationMeta,
 	type PaginationQuery,
 	paginationQuerySchema,
@@ -79,6 +83,7 @@ const customerId = () => z.string().min(1) as unknown as z.ZodType<CustomerId>;
 const jobId = () => z.string().min(1) as unknown as z.ZodType<JobId>;
 const accountId = () => z.string().min(1) as unknown as z.ZodType<AccountId>;
 const userId = () => z.string().min(1) as unknown as z.ZodType<UserId>;
+const notificationId = () => z.string().min(1) as unknown as z.ZodType<NotificationId>;
 
 /**
  * Pure, runtime-agnostic API client for the Rivus REST API.
@@ -341,6 +346,35 @@ export interface JobConflictQueryInput {
 /** Query for {@link RivusApiClient.listJobs}: pagination plus calendar filters. */
 export type JobListQueryInput = Partial<JobListQuery>;
 
+const notificationResponseSchema = z.object({
+	id: notificationId(),
+	accountId: accountId(),
+	userId: userId(),
+	type: notificationTypeSchema,
+	title: z.string(),
+	body: z.string(),
+	readState: notificationReadStateSchema,
+	linkHref: z.string(),
+	createdAt: z.string(),
+	updatedAt: z.string(),
+}) satisfies z.ZodType<Notification>;
+
+const notificationListResponseSchema = z.object({
+	data: z.array(notificationResponseSchema),
+	meta: paginationMetaSchema,
+});
+
+export interface NotificationListResponse {
+	data: Notification[];
+	meta: PaginationMeta;
+}
+
+/** Query for {@link RivusApiClient.listNotifications}: pagination plus an unread filter. */
+export type NotificationListQuery = Partial<PaginationQuery> & { unread?: boolean };
+
+const unreadCountResponseSchema = z.object({ unread: z.number().int() });
+const markAllReadResponseSchema = z.object({ updated: z.number().int() });
+
 const faqSimilarityResponseSchema = z.object({
 	match: faqResponseSchema.nullable(),
 	reason: z.string(),
@@ -460,6 +494,19 @@ export interface RivusApiClient {
 	 * overlapping jobs (empty when the slot is free).
 	 */
 	getJobConflicts(token: string, query: JobConflictQueryInput): Promise<{ conflicts: Job[] }>;
+	/** List your notifications, optionally narrowed to unread only. */
+	listNotifications(
+		token: string,
+		query?: NotificationListQuery,
+	): Promise<NotificationListResponse>;
+	/** Count your unread notifications (for the bell badge). */
+	unreadNotificationCount(token: string): Promise<number>;
+	/** Mark one notification read; returns the updated notification. */
+	markNotificationRead(token: string, id: NotificationId): Promise<Notification>;
+	/** Mark every notification read; returns how many were changed. */
+	markAllNotificationsRead(token: string): Promise<number>;
+	/** Dismiss (delete) one of your notifications. */
+	dismissNotification(token: string, id: NotificationId): Promise<void>;
 	/**
 	 * List/search every company, for the staff company switcher. Restricted to Rivus
 	 * staff server-side (a regular customer gets 403).
@@ -772,6 +819,55 @@ export function createApiClient(
 			});
 		},
 
+		async listNotifications(token: string, query?: NotificationListQuery) {
+			const { page, pageSize } = parseInput(paginationQuerySchema, {
+				page: query?.page,
+				pageSize: query?.pageSize,
+			});
+			const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+			// Only ask for the unread subset when explicitly requested; otherwise the API
+			// returns the full list.
+			if (query?.unread) {
+				params.set('unread', 'true');
+			}
+			return request(`/v1/notifications?${params.toString()}`, notificationListResponseSchema, {
+				method: 'GET',
+				headers: authHeaders(token),
+			});
+		},
+
+		async unreadNotificationCount(token: string) {
+			const { unread } = await request(
+				'/v1/notifications/unread-count',
+				unreadCountResponseSchema,
+				{ method: 'GET', headers: authHeaders(token) },
+			);
+			return unread;
+		},
+
+		markNotificationRead(token: string, id: NotificationId) {
+			return request(
+				`/v1/notifications/${encodeURIComponent(id)}/read`,
+				notificationResponseSchema,
+				{ method: 'POST', headers: authHeaders(token) },
+			);
+		},
+
+		async markAllNotificationsRead(token: string) {
+			const { updated } = await request('/v1/notifications/read-all', markAllReadResponseSchema, {
+				method: 'POST',
+				headers: authHeaders(token),
+			});
+			return updated;
+		},
+
+		async dismissNotification(token: string, id: NotificationId) {
+			await request(`/v1/notifications/${encodeURIComponent(id)}`, noContentSchema, {
+				method: 'DELETE',
+				headers: authHeaders(token),
+			});
+		},
+
 		async listCompanies(token: string, query?: CompanyListQuery) {
 			const { page, pageSize } = parseInput(paginationQuerySchema, {
 				page: query?.page,
@@ -806,4 +902,4 @@ function safeJsonParse(raw: string): unknown {
 	}
 }
 
-export type { Account, Customer, Faq, Item, Job, PaginationMeta, Role, User };
+export type { Account, Customer, Faq, Item, Job, Notification, PaginationMeta, Role, User };
