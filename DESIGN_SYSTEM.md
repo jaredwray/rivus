@@ -112,6 +112,23 @@ Supporting gradients:
 
 ---
 
+## Layout & breakpoints
+
+The app shell is responsive around a single breakpoint.
+
+| Token                 | Value   | Use                                                                                          |
+| --------------------- | ------- | -------------------------------------------------------------------------------------------- |
+| Sidebar breakpoint    | `880px` | At/above, the persistent left sidebar shows; below, the mobile layout with a bottom tab bar   |
+| Sidebar width         | `244px` | Width of the persistent left sidebar                                                          |
+| Mobile tab bar height | `56px`  | Height of the bottom tab bar, excluding the safe-area inset padded below it                   |
+
+In the shared theme these are `SIDEBAR_BREAKPOINT`, `SIDEBAR_WIDTH`, and
+`MOBILE_TABBAR_HEIGHT`. The tab bar has no fixed height (it grows with larger
+text settings), so surfaces that anchor to it should measure the rendered bar
+rather than assume the constant.
+
+---
+
 ## Components
 
 These are the shared, reusable building blocks. Match their structure and props
@@ -163,6 +180,20 @@ A single dashboard metric.
 - **Secondary:** white with a `1px` hairline (`#e9eaf0`) border.
 - Both stay **inline** — there is no shared button design component; build per
   platform using these recipes.
+
+### Navigation
+
+The primary app navigation adapts to width (see **Layout & breakpoints**):
+
+- **Wide (≥ 880px):** a persistent left **sidebar** lists every destination; the
+  active item is marked with the signature gradient.
+- **Narrow (< 880px):** a fixed **bottom tab bar** — the mobile convention. The
+  primary destinations sit on the bar as icon-over-label tabs; the remaining
+  destinations fold into a **"More"** tab that opens a sheet (which also holds
+  sign-out). The active tab uses a gradient indicator with a violet icon + label.
+
+Active nav is one of the few places the signature gradient is allowed (see
+**Signature gradient**).
 
 ---
 
