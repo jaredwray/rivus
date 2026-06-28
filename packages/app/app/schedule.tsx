@@ -470,6 +470,15 @@ export default function ScheduleScreen() {
 							</Pressable>
 						</View>
 					) : null}
+					<Pressable
+						style={styles.addBtn}
+						onPress={() => openCreate(localDateKey(view === 'list' ? today : anchor), 540)}
+						accessibilityRole="button"
+						accessibilityLabel="New job"
+						hitSlop={NAV_HIT_SLOP}
+					>
+						<GradientMark size={36} radius={radii.md} icon="plus" iconSize={20} />
+					</Pressable>
 					<Txt style={styles.rangeLabel}>{view === 'list' ? 'Next 30 days' : rangeLabel}</Txt>
 				</View>
 				<View style={styles.headerRight}>
@@ -490,11 +499,6 @@ export default function ScheduleScreen() {
 							);
 						})}
 					</View>
-					<GradientButton
-						label="New job"
-						icon="plus"
-						onPress={() => openCreate(localDateKey(view === 'list' ? today : anchor), 540)}
-					/>
 				</View>
 			</View>
 
@@ -968,6 +972,9 @@ const styles = StyleSheet.create({
 	headerNarrow: { flexDirection: 'column', alignItems: 'stretch', gap: 14 },
 	headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 16, flexWrap: 'wrap' },
 	title: { fontFamily: font.semibold, fontSize: 20 },
+	// Push the create button to the far right of the title row; the range label
+	// then wraps onto its own line beneath it on the mobile layout.
+	addBtn: { marginLeft: 'auto', borderRadius: radii.md },
 	dateNav: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 	navBtn: {
 		width: 32,
