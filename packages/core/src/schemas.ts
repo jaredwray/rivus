@@ -323,6 +323,25 @@ export const updateCustomerSchema = z
 	});
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
 
+// --- Global search ------------------------------------------------------------
+
+/**
+ * Query for the dashboard's global search box (`GET /v1/search`): a required
+ * free-text term plus an optional per-type result cap. `q` is trimmed and bounded
+ * like every other text field; `limit` caps how many matches of *each* type
+ * (customers, jobs) come back so the results dropdown stays small and fast.
+ */
+export const searchQuerySchema = z.object({
+	q: requiredText('Search', 200),
+	limit: z.coerce
+		.number()
+		.int({ error: 'Limit must be a whole number.' })
+		.min(1, { error: 'Limit must be 1 or greater.' })
+		.max(20, { error: 'Limit must be 20 or fewer.' })
+		.default(8),
+});
+export type SearchQuery = z.infer<typeof searchQuerySchema>;
+
 /** Query string for list endpoints; coerces `?page=2&pageSize=50`. */
 export const paginationQuerySchema = z.object({
 	page: z.coerce.number().int().min(1, { error: 'Page must be 1 or greater.' }).default(1),

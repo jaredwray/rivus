@@ -55,6 +55,8 @@ import type {
 	NewVerificationCode,
 	NotificationRepository,
 	OnboardingRepository,
+	SearchCustomersOptions,
+	SearchJobsOptions,
 	SignupInput,
 	SignupResult,
 	StoredUser,
@@ -632,6 +634,27 @@ export class InMemoryCustomerRepository implements CustomerRepository {
 		};
 	}
 
+	async search(options: SearchCustomersOptions): Promise<Customer[]> {
+		const needle = options.query.trim().toLowerCase();
+		if (needle === '') {
+			return [];
+		}
+		const limit = Math.max(1, Math.trunc(options.limit));
+		return (
+			[...this.data.customers.values()]
+				.filter((customer) => customer.accountId === options.accountId)
+				.filter((customer) =>
+					[customer.name, customer.email, customer.phone, customer.address, customer.notes].some(
+						(field) => field.toLowerCase().includes(needle),
+					),
+				)
+				// Newest-first, matching list() (Map preserves insertion order).
+				.reverse()
+				.slice(0, limit)
+				.map((customer) => structuredClone(customer))
+		);
+	}
+
 	async findById(accountId: AccountId, id: CustomerId): Promise<Customer | null> {
 		const customer = this.data.customers.get(id);
 		return customer && customer.accountId === accountId ? structuredClone(customer) : null;
@@ -712,6 +735,25 @@ export class InMemoryJobRepository implements JobRepository {
 			jobs: matched.slice(skip, skip + pageSize).map((job) => structuredClone(job)),
 			total: matched.length,
 		};
+	}
+
+	async search(options: SearchJobsOptions): Promise<Job[]> {
+		const needle = options.query.trim().toLowerCase();
+		if (needle === '') {
+			return [];
+		}
+		const limit = Math.max(1, Math.trunc(options.limit));
+		return (
+			[...this.data.jobs.values()]
+				.filter((job) => job.accountId === options.accountId)
+				.filter((job) =>
+					[job.title, job.address, job.notes].some((field) => field.toLowerCase().includes(needle)),
+				)
+				// Newest-first, matching the customer search (Map preserves insertion order).
+				.reverse()
+				.slice(0, limit)
+				.map((job) => structuredClone(job))
+		);
 	}
 
 	async findById(accountId: AccountId, id: JobId): Promise<Job | null> {

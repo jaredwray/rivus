@@ -1,4 +1,5 @@
 import type { JobStatus } from '@rivus/core';
+import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
 	ActivityIndicator,
@@ -262,6 +263,16 @@ export default function ScheduleScreen() {
 			active = false;
 		};
 	}, [load]);
+
+	// Deep link from the global search: `?focus=<YYYY-MM-DD>` jumps the calendar to
+	// that job's day in the day view, so the searched-for job is on screen.
+	const { focus } = useLocalSearchParams<{ focus?: string }>();
+	useEffect(() => {
+		if (typeof focus === 'string' && isValidDateKey(focus)) {
+			setAnchor(dateFromKeyAndMinutes(focus, 0));
+			setView('day');
+		}
+	}, [focus]);
 
 	// Live double-booking check while the form is open: re-run whenever the assignee
 	// or proposed slot changes, ignoring stale responses if they change again mid-flight.

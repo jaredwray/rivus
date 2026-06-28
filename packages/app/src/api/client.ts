@@ -35,6 +35,7 @@ import {
 	paginationQuerySchema,
 	type Role,
 	roleSchema,
+	searchQuerySchema,
 	signupSchema,
 	type UpdateAccountInput,
 	type UpdateCustomerInput,
@@ -346,6 +347,22 @@ export interface JobConflictQueryInput {
 /** Query for {@link RivusApiClient.listJobs}: pagination plus calendar filters. */
 export type JobListQueryInput = Partial<JobListQuery>;
 
+const searchResultsResponseSchema = z.object({
+	customers: z.array(customerResponseSchema),
+	jobs: z.array(jobResponseSchema),
+});
+
+export interface SearchResults {
+	customers: Customer[];
+	jobs: Job[];
+}
+
+/** Query for {@link RivusApiClient.search}: a term plus an optional per-type result cap. */
+export interface SearchQueryInput {
+	q: string;
+	limit?: number;
+}
+
 const notificationResponseSchema = z.object({
 	id: notificationId(),
 	accountId: accountId(),
@@ -494,6 +511,11 @@ export interface RivusApiClient {
 	 * overlapping jobs (empty when the slot is free).
 	 */
 	getJobConflicts(token: string, query: JobConflictQueryInput): Promise<{ conflicts: Job[] }>;
+	/**
+	 * Global search across the account's customers and jobs (the dashboard's
+	 * top-bar search box). Returns the matches grouped by type.
+	 */
+	search(token: string, query: SearchQueryInput): Promise<SearchResults>;
 	/** List your notifications, optionally narrowed to unread only. */
 	listNotifications(
 		token: string,
@@ -814,6 +836,15 @@ export function createApiClient(
 				params.set('excludeJobId', parsed.excludeJobId);
 			}
 			return request(`/v1/jobs/conflicts?${params.toString()}`, jobConflictsResponseSchema, {
+				method: 'GET',
+				headers: authHeaders(token),
+			});
+		},
+
+		async search(token: string, query: SearchQueryInput) {
+			const parsed = parseInput(searchQuerySchema, query);
+			const params = new URLSearchParams({ q: parsed.q, limit: String(parsed.limit) });
+			return request(`/v1/search?${params.toString()}`, searchResultsResponseSchema, {
 				method: 'GET',
 				headers: authHeaders(token),
 			});

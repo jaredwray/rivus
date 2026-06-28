@@ -68,6 +68,8 @@ import type {
 	NewVerificationCode,
 	NotificationRepository,
 	OnboardingRepository,
+	SearchCustomersOptions,
+	SearchJobsOptions,
 	SignupInput,
 	SignupResult,
 	StoredUser,
@@ -76,6 +78,15 @@ import type {
 	UserRepository,
 	VerificationCodeRepository,
 } from './types';
+
+/**
+ * Escape regex metacharacters so a user's search term is matched literally — a
+ * query like "a.b" or "(206)" is treated as text, not as a pattern (which could
+ * also be crafted to be pathologically slow).
+ */
+function escapeRegex(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 /** MongoServerError code 11000 = duplicate key (unique index violation). */
 function isDuplicateKeyError(
@@ -295,15 +306,15 @@ export class MongoAccountRepository implements AccountRepository {
 		const { pageSize } = normalizePagination(options.page, options.pageSize);
 		const skip = pageToSkip(options.page, options.pageSize);
 		const needle = options.search?.trim();
-		// Escape regex metacharacters so a search like "a.b" is matched literally, then
-		// match it case-insensitively against either the name or the slug. Only active
-		// accounts are listed — a canceled one can't be entered.
+		// Match the term case-insensitively against either the name or the slug (escaped
+		// so it's literal text). Only active accounts are listed — a canceled one can't
+		// be entered.
 		const filter = needle
 			? {
 					status: 'active' as const,
 					$or: [
-						{ name: new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
-						{ slug: new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+						{ name: new RegExp(escapeRegex(needle), 'i') },
+						{ slug: new RegExp(escapeRegex(needle), 'i') },
 					],
 				}
 			: { status: 'active' as const };
@@ -752,6 +763,23 @@ export class MongoCustomerRepository implements CustomerRepository {
 		return { customers: docs.map(mapCustomer), total };
 	}
 
+	async search(options: SearchCustomersOptions): Promise<Customer[]> {
+		const term = options.query.trim();
+		if (term === '' || !Types.ObjectId.isValid(options.accountId)) {
+			return [];
+		}
+		const limit = Math.max(1, Math.trunc(options.limit));
+		const rx = new RegExp(escapeRegex(term), 'i');
+		const docs = await CustomerModel.find({
+			accountId: new Types.ObjectId(options.accountId),
+			$or: [{ name: rx }, { email: rx }, { phone: rx }, { address: rx }, { notes: rx }],
+		})
+			.sort({ createdAt: -1, _id: -1 })
+			.limit(limit)
+			.exec();
+		return docs.map(mapCustomer);
+	}
+
 	async findById(accountId: AccountId, id: CustomerId): Promise<Customer | null> {
 		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
 			return null;
@@ -890,6 +918,23 @@ export class MongoJobRepository implements JobRepository {
 			JobModel.countDocuments(filter).exec(),
 		]);
 		return { jobs: docs.map(mapJob), total };
+	}
+
+	async search(options: SearchJobsOptions): Promise<Job[]> {
+		const term = options.query.trim();
+		if (term === '' || !Types.ObjectId.isValid(options.accountId)) {
+			return [];
+		}
+		const limit = Math.max(1, Math.trunc(options.limit));
+		const rx = new RegExp(escapeRegex(term), 'i');
+		const docs = await JobModel.find({
+			accountId: new Types.ObjectId(options.accountId),
+			$or: [{ title: rx }, { address: rx }, { notes: rx }],
+		})
+			.sort({ createdAt: -1, _id: -1 })
+			.limit(limit)
+			.exec();
+		return docs.map(mapJob);
 	}
 
 	async findById(accountId: AccountId, id: JobId): Promise<Job | null> {

@@ -209,6 +209,19 @@ export const jobListResponseSchema = z
 	})
 	.meta({ id: 'JobList' });
 
+/**
+ * Result of the dashboard's global search: the account's customers and jobs whose
+ * text fields match the query, each list independently capped by the query's
+ * `limit`. Grouped by type so the client can render labelled sections; more types
+ * (messages, …) can be added here as they become searchable.
+ */
+export const searchResponseSchema = z
+	.object({
+		customers: z.array(customerResponseSchema),
+		jobs: z.array(jobResponseSchema),
+	})
+	.meta({ id: 'SearchResults' });
+
 export const notificationResponseSchema = z
 	.object({
 		id: z.string(),

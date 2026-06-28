@@ -238,9 +238,24 @@ export interface ListCustomersOptions {
 	pageSize: number;
 }
 
+/**
+ * Options for {@link CustomerRepository.search}: a free-text term matched against
+ * one account's customers, capped at `limit` matches. Powers the global search
+ * box, so it returns a short, newest-first slice rather than a full page.
+ */
+export interface SearchCustomersOptions {
+	accountId: AccountId;
+	/** Case-insensitive term matched as a substring of name/email/phone/address/notes. */
+	query: string;
+	/** Maximum number of matches to return. */
+	limit: number;
+}
+
 export interface CustomerRepository {
 	create(accountId: AccountId, input: CreateCustomerInput): Promise<Customer>;
 	list(options: ListCustomersOptions): Promise<{ customers: Customer[]; total: number }>;
+	/** Up to `limit` customers matching a free-text term, newest-first (empty term → no matches). */
+	search(options: SearchCustomersOptions): Promise<Customer[]>;
 	findById(accountId: AccountId, id: CustomerId): Promise<Customer | null>;
 	update(
 		accountId: AccountId,
@@ -283,9 +298,24 @@ export interface FindOverlappingJobsOptions {
 	excludeJobId?: JobId;
 }
 
+/**
+ * Options for {@link JobRepository.search}: a free-text term matched against one
+ * account's jobs, capped at `limit` matches. The global-search counterpart to the
+ * customer search above.
+ */
+export interface SearchJobsOptions {
+	accountId: AccountId;
+	/** Case-insensitive term matched as a substring of title/address/notes. */
+	query: string;
+	/** Maximum number of matches to return. */
+	limit: number;
+}
+
 export interface JobRepository {
 	create(accountId: AccountId, input: CreateJobInput): Promise<Job>;
 	list(options: ListJobsOptions): Promise<{ jobs: Job[]; total: number }>;
+	/** Up to `limit` jobs matching a free-text term, newest-first (empty term → no matches). */
+	search(options: SearchJobsOptions): Promise<Job[]>;
 	findById(accountId: AccountId, id: JobId): Promise<Job | null>;
 	update(accountId: AccountId, id: JobId, input: UpdateJobInput): Promise<Job | null>;
 	delete(accountId: AccountId, id: JobId): Promise<boolean>;
