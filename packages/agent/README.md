@@ -12,9 +12,20 @@ Any other question is treated as a general ask and answered from the knowledge
 base: the agent forwards it to the API's AI-backed `/v1/faqs/answer` endpoint,
 which finds the relevant FAQs and composes a grounded reply (so "what's our best
 price?" is answered by a differently-worded "cost" FAQ), and cites the source FAQ.
-The reply logic is still a set of small, pure, unit-tested functions, so turning
-the deterministic understanding layer (`intent.ts`) into a real model-backed
-assistant later means changing only that one place.
+
+### Deciding what to do (`decide.ts`)
+
+Every turn, the agent first decides **which of those tools the message calls for**,
+reading the whole conversation. When an `ANTHROPIC_API_KEY` is configured a model
+makes that decision, so it follows context across turns (a bare "what should I
+add?" after looking at the FAQs is understood) and tells a *question* from a
+*command* ("how do I create an invoice?" is answered from the knowledge base, not
+turned into a new FAQ). The model only **routes** — it picks a structured action;
+the user-facing reply is still composed by the same small, pure, unit-tested
+functions. When no key is set — or a model call fails — routing degrades to the
+deterministic, rule-based parser (`intent.ts`), so the agent works (and its tests
+run) with no model and no network round-trip. `decide.ts` is the single seam: it's
+the one place that turns a conversation into an action.
 
 ## Authentication
 
@@ -44,9 +55,13 @@ source of truth. Any `401`/`403` from the API is turned into a clear sentence.
 | `JWT_SECRET`     | secret | (match the API)        | Verifies session tokens. `wrangler secret put JWT_SECRET`. |
 | `RIVUS_API_URL`  | var    | `https://api.rivus.ai` | The REST API the agent calls on the user's behalf.  |
 | `ALLOWED_ORIGINS`| var    | `https://app.rivus.ai` | Credentialed-CORS allowlist (`*` = any, dev only).  |
+| `ANTHROPIC_API_KEY` | secret | (a provider key)    | Turns on model routing. Unset → deterministic routing. `wrangler secret put ANTHROPIC_API_KEY`. |
+| `ANTHROPIC_MODEL`| var    | `claude-haiku-4-5`     | The routing model (small/fast — it only picks an action). |
 
-`RIVUS_API_URL` and `ALLOWED_ORIGINS` are set per environment in `wrangler.jsonc`;
-`JWT_SECRET` is a deploy-time secret and must equal the API's.
+`RIVUS_API_URL`, `ALLOWED_ORIGINS` and `ANTHROPIC_MODEL` are set per environment in
+`wrangler.jsonc`; `JWT_SECRET` and `ANTHROPIC_API_KEY` are deploy-time secrets
+(`JWT_SECRET` must equal the API's). The agent routes deterministically when
+`ANTHROPIC_API_KEY` is unset, so it boots and works without a model.
 
 ## How it fits together
 

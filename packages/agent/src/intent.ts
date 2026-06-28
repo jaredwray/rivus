@@ -41,6 +41,13 @@ export type Intent =
 	| { kind: 'faq_update'; topic: string; answer: string | null }
 	/** Add an FAQ; `question`/`answer` are null when the user didn't supply them. */
 	| { kind: 'faq_create'; question: string | null; answer: string | null }
+	/**
+	 * Answer a free-text question from the knowledge base (AI-assisted, via the API).
+	 * The rule-based parser never produces this — it routes general questions through
+	 * `unknown` — but a model router can pick it explicitly. The assistant handles
+	 * both the same way.
+	 */
+	| { kind: 'faq_answer'; question: string }
 	| { kind: 'unknown' };
 
 /** The subject a conversation is on, carried forward to resolve bare follow-ups. */
@@ -228,15 +235,16 @@ function parseFaqCreate(text: string): { question: string | null; answer: string
 }
 
 /**
- * True when a message carries a knowledge-base *action* (add/update/search/list,
- * or an "about …" subject) — as opposed to a bare "thanks". Used to decide whether
- * an otherwise-subjectless message should attach to an active FAQ conversation, so
- * a pleasantry doesn't get mistaken for "show me the FAQs".
+ * True when a message carries a knowledge-base *action* that's safe to infer from
+ * an active FAQ conversation — browsing, searching, updating, or an "about …"
+ * subject — as opposed to a bare "thanks". Deliberately excludes *creation*: a turn
+ * that merely contains "add"/"create"/"make" is far more often a question to answer
+ * ("how do I create an invoice?") than a request to add an FAQ, so creating one
+ * requires explicit FAQ phrasing rather than being inferred from context.
  */
 function hasFaqAction(lower: string): boolean {
 	return (
 		UPDATE_VERB.test(lower) ||
-		CREATE_VERB.test(lower) ||
 		SEARCH_VERB.test(lower) ||
 		LIST_VERB.test(lower) ||
 		afterPreposition(lower) !== null
@@ -320,6 +328,7 @@ function topicOf(intent: Intent): ConversationTopic | null {
 		case 'faq_search':
 		case 'faq_update':
 		case 'faq_create':
+		case 'faq_answer':
 			return 'faq';
 		case 'company_info':
 			return 'company';
@@ -329,8 +338,24 @@ function topicOf(intent: Intent): ConversationTopic | null {
 }
 
 /**
- * How many recent user turns a subjectless follow-up looks back over for its
- * topic. A short window keeps the inference relevant (a topic from far earlier
+ * Markers in the agent's *own* FAQ replies — a list, a search result, a knowledge
+ * answer's citation, or a create/update confirmation. A prior user turn answered
+ * from the knowledge base parses as `unknown` (it was a general question), so the
+ * proof the conversation is on the FAQs lives in the assistant's reply, not the
+ * user's ask. These phrases appear only in the agent's knowledge-base replies, not
+ * its greeting or help text, so they don't misfire on boilerplate.
+ */
+const ASSISTANT_FAQ_REPLY =
+	/your knowledge base (?:has|is empty)|from your faq|here’s what i found about|couldn’t find anything|added a new faq|i updated|currently says/i;
+
+/** The topic an assistant turn establishes, read from the agent's FAQ-reply markers. */
+function assistantTopic(content: string): ConversationTopic | null {
+	return ASSISTANT_FAQ_REPLY.test(content) ? 'faq' : null;
+}
+
+/**
+ * How many recent turns (either side) a subjectless follow-up looks back over for
+ * its topic. A short window keeps the inference relevant (a topic from far earlier
  * shouldn't bind "now") and bounds the work done on every turn — re-parsing an
  * unbounded history would risk the Workers CPU limit on a long conversation.
  */
@@ -338,20 +363,31 @@ const CONTEXT_LOOKBACK_TURNS = 6;
 
 /**
  * The subject the conversation is already on, read from the most recent *earlier*
- * user turn that established one. The latest turn is skipped — it's the one we
- * couldn't read on its own and are trying to give context to — and the scan is
- * capped at the last {@link CONTEXT_LOOKBACK_TURNS} turns.
+ * turn that established one. We look at both sides: a user turn via its parsed
+ * intent, and an assistant turn via the agent's FAQ-reply markers — so context the
+ * user set ("how many faqs?") *and* context only the assistant's answer proves
+ * (a knowledge answer to "what's our best price?") both count. The latest turn is
+ * skipped — it's the one we couldn't read on its own — and the scan is capped at
+ * the last {@link CONTEXT_LOOKBACK_TURNS} turns to keep it relevant and bounded.
  */
 function recentTopic(messages: ChatMessage[]): ConversationTopic | null {
-	const userTurns = messages.filter((message) => message.role === 'user');
-	const start = userTurns.length - 2;
-	const end = Math.max(0, userTurns.length - 1 - CONTEXT_LOOKBACK_TURNS);
-	for (let i = start; i >= end; i--) {
-		const turn = userTurns[i];
-		if (!turn) {
+	// Drop the latest user turn: it's what we're resolving, not context for itself.
+	let lastUserIndex = -1;
+	for (let i = messages.length - 1; i >= 0; i--) {
+		if (messages[i]?.role === 'user') {
+			lastUserIndex = i;
+			break;
+		}
+	}
+	let scanned = 0;
+	for (let i = lastUserIndex - 1; i >= 0 && scanned < CONTEXT_LOOKBACK_TURNS; i--) {
+		const turn = messages[i];
+		if (!turn || turn.role === 'system') {
 			continue;
 		}
-		const topic = topicOf(parseIntent(turn.content));
+		const topic =
+			turn.role === 'assistant' ? assistantTopic(turn.content) : topicOf(parseIntent(turn.content));
+		scanned += 1;
 		if (topic) {
 			return topic;
 		}

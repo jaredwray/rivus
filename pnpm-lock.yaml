@@ -53,12 +53,18 @@ importers:
 
   packages/agent:
     dependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^3.0.85
+        version: 3.0.85(zod@4.4.3)
       '@rivus/core':
         specifier: workspace:*
         version: link:../core
       agents:
         specifier: ^0.16.1
         version: 0.16.2(@babel/core@7.29.7)(@babel/plugin-transform-runtime@7.29.7(@babel/core@7.29.7))(@babel/runtime@7.29.7)(@cloudflare/workers-types@4.20260616.1)(ai@6.0.208(zod@4.4.3))(react@19.2.7)(rolldown@1.1.1)(vite@7.3.5(@types/node@24.13.2)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))(zod@4.4.3)
+      ai:
+        specifier: ^6.0.208
+        version: 6.0.208(zod@4.4.3)
       zod:
         specifier: 'catalog:'
         version: 4.4.3
@@ -358,20 +364,8 @@ packages:
   '@adobe/css-tools@4.5.0':
     resolution: {integrity: sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q==}
 
-  '@ai-sdk/anthropic@3.0.84':
-    resolution: {integrity: sha512-BIDaHmCHs6Sr5VUsEkTbbVlAN4GWjg97X9x/IfXyviLtzsXvffui9XIcZugkAi1Ri6FnvI5T5qDGh5YLnSuzRg==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-
   '@ai-sdk/anthropic@3.0.85':
     resolution: {integrity: sha512-fNeDB644l5wbRNQU0FnI+F7UTtOenMnPtACfMPUJaS2zJfuBlseEa1TMg+otHkETZgaJB+6Na51NQEv0+m7czw==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-
-  '@ai-sdk/gateway@3.0.129':
-    resolution: {integrity: sha512-KEQpZGJuCksc4iFxYtVHeHHG7yH0izGFzJLmRZlriI0hFIzJF9bT2AzJoaTHUI6minlxtP0WKYh84dP18o/Cuw==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -3569,12 +3563,6 @@ packages:
         optional: true
       vite:
         optional: true
-
-  ai@6.0.203:
-    resolution: {integrity: sha512-2Qi1ZPGF/FnlvnRqntVgRbUYGeA5ZKFYwTtgu8rcUzMmddArM/nLsvCW69Ip99B1cop6XHRHl+GCKk9t9B+GDA==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
 
   ai@6.0.208:
     resolution: {integrity: sha512-STz+AaZqJ4ZjH7UkpXkbHx+bjgIDOsE8fIUoZjkZ2whoZcfVmG9K/TqEKouJZ03SuZuD7lagntlU3zBhAEkRpQ==}
@@ -7650,23 +7638,10 @@ snapshots:
 
   '@adobe/css-tools@4.5.0': {}
 
-  '@ai-sdk/anthropic@3.0.84(zod@4.4.3)':
-    dependencies:
-      '@ai-sdk/provider': 3.0.10
-      '@ai-sdk/provider-utils': 4.0.29(zod@4.4.3)
-      zod: 4.4.3
-
   '@ai-sdk/anthropic@3.0.85(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 3.0.10
       '@ai-sdk/provider-utils': 4.0.30(zod@4.4.3)
-      zod: 4.4.3
-
-  '@ai-sdk/gateway@3.0.129(zod@4.4.3)':
-    dependencies:
-      '@ai-sdk/provider': 3.0.10
-      '@ai-sdk/provider-utils': 4.0.29(zod@4.4.3)
-      '@vercel/oidc': 3.2.0
       zod: 4.4.3
 
   '@ai-sdk/gateway@3.0.133(zod@4.4.3)':
@@ -11127,14 +11102,6 @@ snapshots:
       - rolldown
       - supports-color
 
-  ai@6.0.203(zod@4.4.3):
-    dependencies:
-      '@ai-sdk/gateway': 3.0.129(zod@4.4.3)
-      '@ai-sdk/provider': 3.0.10
-      '@ai-sdk/provider-utils': 4.0.29(zod@4.4.3)
-      '@opentelemetry/api': 1.9.1
-      zod: 4.4.3
-
   ai@6.0.208(zod@4.4.3):
     dependencies:
       '@ai-sdk/gateway': 3.0.133(zod@4.4.3)
@@ -11815,11 +11782,11 @@ snapshots:
 
   docula@2.0.0(@types/react@19.2.17)(zod@4.4.3):
     dependencies:
-      '@ai-sdk/anthropic': 3.0.84(zod@4.4.3)
+      '@ai-sdk/anthropic': 3.0.85(zod@4.4.3)
       '@ai-sdk/google': 3.0.82(zod@4.4.3)
       '@ai-sdk/openai': 3.0.71(zod@4.4.3)
       '@cacheable/net': 2.0.8
-      ai: 6.0.203(zod@4.4.3)
+      ai: 6.0.208(zod@4.4.3)
       colorette: 2.0.20
       ecto: 4.8.7(@types/react@19.2.17)
       hashery: 2.0.0
@@ -15899,7 +15866,7 @@ snapshots:
 
   writr@6.1.2(@types/react@19.2.17):
     dependencies:
-      ai: 6.0.203(zod@4.4.3)
+      ai: 6.0.208(zod@4.4.3)
       cacheable: 2.3.5
       hashery: 2.0.0
       hookified: 2.2.0

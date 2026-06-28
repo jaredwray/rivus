@@ -12,8 +12,12 @@
 	// Plain (non-secret) vars for local `wrangler dev`. `RIVUS_API_URL` is the Rivus
 	// REST API the agent calls on a signed-in user's behalf; `ALLOWED_ORIGINS` is the
 	// credentialed-CORS allowlist (`*` reflects any origin — local dev only).
-	// The shared `JWT_SECRET` (used to verify session tokens; must match the API's)
-	// is a *secret*, not a var: set it with `wrangler secret put JWT_SECRET`.
+	// Secrets are *not* vars: set them with `wrangler secret put <NAME>`.
+	//   - `JWT_SECRET` verifies session tokens; must match the API's.
+	//   - `ANTHROPIC_API_KEY` lets the model route the agent (decide which tool a
+	//     message calls for). Unset locally, so dev routes deterministically; set it
+	//     per environment to turn on model routing. `ANTHROPIC_MODEL` (a var below)
+	//     picks the routing model.
 	"vars": {
 		"RIVUS_API_URL": "http://localhost:4000",
 		"ALLOWED_ORIGINS": "*"
@@ -38,7 +42,8 @@
 			"vars": {
 				"NODE_ENV": "production",
 				"RIVUS_API_URL": "https://dev-api.rivus.ai",
-				"ALLOWED_ORIGINS": "https://dev-app.rivus.ai"
+				"ALLOWED_ORIGINS": "https://dev-app.rivus.ai",
+				"ANTHROPIC_MODEL": "claude-haiku-4-5"
 			},
 			"durable_objects": {
 				"bindings": [{ "name": "RivusAgent", "class_name": "RivusAgent" }]
@@ -50,7 +55,8 @@
 			"vars": {
 				"NODE_ENV": "production",
 				"RIVUS_API_URL": "https://api.rivus.ai",
-				"ALLOWED_ORIGINS": "https://app.rivus.ai"
+				"ALLOWED_ORIGINS": "https://app.rivus.ai",
+				"ANTHROPIC_MODEL": "claude-haiku-4-5"
 			},
 			"durable_objects": {
 				"bindings": [{ "name": "RivusAgent", "class_name": "RivusAgent" }]

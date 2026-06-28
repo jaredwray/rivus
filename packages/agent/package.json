@@ -16,8 +16,10 @@
 		"clean": "rm -rf dist coverage .wrangler"
 	},
 	"dependencies": {
+		"@ai-sdk/anthropic": "^3.0.85",
 		"@rivus/core": "workspace:*",
 		"agents": "^0.16.1",
+		"ai": "^6.0.208",
 		"zod": "catalog:"
 	},
 	"devDependencies": {

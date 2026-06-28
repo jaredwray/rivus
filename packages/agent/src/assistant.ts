@@ -2,6 +2,7 @@ import { createFaqSchema, type Faq, updateFaqSchema } from '@rivus/core';
 import { AgentApiError, createRivusApiClient, type FetchLike, type RivusApiClient } from './api';
 import { authenticate } from './auth';
 import { GREETING, lastUserMessage } from './conversation';
+import { createDeciderFromEnv, type Decide } from './decide';
 import { type CompanyField, type Intent, resolveIntent } from './intent';
 import type { ChatMessage, Env, SessionClaims } from './types';
 
@@ -31,6 +32,11 @@ export interface RespondDeps {
 	messages: ChatMessage[];
 	/** Injected for tests; defaults to the global `fetch` in the Worker. */
 	fetchImpl?: FetchLike;
+	/**
+	 * Decides the agent's action from the conversation. Injected for tests; defaults
+	 * to a model-backed router (or the rule-based parser when no model is configured).
+	 */
+	decide?: Decide;
 }
 
 const SIGN_IN_REQUIRED =
@@ -57,11 +63,25 @@ const FIELD_LABEL: Record<CompanyField, string> = {
 export async function respond(deps: RespondDeps): Promise<string> {
 	const { env, request, messages, fetchImpl } = deps;
 	const question = lastUserMessage(messages) ?? '';
-	// Read the latest turn in the context of the conversation, so a bare follow-up
-	// ("what should I add?") is understood instead of brushed off.
-	const intent = resolveIntent(messages);
 	const session = await authenticate(request, env.JWT_SECRET);
 	const claims = session?.claims ?? null;
+
+	// Decide which tool the latest turn calls for — authenticating first, and spending
+	// a model call only when it can matter. An empty open (the app posts an empty
+	// transcript just to get the greeting) is the greeting, full stop. An
+	// unauthenticated caller can only be greeted, helped, or nudged to sign in, so it's
+	// routed deterministically — its transcript is never sent to a third-party model,
+	// nor does it incur model cost. Signed-in turns route via the model when one is
+	// configured; otherwise the same deterministic router.
+	let intent: Intent;
+	if (question.trim() === '') {
+		intent = { kind: 'greeting' };
+	} else if (session) {
+		const decide: Decide = deps.decide ?? createDeciderFromEnv(env);
+		intent = await decide(messages);
+	} else {
+		intent = resolveIntent(messages);
+	}
 
 	// Conversational intents need no data and work signed in or out.
 	if (intent.kind === 'greeting') {
@@ -72,14 +92,16 @@ export async function respond(deps: RespondDeps): Promise<string> {
 	}
 
 	// Everything below needs a session and a configured API. A general question
-	// (`unknown`) is the catch-all: rather than brushing it off, we try to answer it
-	// from the knowledge base with AI. It still degrades to a friendly nudge — not
-	// the sign-in / not-configured errors — when we can't reach the data.
+	// (`unknown`, or a model-chosen `faq_answer`) is the catch-all: rather than
+	// brushing it off, we try to answer it from the knowledge base with AI. It still
+	// degrades to a friendly nudge — not the sign-in / not-configured errors — when
+	// we can't reach the data.
+	const isQuestion = intent.kind === 'unknown' || intent.kind === 'faq_answer';
 	if (!session) {
-		return intent.kind === 'unknown' ? unknownReply(null) : SIGN_IN_REQUIRED;
+		return isQuestion ? unknownReply(null) : SIGN_IN_REQUIRED;
 	}
 	if (!env.RIVUS_API_URL) {
-		return intent.kind === 'unknown' ? unknownReply(claims) : NOT_CONFIGURED;
+		return isQuestion ? unknownReply(claims) : NOT_CONFIGURED;
 	}
 	const api = createRivusApiClient(env.RIVUS_API_URL, session.token, fetchImpl);
 
@@ -95,6 +117,8 @@ export async function respond(deps: RespondDeps): Promise<string> {
 				return await faqUpdateReply(api, intent);
 			case 'faq_create':
 				return await faqCreateReply(api, intent);
+			case 'faq_answer':
+				return await knowledgeAnswerReply(api, intent.question, claims);
 			case 'unknown':
 				return await knowledgeAnswerReply(api, question, claims);
 		}
