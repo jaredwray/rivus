@@ -3,7 +3,7 @@ import { AgentApiError, createRivusApiClient, type FetchLike, type RivusApiClien
 import { authenticate } from './auth';
 import { GREETING, lastUserMessage } from './conversation';
 import { createDeciderFromEnv, type Decide } from './decide';
-import type { CompanyField, Intent } from './intent';
+import { type CompanyField, type Intent, resolveIntent } from './intent';
 import type { ChatMessage, Env, SessionClaims } from './types';
 
 /**
@@ -63,13 +63,25 @@ const FIELD_LABEL: Record<CompanyField, string> = {
 export async function respond(deps: RespondDeps): Promise<string> {
 	const { env, request, messages, fetchImpl } = deps;
 	const question = lastUserMessage(messages) ?? '';
-	// Let the agent decide which tool the latest turn calls for, reading the whole
-	// conversation. With a model configured the model chooses; otherwise this is the
-	// deterministic rule-based router. Either way we get an `Intent` to execute.
-	const decide = deps.decide ?? createDeciderFromEnv(env);
-	const intent = await decide(messages);
 	const session = await authenticate(request, env.JWT_SECRET);
 	const claims = session?.claims ?? null;
+
+	// Decide which tool the latest turn calls for — authenticating first, and spending
+	// a model call only when it can matter. An empty open (the app posts an empty
+	// transcript just to get the greeting) is the greeting, full stop. An
+	// unauthenticated caller can only be greeted, helped, or nudged to sign in, so it's
+	// routed deterministically — its transcript is never sent to a third-party model,
+	// nor does it incur model cost. Signed-in turns route via the model when one is
+	// configured; otherwise the same deterministic router.
+	let intent: Intent;
+	if (question.trim() === '') {
+		intent = { kind: 'greeting' };
+	} else if (session) {
+		const decide: Decide = deps.decide ?? createDeciderFromEnv(env);
+		intent = await decide(messages);
+	} else {
+		intent = resolveIntent(messages);
+	}
 
 	// Conversational intents need no data and work signed in or out.
 	if (intent.kind === 'greeting') {

@@ -69,6 +69,18 @@ describe('decisionToIntent', () => {
 		});
 	});
 
+	it('drops an answer with no question so a create never breaks schema validation', () => {
+		// The model may emit an answer without a question; that violates the parser's
+		// invariant, so we reset to "nothing yet" and the assistant asks for the whole FAQ.
+		expect(
+			decisionToIntent(decision({ action: 'faq_create', answer: 'Yes, within 30 days' }), ''),
+		).toEqual({ kind: 'faq_create', question: null, answer: null });
+		// A blank/whitespace question is treated the same as none.
+		expect(
+			decisionToIntent(decision({ action: 'faq_create', question: '   ', answer: 'Yes' }), ''),
+		).toEqual({ kind: 'faq_create', question: null, answer: null });
+	});
+
 	it('falls back to the raw user text when faq_answer omits the question', () => {
 		expect(decisionToIntent(decision({ action: 'faq_answer' }), 'how do I cancel?')).toEqual({
 			kind: 'faq_answer',
@@ -105,6 +117,22 @@ describe('createDecider — with a model', () => {
 		expect(calls[0]).toContain('User: how many faqs do we have?');
 		expect(calls[0]).toContain('Assistant: Your knowledge base has 3 FAQs: …');
 		expect(calls[0]).toContain('User: What should I add?');
+	});
+
+	it('bounds the transcript: recent turns only, each clipped', async () => {
+		const { generate, calls } = fakeGenerate(decision({ action: 'faq_list' }));
+		const decide = createDecider({ model: MODEL, generate });
+		const many = Array.from({ length: 20 }, (_, i) => user(`message ${i}`));
+		many.push(user(`${'x'.repeat(2000)} END`));
+		await decide(many);
+		const prompt = calls[0] ?? '';
+		// Only the most recent turns are sent — the oldest are dropped…
+		expect(prompt).not.toContain('message 0');
+		expect(prompt).toContain('message 19');
+		expect(prompt.split('\n').length).toBeLessThanOrEqual(12);
+		// …and an over-long message is clipped (its tail never reaches the model).
+		expect(prompt).not.toContain('END');
+		expect(prompt).toContain('…');
 	});
 
 	it('falls back to deterministic routing when the model call fails', async () => {

@@ -347,6 +347,33 @@ describe('respond — model-routed decisions', () => {
 		});
 		expect(reply).toMatch(/your website is/i);
 	});
+
+	it('never routes an unauthenticated caller through the model', async () => {
+		// An anonymous request must not send its transcript to a paid third-party model:
+		// it's routed deterministically and nudged to sign in, the router untouched.
+		const decide = vi.fn(async () => ({ kind: 'faq_list' as const }));
+		const reply = await respond({
+			env: envWith(),
+			request: anonRequest(),
+			messages: [user('what is our website?')],
+			decide,
+		});
+		expect(decide).not.toHaveBeenCalled();
+		expect(reply).toMatch(/signed in/i);
+	});
+
+	it('does not route an empty open through the model (just greets)', async () => {
+		// The app posts an empty transcript on open to fetch the greeting — no model call.
+		const decide = vi.fn(async () => ({ kind: 'faq_list' as const }));
+		const reply = await respond({
+			env: envWith(),
+			request: authedRequest(),
+			messages: [],
+			decide,
+		});
+		expect(decide).not.toHaveBeenCalled();
+		expect(reply).toContain(GREETING);
+	});
 });
 
 describe('respond — auth gating', () => {

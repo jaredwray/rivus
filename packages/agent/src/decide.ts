@@ -126,14 +126,29 @@ const SYSTEM = [
 	'Prefer faq_answer over faq_create whenever the user is asking rather than commanding.',
 ].join('\n');
 
-/** Render the transcript for the prompt, tagging each turn with its role. */
+// Bound what we send the router so a long or pasted conversation can't blow the
+// context window or run up latency/cost — routing only needs recent context, and
+// the rule-based fallback was capped too. Keep the most recent turns, each clipped.
+const MAX_TRANSCRIPT_MESSAGES = 12;
+const MAX_MESSAGE_CHARS = 1000;
+
+/** Render a bounded, role-tagged transcript for the prompt (most recent turns only). */
 function transcript(messages: ChatMessage[]): string {
 	const ROLE_LABEL: Record<ChatMessage['role'], string> = {
 		user: 'User',
 		assistant: 'Assistant',
 		system: 'System',
 	};
-	return messages.map((message) => `${ROLE_LABEL[message.role]}: ${message.content}`).join('\n');
+	return messages
+		.slice(-MAX_TRANSCRIPT_MESSAGES)
+		.map((message) => {
+			const content =
+				message.content.length > MAX_MESSAGE_CHARS
+					? `${message.content.slice(0, MAX_MESSAGE_CHARS - 1)}…`
+					: message.content;
+			return `${ROLE_LABEL[message.role]}: ${content}`;
+		})
+		.join('\n');
 }
 
 /** Map a validated model decision onto the `Intent` the assistant executes. */
@@ -157,8 +172,14 @@ export function decisionToIntent(decision: AgentDecision, latestUserText: string
 			const question = decision.answerQuestion.trim() || latestUserText;
 			return { kind: 'faq_answer', question };
 		}
-		case 'faq_create':
-			return { kind: 'faq_create', question: decision.question, answer: decision.answer };
+		case 'faq_create': {
+			// Preserve the parser's invariant that an answer only travels with a question.
+			// A model create that gives an answer but no question is treated as "nothing
+			// yet", so the assistant asks for the whole FAQ in one message rather than
+			// failing schema validation on a null question.
+			const question = decision.question?.trim() ? decision.question : null;
+			return { kind: 'faq_create', question, answer: question ? decision.answer : null };
+		}
 		case 'faq_update':
 			return { kind: 'faq_update', topic: decision.topic, answer: decision.answer };
 		default:
