@@ -162,9 +162,20 @@ export function RivusChat({
 			>
 				<KeyboardAvoidingView
 					behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-					style={[styles.fullscreen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
+					style={styles.fullscreen}
 				>
-					{conversation}
+					{/* Hold the safe-area insets on an inner View: with behavior="padding"
+					    KeyboardAvoidingView overwrites its own paddingBottom with the
+					    keyboard height (0 when closed), which would otherwise wipe out the
+					    bottom inset and let the composer collide with the home indicator. */}
+					<View
+						style={[
+							styles.fullscreenInner,
+							{ paddingTop: insets.top, paddingBottom: insets.bottom },
+						]}
+					>
+						{conversation}
+					</View>
 				</KeyboardAvoidingView>
 			</Modal>
 		);
@@ -353,6 +364,9 @@ const styles = StyleSheet.create({
 	fullscreen: {
 		flex: 1,
 		backgroundColor: colors.surface,
+	},
+	fullscreenInner: {
+		flex: 1,
 	},
 	header: {
 		flexDirection: 'row',

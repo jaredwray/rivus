@@ -321,6 +321,7 @@ function CompactBar({ onOpenChat }: { onOpenChat: () => void }) {
 					onPress={onOpenChat}
 					accessibilityRole="button"
 					accessibilityLabel="Open Rivus chat"
+					hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
 				>
 					<Feather name="message-circle" size={18} color="#cfd0dc" />
 				</Pressable>
@@ -328,6 +329,7 @@ function CompactBar({ onOpenChat }: { onOpenChat: () => void }) {
 					style={styles.compactIconBtn}
 					accessibilityRole="button"
 					accessibilityLabel="Notifications"
+					hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
 				>
 					<Feather name="bell" size={18} color="#cfd0dc" />
 					<View style={styles.bellDot} />
