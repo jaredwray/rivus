@@ -191,12 +191,12 @@ export default function SettingsScreen() {
 							label={canceling ? 'Canceling…' : 'Yes, cancel account'}
 							icon="alert-triangle"
 							onPress={onCancelAccount}
-							style={styles.confirmBtn}
+							style={[styles.confirmBtn, narrow && styles.confirmBtnNarrow]}
 						/>
 						<OutlineButton
 							label="Keep account"
 							onPress={() => setConfirmingCancel(false)}
-							style={styles.confirmBtn}
+							style={[styles.confirmBtn, narrow && styles.confirmBtnNarrow]}
 						/>
 					</View>
 				) : (
@@ -266,6 +266,11 @@ const styles = StyleSheet.create({
 	},
 	confirmRowNarrow: {
 		flexDirection: 'column',
+	},
+	// Stacked, the buttons size to their content; reset the row's flex:1 so they
+	// don't try to distribute height in the column's unbounded vertical space.
+	confirmBtnNarrow: {
+		flex: 0,
 	},
 	confirmBtn: {
 		flex: 1,
