@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import type { Account, AccountId } from '@rivus/core';
+import type { Account, AccountId, UserId } from '@rivus/core';
 import { loadConfig } from './config';
 import { connectMongoose, disconnectMongoose } from './db/mongoose';
 import {
@@ -8,12 +8,14 @@ import {
 	MongoFaqRepository,
 	MongoJobRepository,
 	MongoMembershipRepository,
+	MongoNotificationRepository,
 } from './repositories/mongo';
 import type {
 	AccountRepository,
 	CustomerRepository,
 	FaqRepository,
 	JobRepository,
+	NotificationRepository,
 } from './repositories/types';
 import {
 	type BusinessContext,
@@ -22,12 +24,15 @@ import {
 	type SeedGenerator,
 } from './seed-ai';
 import {
+	generateNotifications,
 	parseSeedArgs,
 	SEED_APPOINTMENT_MAX,
 	SEED_APPOINTMENT_MIN,
 	SEED_CUSTOMER_MAX,
 	SEED_CUSTOMER_MIN,
 	SEED_FAQ_DEFAULT,
+	SEED_NOTIFICATION_MAX,
+	SEED_NOTIFICATION_MIN,
 	SEED_USAGE,
 	SeedArgError,
 	type SeedOptions,
@@ -162,6 +167,46 @@ async function seedAppointments(
 	write(`Appointments: created ${inputs.length}${linkNote}.`);
 }
 
+/**
+ * Create `countPerMember` demo notifications for each of the account's members so
+ * their bell looks lived-in, then mark the older half read so the unread badge
+ * shows a realistic subset rather than every row glowing.
+ */
+async function seedNotifications(
+	notifications: NotificationRepository,
+	account: Account,
+	memberIds: string[],
+	countPerMember: number,
+): Promise<void> {
+	if (countPerMember === 0) {
+		write('Notifications: skipped (count 0).');
+		return;
+	}
+	if (memberIds.length === 0) {
+		write('Notifications: skipped (no members to notify).');
+		return;
+	}
+	let created = 0;
+	for (const memberId of memberIds) {
+		const ids = [];
+		for (const input of generateNotifications(countPerMember)) {
+			const notification = await notifications.create(account.id, memberId as UserId, input);
+			ids.push(notification.id);
+		}
+		// The list is newest-first, so marking the first (oldest) half read leaves the
+		// most recent notifications unread — the natural "haven't seen these yet" state.
+		const readCount = Math.floor(ids.length / 2);
+		for (let i = 0; i < readCount; i += 1) {
+			const id = ids[i];
+			if (id) {
+				await notifications.markRead(account.id, memberId as UserId, id);
+			}
+		}
+		created += ids.length;
+	}
+	write(`Notifications: created ${created} across ${memberIds.length} member(s).`);
+}
+
 async function run(options: SeedOptions): Promise<void> {
 	if (options.seed !== undefined) {
 		faker.seed(options.seed);
@@ -180,6 +225,9 @@ async function run(options: SeedOptions): Promise<void> {
 	const appointmentCount =
 		options.appointments ??
 		faker.number.int({ min: SEED_APPOINTMENT_MIN, max: SEED_APPOINTMENT_MAX });
+	const notificationCount =
+		options.notifications ??
+		faker.number.int({ min: SEED_NOTIFICATION_MIN, max: SEED_NOTIFICATION_MAX });
 
 	await connectMongoose(config.MONGODB_URI);
 	try {
@@ -213,6 +261,7 @@ async function run(options: SeedOptions): Promise<void> {
 			write(`Customers: would create ${customerCount}.`);
 			write(`FAQs: would create up to ${faqCount} (new questions only).`);
 			write(`Appointments: would create ${appointmentCount}.`);
+			write(`Notifications: would create ${notificationCount} per member.`);
 			write('Dry run complete — no AI calls, nothing written.');
 			return;
 		}
@@ -251,6 +300,12 @@ async function run(options: SeedOptions): Promise<void> {
 			appointmentCount,
 			customerIds,
 			memberIds,
+		);
+		await seedNotifications(
+			new MongoNotificationRepository(),
+			account,
+			memberIds,
+			notificationCount,
 		);
 
 		write('Seeding complete.');

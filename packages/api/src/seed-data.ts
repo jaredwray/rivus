@@ -4,9 +4,11 @@ import {
 	type CreateCustomerInput,
 	type CreateFaqInput,
 	type CreateJobInput,
+	type CreateNotificationInput,
 	createCustomerSchema,
 	createFaqSchema,
 	createJobSchema,
+	createNotificationSchema,
 	type JobStatus,
 } from '@rivus/core';
 
@@ -406,6 +408,105 @@ export function generateAppointments(options: GenerateAppointmentsOptions): Crea
 	);
 }
 
+// --- Notifications -----------------------------------------------------------
+
+// A demo account's bell should look lived-in: a handful of the per-user
+// notifications the app mints from real events (a job assigned, an invite
+// accepted, a role change), plus the occasional system message. These are
+// generic UI demo content — not business-specific — so they're always built
+// deterministically here rather than via the AI generator. `seed.ts` addresses
+// them to the account's members and marks a subset read.
+
+/** Default per-member notification count is a value in this (inclusive) range. */
+export const SEED_NOTIFICATION_MIN = 4;
+export const SEED_NOTIFICATION_MAX = 8;
+
+/** Short system/announcement messages, sampled for the `system` notifications. */
+const NOTIFICATION_SYSTEM_MESSAGES: ReadonlyArray<{ title: string; body: string }> = [
+	{ title: 'Welcome to Rivus', body: 'Your AI assistant is set up and ready to help.' },
+	{ title: 'Tip', body: 'Rivus can answer customer questions from your knowledge base.' },
+	{ title: 'Weekly summary ready', body: 'See how your team did this week on the dashboard.' },
+	{ title: 'New feature', body: 'You can now reschedule jobs directly from the calendar.' },
+] as const;
+
+/**
+ * The notification templates the demo seed draws from. Each fills in incidental
+ * detail with faker and validates through {@link createNotificationSchema} — the
+ * same schema the API applies — so a seeded row is indistinguishable from one
+ * the {@link NotificationService} mints. The `linkHref` matches the in-app route
+ * the live notification deep-links to.
+ */
+const NOTIFICATION_BUILDERS: ReadonlyArray<() => CreateNotificationInput> = [
+	() =>
+		createNotificationSchema.parse({
+			type: 'job_assigned',
+			title: 'New job assigned to you',
+			body: faker.helpers.arrayElement(APPOINTMENT_TITLES),
+			linkHref: '/schedule',
+		}),
+	() =>
+		createNotificationSchema.parse({
+			type: 'job_updated',
+			title: 'A job was rescheduled',
+			body: faker.helpers.arrayElement(APPOINTMENT_TITLES),
+			linkHref: '/schedule',
+		}),
+	() =>
+		createNotificationSchema.parse({
+			type: 'job_canceled',
+			title: 'A job was canceled',
+			body: faker.helpers.arrayElement(APPOINTMENT_TITLES),
+			linkHref: '/schedule',
+		}),
+	() =>
+		createNotificationSchema.parse({
+			type: 'invite_accepted',
+			title: 'Invitation accepted',
+			body: `${faker.person.firstName()} joined the team.`,
+			linkHref: '/team',
+		}),
+	() =>
+		createNotificationSchema.parse({
+			type: 'role_changed',
+			title: 'Your role changed',
+			body: `You're now ${faker.helpers.arrayElement(['an Owner', 'a Manager', 'a Member'])}.`,
+			linkHref: '/team',
+		}),
+	() => {
+		const message = faker.helpers.arrayElement(NOTIFICATION_SYSTEM_MESSAGES);
+		return createNotificationSchema.parse({
+			type: 'system',
+			title: message.title,
+			body: message.body,
+			linkHref: '',
+		});
+	},
+];
+
+/**
+ * Generate `count` validated notifications for one recipient. Templates are
+ * rotated (from a faker-chosen starting offset) so even a small batch shows a
+ * spread of types while staying reproducible under a fixed `faker.seed`. Seed
+ * faker beforehand for a deterministic batch.
+ */
+export function generateNotifications(count: number): CreateNotificationInput[] {
+	const total = Math.max(0, count);
+	if (total === 0) {
+		return [];
+	}
+	const offset = faker.number.int({ min: 0, max: NOTIFICATION_BUILDERS.length - 1 });
+	const notifications: CreateNotificationInput[] = [];
+	for (let index = 0; index < total; index += 1) {
+		// The modulo always lands in range; the guard only satisfies the
+		// noUncheckedIndexedAccess type (the undefined branch never runs).
+		const build = NOTIFICATION_BUILDERS[(offset + index) % NOTIFICATION_BUILDERS.length];
+		if (build) {
+			notifications.push(build());
+		}
+	}
+	return notifications;
+}
+
 // --- CLI ---------------------------------------------------------------------
 
 /** Validated options parsed from the seed command line. */
@@ -418,6 +519,8 @@ export interface SeedOptions {
 	faqs?: number;
 	/** Number of appointments to create; `undefined` means "use the default range". */
 	appointments?: number;
+	/** Notifications to create per member; `undefined` means "use the default range". */
+	notifications?: number;
 	/** Whether to use AI generation (when a provider key is set). `--no-ai` clears it. */
 	ai: boolean;
 	/** Optional faker seed for a reproducible batch. */
@@ -453,6 +556,9 @@ Options:
   -p, --appointments <n>      How many appointments (scheduled jobs) to create.
                               Default: a random count in [${SEED_APPOINTMENT_MIN}, ${SEED_APPOINTMENT_MAX}].
                               Pass 0 to skip appointments.
+  -n, --notifications <n>     How many notifications to create per member.
+                              Default: a random count in [${SEED_NOTIFICATION_MIN}, ${SEED_NOTIFICATION_MAX}].
+                              Pass 0 to skip notifications.
       --no-ai                 Force built-in faker/curated generation even when a
                               provider key is set.
   -s, --seed <n>              Seed the random generator for a reproducible batch.
@@ -466,7 +572,7 @@ Environment:
 
 Examples:
   pnpm --filter @rivus/api seed --account acme-co
-  pnpm --filter @rivus/api seed -a acme-co -c 25 -f 12 -p 20
+  pnpm --filter @rivus/api seed -a acme-co -c 25 -f 12 -p 20 -n 6
   pnpm --filter @rivus/api seed -a acme-co --no-ai --seed 42
   pnpm --filter @rivus/api seed -a 665f1e... --customers 0   # FAQs + appointments only
 `;
@@ -494,6 +600,7 @@ export function parseSeedArgs(argv: string[]): SeedOptions {
 		customers?: string;
 		faqs?: string;
 		appointments?: string;
+		notifications?: string;
 		'no-ai'?: boolean;
 		seed?: string;
 		'dry-run'?: boolean;
@@ -508,6 +615,7 @@ export function parseSeedArgs(argv: string[]): SeedOptions {
 				customers: { type: 'string', short: 'c' },
 				faqs: { type: 'string', short: 'f' },
 				appointments: { type: 'string', short: 'p' },
+				notifications: { type: 'string', short: 'n' },
 				'no-ai': { type: 'boolean', default: false },
 				seed: { type: 'string', short: 's' },
 				'dry-run': { type: 'boolean', default: false },
@@ -522,6 +630,7 @@ export function parseSeedArgs(argv: string[]): SeedOptions {
 		customers: parseCountOption(values.customers, 'customers'),
 		faqs: parseCountOption(values.faqs, 'faqs'),
 		appointments: parseCountOption(values.appointments, 'appointments'),
+		notifications: parseCountOption(values.notifications, 'notifications'),
 		ai: !(values['no-ai'] ?? false),
 		seed: parseCountOption(values.seed, 'seed'),
 		dryRun: values['dry-run'] ?? false,
