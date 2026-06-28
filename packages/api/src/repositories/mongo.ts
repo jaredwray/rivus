@@ -8,6 +8,7 @@ import {
 	type CreateNotificationInput,
 	type Customer,
 	type CustomerId,
+	escapeRegex,
 	type Faq,
 	type FaqId,
 	type Invite,
@@ -78,15 +79,6 @@ import type {
 	UserRepository,
 	VerificationCodeRepository,
 } from './types';
-
-/**
- * Escape regex metacharacters so a user's search term is matched literally — a
- * query like "a.b" or "(206)" is treated as text, not as a pattern (which could
- * also be crafted to be pathologically slow).
- */
-function escapeRegex(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 /** MongoServerError code 11000 = duplicate key (unique index violation). */
 function isDuplicateKeyError(

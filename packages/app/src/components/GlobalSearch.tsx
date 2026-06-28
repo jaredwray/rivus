@@ -42,6 +42,10 @@ export function GlobalSearch() {
 	const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 	// Monotonic request id so a slow earlier search can't overwrite a newer one.
 	const latestRequest = useRef(0);
+	// `autoFocus` on a TextInput inside a Modal can miss on native (focus is
+	// attempted mid-transition), so we also focus via this ref in the Modal's
+	// `onShow`. Keeping `autoFocus` covers web, where react-native-web honors it.
+	const inputRef = useRef<TextInput>(null);
 
 	const runSearch = useCallback(
 		async (term: string) => {
@@ -131,13 +135,20 @@ export function GlobalSearch() {
 				</Txt>
 			</Pressable>
 
-			<Modal visible={open} transparent animationType="fade" onRequestClose={close}>
+			<Modal
+				visible={open}
+				transparent
+				animationType="fade"
+				onRequestClose={close}
+				onShow={() => inputRef.current?.focus()}
+			>
 				<Pressable style={styles.backdrop} onPress={close}>
 					{/* Stop taps inside the panel from dismissing it. */}
 					<Pressable style={styles.panel} onPress={() => {}}>
 						<View style={styles.searchRow}>
 							<Feather name="search" size={15} color={colors.textFaint} />
 							<TextInput
+								ref={inputRef}
 								placeholder="Search customers and jobs…"
 								placeholderTextColor={colors.textHint}
 								value={query}
@@ -145,6 +156,9 @@ export function GlobalSearch() {
 								autoCorrect={false}
 								autoCapitalize="none"
 								autoFocus
+								// Match the API's `q` cap (searchQuerySchema) so an over-long query is
+								// prevented here rather than rejected with a 400.
+								maxLength={200}
 								style={styles.searchInput}
 							/>
 							{loading ? <ActivityIndicator size="small" color={colors.brandPurple} /> : null}

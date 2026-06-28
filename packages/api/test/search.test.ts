@@ -91,13 +91,25 @@ describe('search', () => {
 		expect(names).toEqual(['a.b']);
 	});
 
-	it('caps each type at the requested limit', async () => {
+	it('caps both customers and jobs at the requested limit', async () => {
+		const startAt = '2026-07-01T17:00:00.000Z';
 		for (let i = 0; i < 5; i += 1) {
 			await createCustomer({ name: `Match ${i}` });
+			await createJob({ title: `Match job ${i}`, startAt });
 		}
 		const response = await search('q=Match&limit=2');
 		expect(response.statusCode).toBe(200);
 		expect(response.json().customers).toHaveLength(2);
+		expect(response.json().jobs).toHaveLength(2);
+	});
+
+	it('falls back to the schema default of 8 per type when no limit is given', async () => {
+		for (let i = 0; i < 9; i += 1) {
+			await createCustomer({ name: `Bulk ${i}` });
+		}
+		const response = await search('q=Bulk');
+		expect(response.statusCode).toBe(200);
+		expect(response.json().customers).toHaveLength(8);
 	});
 
 	it('rejects a limit outside 1–20 (400)', async () => {
