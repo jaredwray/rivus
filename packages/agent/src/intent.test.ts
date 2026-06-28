@@ -322,6 +322,18 @@ describe('parseIntent — conversation context', () => {
 		});
 	});
 
+	it('does not let faq context hijack a company ask that carries a verb or preposition', () => {
+		// "about"/"show" would satisfy hasFaqAction, but a named company subject wins.
+		expect(parseIntent('tell me about our website', { topic: 'faq' })).toEqual({
+			kind: 'company_info',
+			fields: ['website'],
+		});
+		expect(parseIntent('show my company info', { topic: 'faq' })).toEqual({
+			kind: 'company_info',
+			fields: [],
+		});
+	});
+
 	it('ignores context it does not act on (company is tracked, not routed)', () => {
 		expect(parseIntent('what should I add?', { topic: 'company' })).toEqual({ kind: 'unknown' });
 	});
@@ -368,6 +380,19 @@ describe('resolveIntent — multi-turn', () => {
 			user('what should I add?'),
 		];
 		// Most recent topic is company, which we do not route, so it stays unknown.
+		expect(resolveIntent(conversation)).toEqual({ kind: 'unknown' });
+	});
+
+	it('does not reach back past the lookback window for a topic', () => {
+		// The only FAQ turn is far in the past; a string of subjectless turns sits
+		// between it and the follow-up, so the capped scan never reaches it.
+		const filler = Array.from({ length: 7 }, () => [user('hmm'), assistant('…')]).flat();
+		const conversation = [
+			user('how many faqs do we have?'),
+			assistant('Your knowledge base has 3 FAQs: …'),
+			...filler,
+			user('what should I add?'),
+		];
 		expect(resolveIntent(conversation)).toEqual({ kind: 'unknown' });
 	});
 });

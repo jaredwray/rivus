@@ -269,9 +269,20 @@ export function parseIntent(raw: string, context: IntentContext = {}): Intent {
 		return { kind: 'greeting' };
 	}
 
-	// Enter the knowledge-base branch when the message names it outright, or when
-	// the conversation is already on it and this turn carries an FAQ action.
-	const faqByContext = context.topic === 'faq' && hasFaqAction(lower);
+	// Company signals are read up front so they can both gate the inferred FAQ
+	// context below and answer the company branch later (computed once).
+	const companyFields = COMPANY_FIELD_PATTERNS.filter(([, pattern]) => pattern.test(lower)).map(
+		([field]) => field,
+	);
+	const companyGeneric = COMPANY_GENERIC.test(lower);
+
+	// Enter the knowledge-base branch when the message names it outright, or when the
+	// conversation is already on it and this turn carries an FAQ action. A message
+	// that names a company subject of its own (a field, or a generic "my company")
+	// always wins over an inferred FAQ context, so "tell me about our website" stays
+	// company info even mid-FAQ-conversation.
+	const faqByContext =
+		context.topic === 'faq' && hasFaqAction(lower) && companyFields.length === 0 && !companyGeneric;
 	if (FAQ_CONTEXT.test(lower) || faqByContext) {
 		if (UPDATE_VERB.test(lower)) {
 			return { kind: 'faq_update', ...parseFaqUpdate(text) };
@@ -291,13 +302,10 @@ export function parseIntent(raw: string, context: IntentContext = {}): Intent {
 		return { kind: 'faq_list' };
 	}
 
-	const fields = COMPANY_FIELD_PATTERNS.filter(([, pattern]) => pattern.test(lower)).map(
-		([field]) => field,
-	);
-	if (fields.length > 0) {
-		return { kind: 'company_info', fields };
+	if (companyFields.length > 0) {
+		return { kind: 'company_info', fields: companyFields };
 	}
-	if (COMPANY_GENERIC.test(lower)) {
+	if (companyGeneric) {
 		// Generic ask → return the whole record.
 		return { kind: 'company_info', fields: [] };
 	}
@@ -321,13 +329,24 @@ function topicOf(intent: Intent): ConversationTopic | null {
 }
 
 /**
+ * How many recent user turns a subjectless follow-up looks back over for its
+ * topic. A short window keeps the inference relevant (a topic from far earlier
+ * shouldn't bind "now") and bounds the work done on every turn — re-parsing an
+ * unbounded history would risk the Workers CPU limit on a long conversation.
+ */
+const CONTEXT_LOOKBACK_TURNS = 6;
+
+/**
  * The subject the conversation is already on, read from the most recent *earlier*
  * user turn that established one. The latest turn is skipped — it's the one we
- * couldn't read on its own and are trying to give context to.
+ * couldn't read on its own and are trying to give context to — and the scan is
+ * capped at the last {@link CONTEXT_LOOKBACK_TURNS} turns.
  */
 function recentTopic(messages: ChatMessage[]): ConversationTopic | null {
 	const userTurns = messages.filter((message) => message.role === 'user');
-	for (let i = userTurns.length - 2; i >= 0; i--) {
+	const start = userTurns.length - 2;
+	const end = Math.max(0, userTurns.length - 1 - CONTEXT_LOOKBACK_TURNS);
+	for (let i = start; i >= end; i--) {
 		const turn = userTurns[i];
 		if (!turn) {
 			continue;
