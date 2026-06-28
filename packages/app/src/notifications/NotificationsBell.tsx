@@ -37,7 +37,11 @@ export function NotificationsBell({ variant }: { variant: 'topbar' | 'compact' }
 				accessibilityLabel={
 					unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'
 				}
-				hitSlop={isTopbar ? undefined : { top: 5, bottom: 5, left: 5, right: 5 }}
+				hitSlop={
+					isTopbar
+						? { top: 3, bottom: 3, left: 3, right: 3 }
+						: { top: 5, bottom: 5, left: 5, right: 5 }
+				}
 			>
 				<Feather name="bell" size={18} color={isTopbar ? colors.textSub : '#cfd0dc'} />
 				{unreadCount > 0 ? (

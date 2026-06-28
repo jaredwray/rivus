@@ -35,17 +35,28 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 	// a staff company switch), not on every render.
 	const sessionKey = session ? session.account.id : null;
 
-	const refresh = useCallback(async () => {
-		if (!session) {
-			setUnreadCount(0);
-			return;
-		}
-		try {
-			setUnreadCount(await client.unreadNotificationCount(session.token));
-		} catch {
-			// A transient failure shouldn't wipe the badge — keep the last known count.
-		}
-	}, [client, session]);
+	const refresh = useCallback(
+		async (isActive?: () => boolean) => {
+			// `isActive` lets the poller below drop a result that resolves after the
+			// provider unmounted (sign-out); external callers omit it (always active).
+			const stillActive = () => !isActive || isActive();
+			if (!session) {
+				if (stillActive()) {
+					setUnreadCount(0);
+				}
+				return;
+			}
+			try {
+				const count = await client.unreadNotificationCount(session.token);
+				if (stillActive()) {
+					setUnreadCount(count);
+				}
+			} catch {
+				// A transient failure shouldn't wipe the badge — keep the last known count.
+			}
+		},
+		[client, session],
+	);
 
 	useEffect(() => {
 		if (!sessionKey) {
@@ -54,9 +65,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 		}
 		let active = true;
 		const tick = () => {
-			if (active) {
-				void refresh();
-			}
+			void refresh(() => active);
 		};
 		tick(); // Prime the badge immediately on mount / session change.
 		const interval = setInterval(() => {

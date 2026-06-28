@@ -67,24 +67,42 @@ export function NotificationsView({ onNavigate }: { onNavigate?: (href: string) 
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 
-	const load = useCallback(async () => {
-		if (!session) {
-			return;
-		}
-		setLoading(true);
-		setError(null);
-		try {
-			const result = await client.listNotifications(session.token, { pageSize: PAGE_SIZE });
-			setNotifications(result.data);
-		} catch (caught) {
-			setError(caught instanceof ApiError ? caught.message : 'Could not load your notifications.');
-		} finally {
-			setLoading(false);
-		}
-	}, [client, session]);
+	const load = useCallback(
+		async (isActive?: () => boolean) => {
+			if (!session) {
+				return;
+			}
+			// `isActive` drops a result that resolves after the view unmounted (the
+			// desktop panel closing, or navigating away from the screen).
+			const stillActive = () => !isActive || isActive();
+			setLoading(true);
+			setError(null);
+			try {
+				const result = await client.listNotifications(session.token, { pageSize: PAGE_SIZE });
+				if (stillActive()) {
+					setNotifications(result.data);
+				}
+			} catch (caught) {
+				if (stillActive()) {
+					setError(
+						caught instanceof ApiError ? caught.message : 'Could not load your notifications.',
+					);
+				}
+			} finally {
+				if (stillActive()) {
+					setLoading(false);
+				}
+			}
+		},
+		[client, session],
+	);
 
 	useEffect(() => {
-		load();
+		let active = true;
+		void load(() => active);
+		return () => {
+			active = false;
+		};
 	}, [load]);
 
 	const unread = notifications.filter((item) => item.readState === 'unread').length;
