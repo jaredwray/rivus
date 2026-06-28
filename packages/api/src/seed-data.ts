@@ -3,8 +3,11 @@ import { faker } from '@faker-js/faker';
 import {
 	type CreateCustomerInput,
 	type CreateFaqInput,
+	type CreateJobInput,
 	createCustomerSchema,
 	createFaqSchema,
+	createJobSchema,
+	type JobStatus,
 } from '@rivus/core';
 
 /**
@@ -174,6 +177,9 @@ export const FAQ_SEEDS: ReadonlyArray<{
 	},
 ];
 
+/** Default number of FAQs to seed (the full curated set) when not overridden. */
+export const SEED_FAQ_DEFAULT = FAQ_SEEDS.length;
+
 /**
  * Take the first `requested` curated FAQs (all of them when omitted), clamped to
  * what's available, and validate each through {@link createFaqSchema} so seeded
@@ -219,6 +225,187 @@ export function selectNewFaqs(
 	return { toCreate, skipped };
 }
 
+// --- Appointments (scheduled jobs) -------------------------------------------
+
+// In Rivus an appointment is a scheduled **Job**: a booking with a customer, an
+// assigned team member, a start time, a duration, and an estimated value. The
+// seeder creates these so a demo account has a populated calendar.
+
+/** Default appointment count is a value in this (inclusive) range when not overridden. */
+export const SEED_APPOINTMENT_MIN = 12;
+export const SEED_APPOINTMENT_MAX = 24;
+
+/** Service titles a small business might book, sampled when no AI title is supplied. */
+const APPOINTMENT_TITLES = [
+	'Initial consultation',
+	'On-site estimate',
+	'Standard service visit',
+	'Annual maintenance',
+	'Follow-up appointment',
+	'Installation',
+	'Repair call',
+	'Inspection',
+	'System tune-up',
+	'Emergency call-out',
+	'Project kickoff',
+	'Final walkthrough',
+] as const;
+
+/** Short scheduling notes, sampled for roughly half of seeded appointments. */
+const APPOINTMENT_NOTES = [
+	'Customer requested the morning slot.',
+	'Bring replacement parts.',
+	'Gate code provided; call on arrival.',
+	'Quoted over the phone last week.',
+	'Repeat customer — knows the routine.',
+	'Park in the rear lot.',
+	'Confirm materials before heading out.',
+	'Follow up with an invoice afterward.',
+] as const;
+
+/** Common appointment lengths, in minutes. */
+const APPOINTMENT_DURATIONS = [30, 60, 90, 120] as const;
+
+// Status skews with when the appointment falls (see {@link appointmentStatus}).
+const PAST_STATUSES: readonly JobStatus[] = [
+	'completed',
+	'completed',
+	'completed',
+	'canceled',
+	'in_progress',
+];
+const TODAY_STATUSES: readonly JobStatus[] = ['in_progress', 'confirmed', 'completed'];
+const FUTURE_STATUSES: readonly JobStatus[] = ['scheduled', 'scheduled', 'confirmed'];
+
+/** Creative fields an AI generator can supply per appointment; the rest is assembled. */
+export interface AppointmentCreative {
+	title?: string;
+	notes?: string;
+	durationMinutes?: number;
+	/** Estimated value in integer cents. */
+	estimatedValue?: number;
+}
+
+export interface BuildAppointmentOptions {
+	/** Linked customer id, or '' for none. */
+	customerId: string;
+	/** Assigned team member (user) id, or '' for unassigned. */
+	assignedUserId: string;
+	/** Anchor for the scheduled time; appointments spread before and after it. */
+	referenceDate: Date;
+	/** Creative overrides (e.g. from an AI generator); missing fields use faker. */
+	overrides?: AppointmentCreative;
+}
+
+/** Clamp a duration to the schema's 1..1440-minute window as a whole number. */
+function clampDuration(minutes: number): number {
+	if (!Number.isFinite(minutes)) {
+		return 60;
+	}
+	return Math.min(1440, Math.max(1, Math.trunc(minutes)));
+}
+
+/**
+ * Pick a status that fits when the appointment falls: past visits skew to
+ * completed (some canceled / still in progress), today is live, and future
+ * bookings are scheduled or confirmed — so the seeded calendar reads realistically.
+ */
+function appointmentStatus(dayOffset: number): JobStatus {
+	if (dayOffset < 0) {
+		return faker.helpers.arrayElement(PAST_STATUSES);
+	}
+	if (dayOffset === 0) {
+		return faker.helpers.arrayElement(TODAY_STATUSES);
+	}
+	return faker.helpers.arrayElement(FUTURE_STATUSES);
+}
+
+/**
+ * Build one appointment as a {@link CreateJobInput}, linked to the given customer
+ * and team member, and validate it through {@link createJobSchema}. The scheduled
+ * start lands on a business-hours half-hour within ~3 weeks either side of
+ * `referenceDate`; any creative field not supplied in `overrides` is filled with
+ * faker, so an AI generator can provide just titles/notes and still get a valid row.
+ */
+export function buildAppointment(options: BuildAppointmentOptions): CreateJobInput {
+	const dayOffset = faker.number.int({ min: -21, max: 21 });
+	const start = new Date(options.referenceDate);
+	start.setUTCDate(start.getUTCDate() + dayOffset);
+	// Business hours: 8:00am–4:30pm, on the half hour.
+	start.setUTCHours(
+		faker.number.int({ min: 8, max: 16 }),
+		faker.helpers.arrayElement([0, 30]),
+		0,
+		0,
+	);
+
+	const overrides = options.overrides ?? {};
+	const title = overrides.title?.trim() || faker.helpers.arrayElement(APPOINTMENT_TITLES);
+	const notes =
+		overrides.notes !== undefined
+			? overrides.notes
+			: faker.datatype.boolean({ probability: 0.5 })
+				? faker.helpers.arrayElement(APPOINTMENT_NOTES)
+				: '';
+	const durationMinutes = clampDuration(
+		overrides.durationMinutes ?? faker.helpers.arrayElement(APPOINTMENT_DURATIONS),
+	);
+	const estimatedValue =
+		overrides.estimatedValue !== undefined
+			? Math.max(0, Math.trunc(overrides.estimatedValue))
+			: faker.number.int({ min: 5_000, max: 150_000 });
+
+	return createJobSchema.parse({
+		title: title.slice(0, 160),
+		customerId: options.customerId,
+		assignedUserId: options.assignedUserId,
+		startAt: start.toISOString(),
+		durationMinutes,
+		status: appointmentStatus(dayOffset),
+		// A job-site address; for a demo it needn't match the customer's on file.
+		address: faker.datatype.boolean({ probability: 0.7 })
+			? `${faker.location.streetAddress()}, ${faker.location.city()}, ${faker.location.state({
+					abbreviated: true,
+				})} ${faker.location.zipCode()}`
+			: '',
+		notes: notes.slice(0, 2000),
+		estimatedValue,
+	});
+}
+
+export interface GenerateAppointmentsOptions {
+	count: number;
+	/** Customer ids to link appointments to (round-robin); empty list ⇒ "no customer". */
+	customerIds: string[];
+	/** Team member (user) ids to assign (round-robin); empty list ⇒ "unassigned". */
+	memberIds: string[];
+	referenceDate: Date;
+	/** Per-appointment creative overrides (e.g. from an AI generator). */
+	overrides?: AppointmentCreative[];
+}
+
+/** Round-robin element from `ids`, or '' when the list is empty ("none"). */
+function pickRoundRobin(ids: string[], index: number): string {
+	return ids.length === 0 ? '' : (ids[index % ids.length] ?? '');
+}
+
+/**
+ * Generate `count` validated appointments, round-robining across the available
+ * customers and team members so the seeded calendar is spread across the account.
+ * Seed faker beforehand (`faker.seed(n)`) for a reproducible batch.
+ */
+export function generateAppointments(options: GenerateAppointmentsOptions): CreateJobInput[] {
+	const count = Math.max(0, options.count);
+	return Array.from({ length: count }, (_unused, index) =>
+		buildAppointment({
+			customerId: pickRoundRobin(options.customerIds, index),
+			assignedUserId: pickRoundRobin(options.memberIds, index),
+			referenceDate: options.referenceDate,
+			overrides: options.overrides?.[index],
+		}),
+	);
+}
+
 // --- CLI ---------------------------------------------------------------------
 
 /** Validated options parsed from the seed command line. */
@@ -227,8 +414,12 @@ export interface SeedOptions {
 	account?: string;
 	/** Number of customers to create; `undefined` means "use the default range". */
 	customers?: number;
-	/** Number of curated FAQs to create; `undefined` means "all of them". */
+	/** Number of FAQs to create; `undefined` means "all of them". */
 	faqs?: number;
+	/** Number of appointments to create; `undefined` means "use the default range". */
+	appointments?: number;
+	/** Whether to use AI generation (when a provider key is set). `--no-ai` clears it. */
+	ai: boolean;
 	/** Optional faker seed for a reproducible batch. */
 	seed?: number;
 	/** Build and validate the data but don't write anything. */
@@ -240,7 +431,13 @@ export interface SeedOptions {
 /** Raised for bad CLI input so the caller can print usage and exit non-zero. */
 export class SeedArgError extends Error {}
 
-export const SEED_USAGE = `Seed an account with demo customers and a common-FAQ knowledge base.
+export const SEED_USAGE = `Seed an account with demo customers, FAQs, and appointments.
+
+Data is generated with AI when a provider key is configured (OpenAI, Google,
+xAI, or Anthropic — same providers as the FAQ features), tailored to the
+account's business. Without a key, or with --no-ai, it falls back to built-in
+faker/curated generation. Either way every row is validated against the same
+schemas the API uses.
 
 Usage:
   pnpm --filter @rivus/api seed --account <slug-or-id> [options]
@@ -251,20 +448,27 @@ Options:
   -c, --customers <n>         How many customers to create.
                               Default: a random count in [${SEED_CUSTOMER_MIN}, ${SEED_CUSTOMER_MAX}].
                               Pass 0 to skip customers.
-  -f, --faqs <n>              How many curated FAQs to create (max ${FAQ_SEEDS.length}).
-                              Default: all of them. Pass 0 to skip FAQs.
+  -f, --faqs <n>              How many FAQs to create.
+                              Default: ${FAQ_SEEDS.length} (the curated set). Pass 0 to skip FAQs.
+  -p, --appointments <n>      How many appointments (scheduled jobs) to create.
+                              Default: a random count in [${SEED_APPOINTMENT_MIN}, ${SEED_APPOINTMENT_MAX}].
+                              Pass 0 to skip appointments.
+      --no-ai                 Force built-in faker/curated generation even when a
+                              provider key is set.
   -s, --seed <n>              Seed the random generator for a reproducible batch.
-      --dry-run               Build and validate the data without writing it.
+      --dry-run               Report the plan without calling AI or writing anything.
   -h, --help                  Show this help.
 
 Environment:
   MONGODB_URI                 MongoDB connection string (defaults to the local
                               docker-compose replica set).
+  OPENAI_API_KEY, …           Any one enables AI generation (see .env.example).
 
 Examples:
   pnpm --filter @rivus/api seed --account acme-co
-  pnpm --filter @rivus/api seed -a acme-co -c 25 -f 12
-  pnpm --filter @rivus/api seed -a 665f1e... --customers 0   # FAQs only
+  pnpm --filter @rivus/api seed -a acme-co -c 25 -f 12 -p 20
+  pnpm --filter @rivus/api seed -a acme-co --no-ai --seed 42
+  pnpm --filter @rivus/api seed -a 665f1e... --customers 0   # FAQs + appointments only
 `;
 
 /** Parse a numeric CLI option into a non-negative integer, or throw {@link SeedArgError}. */
@@ -289,6 +493,8 @@ export function parseSeedArgs(argv: string[]): SeedOptions {
 		account?: string;
 		customers?: string;
 		faqs?: string;
+		appointments?: string;
+		'no-ai'?: boolean;
 		seed?: string;
 		'dry-run'?: boolean;
 		help?: boolean;
@@ -301,6 +507,8 @@ export function parseSeedArgs(argv: string[]): SeedOptions {
 				account: { type: 'string', short: 'a' },
 				customers: { type: 'string', short: 'c' },
 				faqs: { type: 'string', short: 'f' },
+				appointments: { type: 'string', short: 'p' },
+				'no-ai': { type: 'boolean', default: false },
 				seed: { type: 'string', short: 's' },
 				'dry-run': { type: 'boolean', default: false },
 				help: { type: 'boolean', short: 'h', default: false },
@@ -313,6 +521,8 @@ export function parseSeedArgs(argv: string[]): SeedOptions {
 		account: values.account,
 		customers: parseCountOption(values.customers, 'customers'),
 		faqs: parseCountOption(values.faqs, 'faqs'),
+		appointments: parseCountOption(values.appointments, 'appointments'),
+		ai: !(values['no-ai'] ?? false),
 		seed: parseCountOption(values.seed, 'seed'),
 		dryRun: values['dry-run'] ?? false,
 		help: values.help ?? false,
