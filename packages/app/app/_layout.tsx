@@ -312,7 +312,9 @@ function CompactBar({ onOpenChat }: { onOpenChat: () => void }) {
 			<View style={styles.compactRight}>
 				<View style={styles.compactStatus}>
 					<Dot color={colors.green} size={7} />
-					<Txt style={styles.compactStatusTxt}>Online</Txt>
+					<Txt style={styles.compactStatusTxt} numberOfLines={1}>
+						Online
+					</Txt>
 				</View>
 				{/* Chat with Rivus — sits right before the bell and opens the agent chat
 				    full screen (the mobile layout has no floating chat launcher). */}
@@ -435,7 +437,9 @@ function TabButton({
 					<View style={styles.tabDot} />
 				) : null}
 			</View>
-			<Txt style={[styles.tabLabel, active && styles.tabLabelActive]}>{label}</Txt>
+			<Txt style={[styles.tabLabel, active && styles.tabLabelActive]} numberOfLines={1}>
+				{label}
+			</Txt>
 		</Pressable>
 	);
 }
@@ -484,7 +488,9 @@ function MoreSheet({
 								size={18}
 								color={active ? colors.brandPurple : colors.textSub}
 							/>
-							<Txt style={[styles.sheetLabel, active && styles.sheetLabelActive]}>{item.label}</Txt>
+							<Txt style={[styles.sheetLabel, active && styles.sheetLabelActive]} numberOfLines={1}>
+								{item.label}
+							</Txt>
 							{item.badge ? (
 								<BrandGradient style={styles.sheetBadge}>
 									<Txt style={styles.sheetBadgeTxt}>{item.badge}</Txt>

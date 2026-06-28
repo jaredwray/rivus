@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { ApiError } from '@/src/api/client';
 import { getGoogleMapsApiKey } from '@/src/api/config';
 import { deviceTimezone, listTimezones } from '@/src/api/timezones';
@@ -26,6 +26,10 @@ function messageFor(error: unknown, fallback: string): string {
 export default function SettingsScreen() {
 	const { session, updateAccount, cancelAccount } = useAuth();
 	const account = session?.account;
+	// Stack the danger-zone buttons once the row is too narrow to hold both
+	// without wrapping their labels.
+	const { width } = useWindowDimensions();
+	const narrow = width < 520;
 
 	const [businessName, setBusinessName] = useState(account?.name ?? '');
 	const [phone, setPhone] = useState(account?.phone ?? '');
@@ -182,7 +186,7 @@ export default function SettingsScreen() {
 				{cancelError ? <Txt style={styles.errorTxt}>{cancelError}</Txt> : null}
 
 				{confirmingCancel ? (
-					<View style={styles.confirmRow}>
+					<View style={[styles.confirmRow, narrow && styles.confirmRowNarrow]}>
 						<GradientButton
 							label={canceling ? 'Canceling…' : 'Yes, cancel account'}
 							icon="alert-triangle"
@@ -259,6 +263,9 @@ const styles = StyleSheet.create({
 	confirmRow: {
 		flexDirection: 'row',
 		gap: 10,
+	},
+	confirmRowNarrow: {
+		flexDirection: 'column',
 	},
 	confirmBtn: {
 		flex: 1,

@@ -1,7 +1,7 @@
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { BrandGradient } from '@/src/components/Gradient';
 import { Card, Icon, RivusStatusChip, Txt } from '@/src/components/ui';
-import { colors, font, radii } from '@/src/theme/tokens';
+import { colors, font, radii, SIDEBAR_BREAKPOINT } from '@/src/theme/tokens';
 
 // Height of the mini bar charts. Bars use absolute px (not %) so they render
 // reliably on native, matching the pattern on the Home screen.
@@ -48,8 +48,12 @@ const ads: Ad[] = [
 ];
 
 export default function MarketingScreen() {
+	// Below the sidebar breakpoint the cards stack full-width so their minWidths
+	// can't force the page past a phone viewport.
+	const { width } = useWindowDimensions();
+	const narrow = width < SIDEBAR_BREAKPOINT;
 	return (
-		<ScrollView contentContainerStyle={styles.scroll}>
+		<ScrollView contentContainerStyle={[styles.scroll, narrow && styles.scrollNarrow]}>
 			<View style={styles.inner}>
 				<View>
 					<Txt style={styles.title}>Marketing</Txt>
@@ -61,7 +65,7 @@ export default function MarketingScreen() {
 
 				<View style={styles.adGrid}>
 					{ads.map((ad) => (
-						<Card key={ad.name} style={styles.adCard}>
+						<Card key={ad.name} style={[styles.adCard, narrow && styles.cardFull]}>
 							<View style={styles.adHead}>
 								<View style={styles.adIdent}>
 									<View style={[styles.adMark, { backgroundColor: ad.markBg }]}>
@@ -104,7 +108,7 @@ export default function MarketingScreen() {
 				</View>
 
 				<View style={styles.lowerGrid}>
-					<Card style={styles.reviewsCard}>
+					<Card style={[styles.reviewsCard, narrow && styles.cardFull]}>
 						<View style={styles.cardHead}>
 							<Txt style={styles.cardTitle}>Reviews</Txt>
 							<View style={styles.ratingRow}>
@@ -159,7 +163,7 @@ export default function MarketingScreen() {
 						</View>
 					</Card>
 
-					<Card style={styles.newsletterCard}>
+					<Card style={[styles.newsletterCard, narrow && styles.cardFull]}>
 						<View style={styles.cardHead}>
 							<Txt style={styles.cardTitle}>Newsletter</Txt>
 							<Txt style={styles.muted}>2,140 subscribers</Txt>
@@ -206,7 +210,10 @@ function Stat({ value, label, small }: { value: string; label: string; small?: b
 
 const styles = StyleSheet.create({
 	scroll: { padding: 24, paddingBottom: 44 },
+	scrollNarrow: { padding: 16, paddingBottom: 32 },
 	inner: { maxWidth: 1180, width: '100%', alignSelf: 'center', gap: 18 },
+	// Phone: span the row so a card's minWidth can't overflow the viewport.
+	cardFull: { flexBasis: '100%', minWidth: 0 },
 	title: { fontFamily: font.semibold, fontSize: 20 },
 	subtitle: { fontFamily: font.regular, fontSize: 13, color: colors.textMuted, marginTop: 3 },
 
