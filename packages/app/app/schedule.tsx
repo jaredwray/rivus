@@ -119,6 +119,10 @@ export default function ScheduleScreen() {
 	const { session, client } = useAuth();
 	const { width } = useWindowDimensions();
 	const sidebar = width >= SIDEBAR_BREAKPOINT ? SIDEBAR_WIDTH : 0;
+	// On the mobile layout the header's controls can't fit beside the title on
+	// one row, so stack it into a column and let each group take the full width
+	// (and wrap its own children) instead of overflowing off the right edge.
+	const narrow = width < SIDEBAR_BREAKPOINT;
 
 	const [view, setView] = useState<ScheduleView>('week');
 	const [anchor, setAnchor] = useState<Date>(() => startOfDay(new Date()));
@@ -438,7 +442,7 @@ export default function ScheduleScreen() {
 
 	return (
 		<View style={styles.screen}>
-			<View style={styles.header}>
+			<View style={[styles.header, narrow && styles.headerNarrow]}>
 				<View style={styles.headerLeft}>
 					<Txt style={styles.title}>Schedule</Txt>
 					{view !== 'list' ? (
@@ -959,6 +963,9 @@ const styles = StyleSheet.create({
 		borderBottomColor: colors.border,
 		backgroundColor: colors.surface,
 	},
+	// Mobile: stack the title and controls; `stretch` gives each group a definite
+	// full width so `headerRight` wraps its children instead of overflowing.
+	headerNarrow: { flexDirection: 'column', alignItems: 'stretch', gap: 14 },
 	headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 16, flexWrap: 'wrap' },
 	title: { fontFamily: font.semibold, fontSize: 20 },
 	dateNav: { flexDirection: 'row', alignItems: 'center', gap: 6 },
