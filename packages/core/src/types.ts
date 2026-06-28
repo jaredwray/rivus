@@ -12,6 +12,7 @@ export type JobId = Id<'Job'>;
 export type AccountId = Id<'Account'>;
 export type MembershipId = Id<'Membership'>;
 export type InviteId = Id<'Invite'>;
+export type NotificationId = Id<'Notification'>;
 
 /** ISO-8601 timestamp, e.g. `2026-06-19T12:00:00.000Z`. */
 export type IsoDateString = string;
@@ -187,6 +188,47 @@ export interface Job {
 	notes: string;
 	/** Estimated value of the job in integer cents (for pipeline totals). */
 	estimatedValue: number;
+	createdAt: IsoDateString;
+	updatedAt: IsoDateString;
+}
+
+/**
+ * Category of a notification, used to pick an icon/treatment in the UI and to
+ * explain why it was sent. `system` is the catch-all for account-level or
+ * manually-seeded messages that don't fit a more specific event.
+ */
+export type NotificationType =
+	| 'job_assigned'
+	| 'job_updated'
+	| 'job_canceled'
+	| 'invite_accepted'
+	| 'role_changed'
+	| 'system';
+
+/** Whether the recipient has opened a notification yet. */
+export type NotificationReadState = 'unread' | 'read';
+
+/**
+ * A personal notification addressed to one user within an account. Notifications
+ * are created as side-effects of domain events (a job assigned to you, an invite
+ * you sent being accepted, your role changing) — never written directly by a
+ * client. Every record is scoped by both `accountId` and `userId`, so a member
+ * only ever sees their own.
+ */
+export interface Notification {
+	id: NotificationId;
+	/** The account this notification belongs to. */
+	accountId: AccountId;
+	/** The user it is addressed to (the recipient). */
+	userId: UserId;
+	type: NotificationType;
+	/** Short headline, e.g. "New job assigned to you". */
+	title: string;
+	/** Supporting line; empty string when there's nothing more to say. */
+	body: string;
+	readState: NotificationReadState;
+	/** In-app route the notification deep-links to (e.g. `/schedule`); empty when none. */
+	linkHref: string;
 	createdAt: IsoDateString;
 	updatedAt: IsoDateString;
 }

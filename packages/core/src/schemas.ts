@@ -237,6 +237,36 @@ export const faqAnswerQuerySchema = z.object({
 });
 export type FaqAnswerQueryInput = z.infer<typeof faqAnswerQuerySchema>;
 
+// --- Notifications ------------------------------------------------------------
+
+// `NotificationType`/`NotificationReadState` are the source-of-truth unions in
+// `types.ts` (mirroring the `ItemStatus`/`itemStatusSchema` split); here we only
+// add the runtime schemas.
+/** Category of a notification (see {@link NotificationType}). */
+export const notificationTypeSchema = z.enum(
+	['job_assigned', 'job_updated', 'job_canceled', 'invite_accepted', 'role_changed', 'system'],
+	{ error: 'Choose a valid notification type.' },
+);
+
+/** Whether a notification has been read. */
+export const notificationReadStateSchema = z.enum(['unread', 'read'], {
+	error: 'Read state must be either unread or read.',
+});
+
+/**
+ * Shape used to mint a notification. Created server-side only (by the
+ * notification service reacting to domain events), so it carries no `accountId`
+ * or `userId` — the account comes from the request and the recipient is chosen
+ * by the service. `type` defaults to `system` for an unclassified message.
+ */
+export const createNotificationSchema = z.object({
+	type: notificationTypeSchema.default('system'),
+	title: requiredText('Title', 200),
+	body: optionalText('Body', 2000).default(''),
+	linkHref: optionalText('Link', 512).default(''),
+});
+export type CreateNotificationInput = z.infer<typeof createNotificationSchema>;
+
 // --- Customers ----------------------------------------------------------------
 
 /**
