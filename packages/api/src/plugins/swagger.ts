@@ -23,6 +23,7 @@ export default fp(
 					{ name: 'system', description: 'Health and readiness probes' },
 					{ name: 'auth', description: 'Registration, login, and identity' },
 					{ name: 'items', description: 'Owner-scoped item resources' },
+					{ name: 'notifications', description: 'Per-user notifications (the bell)' },
 				],
 			},
 			transform: jsonSchemaTransform,

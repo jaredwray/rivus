@@ -50,7 +50,7 @@ async function assertReferencesExist(
 
 export const jobRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
-	const { jobs } = app.deps;
+	const { jobs, notifier } = app.deps;
 
 	// Every job route requires a valid JWT.
 	app.addHook('onRequest', fastify.authenticate);
@@ -102,6 +102,13 @@ export const jobRoutes: FastifyPluginAsync = async (fastify) => {
 			const accountId = request.user.accountId as AccountId;
 			await assertReferencesExist(app, accountId, request.body);
 			const job = await jobs.create(accountId, request.body);
+			// Notify the assignee (if any, and not the creator) — best-effort.
+			await notifier.jobCreated({
+				accountId,
+				actorId: request.user.sub as UserId,
+				job,
+				logger: request.log,
+			});
 			return reply.code(201).send(job);
 		},
 	);
@@ -187,6 +194,14 @@ export const jobRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!job) {
 				throw app.httpErrors.notFound('Job not found');
 			}
+			// Tell the assignee about a reassignment, reschedule, or cancellation.
+			await notifier.jobUpdated({
+				accountId,
+				actorId: request.user.sub as UserId,
+				job,
+				changes: request.body,
+				logger: request.log,
+			});
 			return job;
 		},
 	);
@@ -203,13 +218,20 @@ export const jobRoutes: FastifyPluginAsync = async (fastify) => {
 			},
 		},
 		async (request, reply) => {
-			const deleted = await jobs.delete(
-				request.user.accountId as AccountId,
-				request.params.id as JobId,
-			);
-			if (!deleted) {
+			const accountId = request.user.accountId as AccountId;
+			const id = request.params.id as JobId;
+			// Read the job before deleting so its assignee can be notified.
+			const job = await jobs.findById(accountId, id);
+			if (!job) {
 				throw app.httpErrors.notFound('Job not found');
 			}
+			await jobs.delete(accountId, id);
+			await notifier.jobDeleted({
+				accountId,
+				actorId: request.user.sub as UserId,
+				job,
+				logger: request.log,
+			});
 			return reply.code(204).send(null);
 		},
 	);

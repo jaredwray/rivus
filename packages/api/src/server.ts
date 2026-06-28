@@ -10,12 +10,14 @@ import {
 	MongoItemRepository,
 	MongoJobRepository,
 	MongoMembershipRepository,
+	MongoNotificationRepository,
 	MongoOnboardingRepository,
 	MongoUserRepository,
 	MongoVerificationCodeRepository,
 } from './repositories/mongo';
 import { createFaqAnswerService } from './services/faq-answer';
 import { createFaqSimilarityService } from './services/faq-similarity';
+import { createNotificationService } from './services/notifications';
 import { createMailer } from './services/resend-mailer';
 
 /** Connect to Mongo, build the app with Mongo-backed repositories, and listen. */
@@ -23,6 +25,7 @@ export async function start(): Promise<void> {
 	const config = loadConfig();
 	await connectMongoose(config.MONGODB_URI);
 
+	const notifications = new MongoNotificationRepository();
 	const app = buildApp({
 		config,
 		users: new MongoUserRepository(),
@@ -34,8 +37,10 @@ export async function start(): Promise<void> {
 		faqs: new MongoFaqRepository(),
 		customers: new MongoCustomerRepository(),
 		jobs: new MongoJobRepository(),
+		notifications,
 		verificationCodes: new MongoVerificationCodeRepository(),
 		mailer: createMailer(config),
+		notifier: createNotificationService({ notifications }),
 		faqSimilarity: createFaqSimilarityService(config),
 		faqAnswer: createFaqAnswerService(config),
 		// Real readiness: run an actual query so "connected but unauthorized" reports

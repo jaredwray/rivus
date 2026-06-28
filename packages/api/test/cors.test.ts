@@ -6,6 +6,7 @@ import { SESSION_COOKIE } from '../src/plugins/auth';
 import { createInMemoryRepositories } from '../src/repositories/memory';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
+import { createNotificationService } from '../src/services/notifications';
 import { authHeader, RecordingMailer, signupOwner } from './helpers';
 
 /** Build an app with a specific CORS_ORIGIN so we can exercise both origin branches. */
@@ -19,6 +20,7 @@ function buildAppWithCors(corsOrigin: string): FastifyInstance {
 		} as NodeJS.ProcessEnv),
 		...repos,
 		mailer: new RecordingMailer(),
+		notifier: createNotificationService({ notifications: repos.notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
 		ping: async () => ({ ready: true }),
@@ -38,6 +40,7 @@ function buildProdApp(corsOrigin: string): FastifyInstance {
 		} as NodeJS.ProcessEnv),
 		...repos,
 		mailer: new RecordingMailer(),
+		notifier: createNotificationService({ notifications: repos.notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
 		ping: async () => ({ ready: true }),

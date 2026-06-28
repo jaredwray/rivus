@@ -23,7 +23,7 @@ const inviteIdParamsSchema = z.object({ inviteId: z.string().min(1) });
 
 export const memberRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
-	const { users, accounts, memberships, invites, mailer, config } = app.deps;
+	const { users, accounts, memberships, invites, mailer, notifier, config } = app.deps;
 
 	app.get(
 		'/',
@@ -185,6 +185,16 @@ export const memberRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!updated || !user) {
 				throw app.httpErrors.notFound('Member not found');
 			}
+			// Let the affected member know their role changed — best-effort.
+			const account = await accounts.findById(accountId);
+			await notifier.roleChanged({
+				accountId,
+				actorId: request.user.sub as UserId,
+				targetUserId,
+				role: updated.role,
+				accountName: account?.name ?? 'your team',
+				logger: request.log,
+			});
 			return toMember(user, updated);
 		},
 	);
