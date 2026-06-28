@@ -445,41 +445,56 @@ export default function ScheduleScreen() {
 			<View style={[styles.header, narrow && styles.headerNarrow]}>
 				<View style={styles.headerLeft}>
 					<View style={styles.titleRow}>
-						<Txt style={styles.title}>Schedule</Txt>
-						{view !== 'list' ? (
-							<View style={styles.dateNav}>
-								<Pressable
-									style={styles.navBtn}
-									onPress={() => setAnchor((current) => addDays(current, -navStep))}
-									accessibilityRole="button"
-									accessibilityLabel="Previous"
-									hitSlop={NAV_HIT_SLOP}
-								>
-									<Icon name="chevron-left" size={16} color={colors.textSub} />
-								</Pressable>
-								<Pressable style={styles.todayBtn} onPress={() => setAnchor(today)}>
-									<Txt style={styles.todayBtnTxt}>Today</Txt>
-								</Pressable>
-								<Pressable
-									style={styles.navBtn}
-									onPress={() => setAnchor((current) => addDays(current, navStep))}
-									accessibilityRole="button"
-									accessibilityLabel="Next"
-									hitSlop={NAV_HIT_SLOP}
-								>
-									<Icon name="chevron-right" size={16} color={colors.textSub} />
-								</Pressable>
-							</View>
-						) : null}
-						<Pressable
-							style={styles.addBtn}
-							onPress={() => openCreate(localDateKey(view === 'list' ? today : anchor), 540)}
-							accessibilityRole="button"
-							accessibilityLabel="New job"
-							hitSlop={NAV_HIT_SLOP}
-						>
-							<GradientMark size={36} radius={radii.md} icon="plus" iconSize={20} />
-						</Pressable>
+						{/* Keep the title and date nav together so the action button to their
+						    right is never split off or pushed to its own line. */}
+						<View style={styles.titleGroup}>
+							<Txt style={styles.title}>Schedule</Txt>
+							{view !== 'list' ? (
+								<View style={styles.dateNav}>
+									<Pressable
+										style={styles.navBtn}
+										onPress={() => setAnchor((current) => addDays(current, -navStep))}
+										accessibilityRole="button"
+										accessibilityLabel="Previous"
+										hitSlop={NAV_HIT_SLOP}
+									>
+										<Icon name="chevron-left" size={16} color={colors.textSub} />
+									</Pressable>
+									<Pressable style={styles.todayBtn} onPress={() => setAnchor(today)}>
+										<Txt style={styles.todayBtnTxt}>Today</Txt>
+									</Pressable>
+									<Pressable
+										style={styles.navBtn}
+										onPress={() => setAnchor((current) => addDays(current, navStep))}
+										accessibilityRole="button"
+										accessibilityLabel="Next"
+										hitSlop={NAV_HIT_SLOP}
+									>
+										<Icon name="chevron-right" size={16} color={colors.textSub} />
+									</Pressable>
+								</View>
+							) : null}
+						</View>
+						{narrow ? (
+							// Mobile: the title row is tight, so use the compact icon-only button.
+							<Pressable
+								style={styles.addBtn}
+								onPress={() => openCreate(localDateKey(view === 'list' ? today : anchor), 540)}
+								accessibilityRole="button"
+								accessibilityLabel="New job"
+								hitSlop={NAV_HIT_SLOP}
+							>
+								<GradientMark size={36} radius={radii.md} icon="plus" iconSize={20} />
+							</Pressable>
+						) : (
+							// Desktop: there's room for the full labelled button.
+							<GradientButton
+								label="New job"
+								icon="plus"
+								onPress={() => openCreate(localDateKey(view === 'list' ? today : anchor), 540)}
+								style={styles.addBtn}
+							/>
+						)}
 					</View>
 					<Txt style={styles.rangeLabel}>{view === 'list' ? 'Next 30 days' : rangeLabel}</Txt>
 				</View>
@@ -973,10 +988,19 @@ const styles = StyleSheet.create({
 	// full width so `headerRight` wraps its children instead of overflowing.
 	headerNarrow: { flexDirection: 'column', alignItems: 'stretch', gap: 14 },
 	headerLeft: { gap: 8 },
-	// Title, date nav and the create button share one row; the range label sits on
+	// The title group and the create button share one row; the range label sits on
 	// its own line beneath. On mobile the row stretches full width so the button
 	// lands at the far right of the title/nav row.
 	titleRow: { flexDirection: 'row', alignItems: 'center', gap: 16, flexWrap: 'wrap' },
+	// Title + date nav stay grouped; the group shrinks/wraps internally on tight
+	// widths so the action button keeps its place beside it instead of dropping.
+	titleGroup: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 16,
+		flexShrink: 1,
+		flexWrap: 'wrap',
+	},
 	title: { fontFamily: font.semibold, fontSize: 20 },
 	// Push the create button to the far right of the title row.
 	addBtn: { marginLeft: 'auto', borderRadius: radii.md },
