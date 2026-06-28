@@ -26,7 +26,7 @@ import { RivusWordmark } from '@/src/brand/RivusLogo';
 import { CompanySwitcher } from '@/src/components/CompanySwitcher';
 import { BrandGradient } from '@/src/components/Gradient';
 import { RivusChat } from '@/src/components/RivusChat';
-import { Avatar, Dot, Icon, RivusStatusChip, Txt } from '@/src/components/ui';
+import { Avatar, Icon, Txt } from '@/src/components/ui';
 import { installFocusRing } from '@/src/theme/focusRing';
 import {
 	colors,
@@ -292,7 +292,6 @@ function TopBar() {
 			</View>
 
 			<View style={styles.topbarRight}>
-				<RivusStatusChip label="Rivus is online" />
 				<Pressable style={styles.iconBtn}>
 					<Icon name="bell" size={18} color={colors.textSub} />
 					<View style={styles.bellDot} />
@@ -310,12 +309,6 @@ function CompactBar({ onOpenChat }: { onOpenChat: () => void }) {
 		<View style={[styles.compactBar, { paddingTop: insets.top + 12 }]}>
 			<HomeLink height={20} />
 			<View style={styles.compactRight}>
-				<View style={styles.compactStatus}>
-					<Dot color={colors.green} size={7} />
-					<Txt style={styles.compactStatusTxt} numberOfLines={1}>
-						Online
-					</Txt>
-				</View>
 				{/* Chat with Rivus — sits right before the bell and opens the agent chat
 				    full screen (the mobile layout has no floating chat launcher). */}
 				<Pressable
@@ -706,16 +699,6 @@ const styles = StyleSheet.create({
 		flexDirection: 'row',
 		alignItems: 'center',
 		gap: 14,
-	},
-	compactStatus: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: 7,
-	},
-	compactStatusTxt: {
-		fontFamily: font.semibold,
-		fontSize: 12,
-		color: '#cfd0dc',
 	},
 	compactIconBtn: {
 		width: 34,
