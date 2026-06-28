@@ -7,6 +7,7 @@ import { createInMemoryRepositories, type InMemoryRepositories } from '../src/re
 import type { InviteEmail, Mailer, VerificationEmail } from '../src/services/email';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
+import { createNotificationService } from '../src/services/notifications';
 import type { AppDeps } from '../src/types';
 
 /** A mailer that records every send so tests can assert on (and read) delivered email. */
@@ -39,6 +40,7 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		faqs,
 		customers,
 		jobs,
+		notifications,
 		verificationCodes,
 	} = createInMemoryRepositories();
 	const app = buildApp({
@@ -52,9 +54,13 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		faqs,
 		customers,
 		jobs,
+		notifications,
 		verificationCodes,
 		// A recording mailer by default so helpers can read back the emailed code.
 		mailer: new RecordingMailer(),
+		// A real notification service over the in-memory store, so route emission is
+		// exercised end-to-end in tests.
+		notifier: createNotificationService({ notifications }),
 		// Default to the no-op AI services so tests stay hermetic (no model/network).
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
@@ -84,6 +90,7 @@ export async function buildTestAppWithRepos(): Promise<{
 		faqs,
 		customers,
 		jobs,
+		notifications,
 		verificationCodes,
 	} = repos;
 	const app = buildApp({
@@ -97,8 +104,10 @@ export async function buildTestAppWithRepos(): Promise<{
 		faqs,
 		customers,
 		jobs,
+		notifications,
 		verificationCodes,
 		mailer: new RecordingMailer(),
+		notifier: createNotificationService({ notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
 		ping: async () => ({ ready: true }),

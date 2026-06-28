@@ -6,6 +6,7 @@ import {
 	type CreateFaqInput,
 	type CreateItemInput,
 	type CreateJobInput,
+	type CreateNotificationInput,
 	type Customer,
 	type CustomerId,
 	type Faq,
@@ -18,6 +19,8 @@ import {
 	type JobId,
 	type Membership,
 	type MembershipId,
+	type Notification,
+	type NotificationId,
 	normalizePagination,
 	pageToSkip,
 	type Role,
@@ -43,12 +46,14 @@ import type {
 	ListFaqsOptions,
 	ListItemsOptions,
 	ListJobsOptions,
+	ListNotificationsOptions,
 	MembershipRepository,
 	NewAccount,
 	NewInvite,
 	NewMembership,
 	NewUser,
 	NewVerificationCode,
+	NotificationRepository,
 	OnboardingRepository,
 	SignupInput,
 	SignupResult,
@@ -75,6 +80,7 @@ export interface InMemoryData {
 	faqs: Map<string, Faq>;
 	customers: Map<string, Customer>;
 	jobs: Map<string, Job>;
+	notifications: Map<string, Notification>;
 	/** Active one-time codes, keyed by normalized email (one per email). */
 	verificationCodes: Map<string, StoredVerificationCode>;
 }
@@ -89,6 +95,7 @@ export function createInMemoryData(): InMemoryData {
 		faqs: new Map(),
 		customers: new Map(),
 		jobs: new Map(),
+		notifications: new Map(),
 		verificationCodes: new Map(),
 	};
 }
@@ -755,6 +762,118 @@ export class InMemoryJobRepository implements JobRepository {
 	}
 }
 
+/** In-memory notification store, scoped by account and recipient user. */
+export class InMemoryNotificationRepository implements NotificationRepository {
+	constructor(private readonly data: InMemoryData) {}
+
+	async create(
+		accountId: AccountId,
+		userId: UserId,
+		input: CreateNotificationInput,
+	): Promise<Notification> {
+		const timestamp = now();
+		const notification: Notification = {
+			id: randomUUID() as NotificationId,
+			accountId,
+			userId,
+			type: input.type,
+			title: input.title,
+			body: input.body,
+			readState: 'unread',
+			linkHref: input.linkHref,
+			createdAt: timestamp,
+			updatedAt: timestamp,
+		};
+		this.data.notifications.set(notification.id, notification);
+		return structuredClone(notification);
+	}
+
+	/** This account+user's notifications, newest-first (insertion order reversed). */
+	private owned(accountId: AccountId, userId: UserId): Notification[] {
+		return [...this.data.notifications.values()]
+			.filter(
+				(notification) => notification.accountId === accountId && notification.userId === userId,
+			)
+			.reverse();
+	}
+
+	async list(
+		options: ListNotificationsOptions,
+	): Promise<{ notifications: Notification[]; total: number }> {
+		const owned = this.owned(options.accountId, options.userId).filter(
+			(notification) => !options.unreadOnly || notification.readState === 'unread',
+		);
+		const { pageSize } = normalizePagination(options.page, options.pageSize);
+		const skip = pageToSkip(options.page, options.pageSize);
+		return {
+			notifications: owned
+				.slice(skip, skip + pageSize)
+				.map((notification) => structuredClone(notification)),
+			total: owned.length,
+		};
+	}
+
+	async unreadCount(accountId: AccountId, userId: UserId): Promise<number> {
+		return this.owned(accountId, userId).filter(
+			(notification) => notification.readState === 'unread',
+		).length;
+	}
+
+	async findById(
+		accountId: AccountId,
+		userId: UserId,
+		id: NotificationId,
+	): Promise<Notification | null> {
+		const notification = this.data.notifications.get(id);
+		return notification && notification.accountId === accountId && notification.userId === userId
+			? structuredClone(notification)
+			: null;
+	}
+
+	async markRead(
+		accountId: AccountId,
+		userId: UserId,
+		id: NotificationId,
+	): Promise<Notification | null> {
+		const notification = this.data.notifications.get(id);
+		if (!notification || notification.accountId !== accountId || notification.userId !== userId) {
+			return null;
+		}
+		// Marking an already-read notification is a no-op that still returns it, so a
+		// double-tap doesn't 404.
+		const updated: Notification = { ...notification, readState: 'read', updatedAt: now() };
+		this.data.notifications.set(id, updated);
+		return structuredClone(updated);
+	}
+
+	async markAllRead(accountId: AccountId, userId: UserId): Promise<number> {
+		let changed = 0;
+		for (const notification of this.data.notifications.values()) {
+			if (
+				notification.accountId === accountId &&
+				notification.userId === userId &&
+				notification.readState === 'unread'
+			) {
+				this.data.notifications.set(notification.id, {
+					...notification,
+					readState: 'read',
+					updatedAt: now(),
+				});
+				changed += 1;
+			}
+		}
+		return changed;
+	}
+
+	async delete(accountId: AccountId, userId: UserId, id: NotificationId): Promise<boolean> {
+		const notification = this.data.notifications.get(id);
+		if (!notification || notification.accountId !== accountId || notification.userId !== userId) {
+			return false;
+		}
+		return this.data.notifications.delete(id);
+	}
+}
+
 export interface InMemoryRepositories {
 	data: InMemoryData;
 	users: InMemoryUserRepository;
@@ -765,6 +884,7 @@ export interface InMemoryRepositories {
 	faqs: InMemoryFaqRepository;
 	customers: InMemoryCustomerRepository;
 	jobs: InMemoryJobRepository;
+	notifications: InMemoryNotificationRepository;
 	verificationCodes: InMemoryVerificationCodeRepository;
 	onboarding: InMemoryOnboardingRepository;
 }
@@ -781,6 +901,7 @@ export function createInMemoryRepositories(
 	const faqs = new InMemoryFaqRepository(data);
 	const customers = new InMemoryCustomerRepository(data);
 	const jobs = new InMemoryJobRepository(data);
+	const notifications = new InMemoryNotificationRepository(data);
 	const verificationCodes = new InMemoryVerificationCodeRepository(data);
 	const onboarding = new InMemoryOnboardingRepository(users, accounts, memberships, invites);
 	return {
@@ -793,6 +914,7 @@ export function createInMemoryRepositories(
 		faqs,
 		customers,
 		jobs,
+		notifications,
 		verificationCodes,
 		onboarding,
 	};

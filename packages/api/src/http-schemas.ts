@@ -3,6 +3,8 @@ import {
 	faqStatusSchema,
 	itemStatusSchema,
 	jobStatusSchema,
+	notificationReadStateSchema,
+	notificationTypeSchema,
 	roleSchema,
 } from '@rivus/core';
 import { z } from 'zod';
@@ -206,6 +208,42 @@ export const jobListResponseSchema = z
 		meta: paginationMetaSchema,
 	})
 	.meta({ id: 'JobList' });
+
+export const notificationResponseSchema = z
+	.object({
+		id: z.string(),
+		accountId: z.string(),
+		userId: z.string(),
+		type: notificationTypeSchema,
+		title: z.string(),
+		body: z.string(),
+		readState: notificationReadStateSchema,
+		linkHref: z.string(),
+		createdAt: z.string(),
+		updatedAt: z.string(),
+	})
+	.meta({ id: 'Notification' });
+
+export const notificationListResponseSchema = z
+	.object({
+		data: z.array(notificationResponseSchema),
+		meta: paginationMetaSchema,
+	})
+	.meta({ id: 'NotificationList' });
+
+/** The number of unread notifications, for the bell badge. */
+export const unreadCountResponseSchema = z
+	.object({
+		unread: z.number().int(),
+	})
+	.meta({ id: 'NotificationUnreadCount' });
+
+/** Result of marking every notification read: how many were changed. */
+export const markAllReadResponseSchema = z
+	.object({
+		updated: z.number().int(),
+	})
+	.meta({ id: 'NotificationMarkAllRead' });
 
 /** The jobs that would overlap a proposed booking for one team member. */
 export const jobConflictResponseSchema = z

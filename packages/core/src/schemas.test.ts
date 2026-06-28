@@ -8,11 +8,14 @@ import {
 	createFaqSchema,
 	createItemSchema,
 	createJobSchema,
+	createNotificationSchema,
 	inviteMemberSchema,
 	jobConflictQuerySchema,
 	jobListQuerySchema,
 	jobStatusSchema,
 	loginSchema,
+	notificationReadStateSchema,
+	notificationTypeSchema,
 	paginationQuerySchema,
 	signupSchema,
 	updateAccountSchema,
@@ -227,6 +230,57 @@ describe('updateItemSchema', () => {
 
 	it('rejects an empty update', () => {
 		expect(() => updateItemSchema.parse({})).toThrow();
+	});
+});
+
+describe('createNotificationSchema', () => {
+	it('applies defaults for type, body, and link', () => {
+		expect(createNotificationSchema.parse({ title: 'Heads up' })).toEqual({
+			type: 'system',
+			title: 'Heads up',
+			body: '',
+			linkHref: '',
+		});
+	});
+
+	it('keeps a supplied type, body, and link', () => {
+		expect(
+			createNotificationSchema.parse({
+				type: 'job_assigned',
+				title: 'New job',
+				body: 'Water heater install',
+				linkHref: '/schedule',
+			}),
+		).toMatchObject({ type: 'job_assigned', linkHref: '/schedule' });
+	});
+
+	it('requires a title', () => {
+		const result = createNotificationSchema.safeParse({ body: 'orphan' });
+		expect(result.success).toBe(false);
+		expect(result.error?.issues[0]?.message).toBe('Title is required.');
+	});
+
+	it('rejects an unknown type', () => {
+		expect(() => createNotificationSchema.parse({ title: 'x', type: 'spam' })).toThrow();
+	});
+});
+
+describe('notificationReadStateSchema', () => {
+	it('accepts the two read states', () => {
+		expect(notificationReadStateSchema.parse('unread')).toBe('unread');
+		expect(notificationReadStateSchema.parse('read')).toBe('read');
+	});
+
+	it('rejects anything else with a plain-language message', () => {
+		const result = notificationReadStateSchema.safeParse('seen');
+		expect(result.success).toBe(false);
+		expect(result.error?.issues[0]?.message).toBe('Read state must be either unread or read.');
+	});
+});
+
+describe('notificationTypeSchema', () => {
+	it('rejects an unknown category', () => {
+		expect(() => notificationTypeSchema.parse('promo')).toThrow();
 	});
 });
 

@@ -9,6 +9,7 @@ import type {
 	ItemRepository,
 	JobRepository,
 	MembershipRepository,
+	NotificationRepository,
 	OnboardingRepository,
 	UserRepository,
 	VerificationCodeRepository,
@@ -16,6 +17,7 @@ import type {
 import type { Mailer } from './services/email';
 import type { FaqAnswerService } from './services/faq-answer';
 import type { FaqSimilarityService } from './services/faq-similarity';
+import type { NotificationService } from './services/notifications';
 
 /** Result of a readiness check: whether dependencies are usable, and why not. */
 export interface ReadinessResult {
@@ -37,10 +39,14 @@ export interface AppDeps {
 	customers: CustomerRepository;
 	/** Scheduled jobs (appointments) on the account's calendar. */
 	jobs: JobRepository;
+	/** Per-user notifications (the bell). */
+	notifications: NotificationRepository;
 	/** Stores one-time sign-in codes for passwordless auth. */
 	verificationCodes: VerificationCodeRepository;
 	/** Sends transactional email (invitations and sign-in codes). */
 	mailer: Mailer;
+	/** Turns domain events (job assigned, invite accepted, …) into notifications. */
+	notifier: NotificationService;
 	/** AI check for near-duplicate FAQs (a no-op when no provider key is set). */
 	faqSimilarity: FaqSimilarityService;
 	/** AI answering of questions from the knowledge base (deterministic when no key is set). */

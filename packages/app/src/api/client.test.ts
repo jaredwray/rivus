@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import type { AccountId, CustomerId, FaqId, JobId } from '@rivus/core';
+import type { AccountId, CustomerId, FaqId, JobId, NotificationId } from '@rivus/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, createApiClient, ValidationError } from './client';
 
@@ -1214,6 +1214,140 @@ describe('createApiClient', () => {
 
 			const [url] = fetchMock.mock.calls[0] as [string];
 			expect(url).toBe(`${BASE}/v1/admin/companies/a%2Fb%20c/switch`);
+		});
+	});
+
+	describe('notifications', () => {
+		function makeNotification(overrides: Record<string, unknown> = {}) {
+			const now = new Date().toISOString();
+			return {
+				id: faker.string.uuid(),
+				accountId: faker.string.uuid(),
+				userId: faker.string.uuid(),
+				type: 'system' as const,
+				title: faker.lorem.sentence(),
+				body: faker.lorem.sentence(),
+				readState: 'unread' as const,
+				linkHref: '',
+				createdAt: now,
+				updatedAt: now,
+				...overrides,
+			};
+		}
+
+		function notificationPage(notifications: ReturnType<typeof makeNotification>[]) {
+			return {
+				data: notifications,
+				meta: {
+					page: 1,
+					pageSize: 20,
+					total: notifications.length,
+					totalPages: 1,
+					hasNextPage: false,
+					hasPreviousPage: false,
+				},
+			};
+		}
+
+		it('lists notifications with the bearer token and default pagination', async () => {
+			const notifications = [makeNotification(), makeNotification()];
+			fetchMock.mockResolvedValueOnce(jsonResponse(notificationPage(notifications)));
+
+			const client = createApiClient(BASE, fetchMock);
+			const token = faker.string.alphanumeric(32);
+			const result = await client.listNotifications(token);
+
+			expect(result.data).toEqual(notifications);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/notifications?page=1&pageSize=20`);
+			expect(init.headers).toMatchObject({ Authorization: `Bearer ${token}` });
+		});
+
+		it('forwards pagination and the unread filter', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(notificationPage([])));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.listNotifications('token', { page: 2, pageSize: 50, unread: true });
+
+			const [url] = fetchMock.mock.calls[0] as [string];
+			expect(url).toBe(`${BASE}/v1/notifications?page=2&pageSize=50&unread=true`);
+		});
+
+		it('omits the unread param when not filtering', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(notificationPage([])));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.listNotifications('token', { unread: false });
+
+			const [url] = fetchMock.mock.calls[0] as [string];
+			expect(url).toBe(`${BASE}/v1/notifications?page=1&pageSize=20`);
+		});
+
+		it('returns the unread count as a number', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ unread: 7 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const count = await client.unreadNotificationCount('token');
+
+			expect(count).toBe(7);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/notifications/unread-count`);
+			expect(init.method).toBe('GET');
+		});
+
+		it('marks one notification read and returns it', async () => {
+			const notification = makeNotification({ readState: 'read' });
+			fetchMock.mockResolvedValueOnce(jsonResponse(notification));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.markNotificationRead('owner-token', 'a/b c' as NotificationId);
+
+			expect(result.readState).toBe('read');
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/notifications/a%2Fb%20c/read`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer owner-token' });
+		});
+
+		it('marks all notifications read and returns the count changed', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ updated: 4 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const updated = await client.markAllNotificationsRead('token');
+
+			expect(updated).toBe(4);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/notifications/read-all`);
+			expect(init.method).toBe('POST');
+		});
+
+		it('dismisses a notification and resolves on 204', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(undefined, { status: 204 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.dismissNotification('token', 'notif-1' as NotificationId),
+			).resolves.toBeUndefined();
+
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/notifications/notif-1`);
+			expect(init.method).toBe('DELETE');
+		});
+
+		it('throws an ApiError when dismissing a missing notification (404)', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse(
+					{ error: 'Not Found', message: 'Notification not found', statusCode: 404 },
+					{ status: 404 },
+				),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client
+				.dismissNotification('token', 'missing' as NotificationId)
+				.catch((e) => e);
+			expect(error).toBeInstanceOf(ApiError);
+			expect(error.status).toBe(404);
 		});
 	});
 

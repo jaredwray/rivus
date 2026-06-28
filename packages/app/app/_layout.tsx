@@ -27,6 +27,8 @@ import { CompanySwitcher } from '@/src/components/CompanySwitcher';
 import { BrandGradient } from '@/src/components/Gradient';
 import { RivusChat } from '@/src/components/RivusChat';
 import { Avatar, Icon, Txt } from '@/src/components/ui';
+import { NotificationsBell } from '@/src/notifications/NotificationsBell';
+import { NotificationsProvider } from '@/src/notifications/NotificationsContext';
 import { installFocusRing } from '@/src/theme/focusRing';
 import {
 	colors,
@@ -133,7 +135,11 @@ function Gate() {
 	if (onAuthRoute) {
 		return <Redirect href="/" />;
 	}
-	return <Shell />;
+	return (
+		<NotificationsProvider>
+			<Shell />
+		</NotificationsProvider>
+	);
 }
 
 function Shell() {
@@ -291,10 +297,7 @@ function TopBar() {
 			</View>
 
 			<View style={styles.topbarRight}>
-				<Pressable style={styles.iconBtn}>
-					<Icon name="bell" size={18} color={colors.textSub} />
-					<View style={styles.bellDot} />
-				</Pressable>
+				<NotificationsBell variant="topbar" />
 			</View>
 		</View>
 	);
@@ -319,15 +322,7 @@ function CompactBar({ onOpenChat }: { onOpenChat: () => void }) {
 				>
 					<Feather name="message-circle" size={18} color="#cfd0dc" />
 				</Pressable>
-				<Pressable
-					style={styles.compactIconBtn}
-					accessibilityRole="button"
-					accessibilityLabel="Notifications"
-					hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
-				>
-					<Feather name="bell" size={18} color="#cfd0dc" />
-					<View style={styles.bellDot} />
-				</Pressable>
+				<NotificationsBell variant="compact" />
 			</View>
 		</View>
 	);
@@ -663,28 +658,6 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		gap: 14,
 	},
-	iconBtn: {
-		width: 38,
-		height: 38,
-		borderRadius: radii.md,
-		borderWidth: 1,
-		borderColor: colors.borderField,
-		backgroundColor: colors.surface,
-		alignItems: 'center',
-		justifyContent: 'center',
-	},
-	bellDot: {
-		position: 'absolute',
-		top: 8,
-		right: 9,
-		width: 7,
-		height: 7,
-		borderRadius: 4,
-		backgroundColor: colors.red,
-		borderWidth: 1.5,
-		borderColor: colors.surface,
-	},
-
 	// Compact (narrow) bar
 	compactBar: {
 		flexDirection: 'row',

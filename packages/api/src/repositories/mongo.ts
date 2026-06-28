@@ -5,6 +5,7 @@ import {
 	type CreateFaqInput,
 	type CreateItemInput,
 	type CreateJobInput,
+	type CreateNotificationInput,
 	type Customer,
 	type CustomerId,
 	type Faq,
@@ -17,6 +18,8 @@ import {
 	type JobId,
 	type Membership,
 	type MembershipId,
+	type Notification,
+	type NotificationId,
 	normalizePagination,
 	pageToSkip,
 	type Role,
@@ -34,6 +37,7 @@ import { type InviteDocument, InviteModel } from '../db/models/invite.model';
 import { type ItemDocument, ItemModel } from '../db/models/item.model';
 import { type JobDocument, JobModel } from '../db/models/job.model';
 import { type MembershipDocument, MembershipModel } from '../db/models/membership.model';
+import { type NotificationDocument, NotificationModel } from '../db/models/notification.model';
 import { type UserDocument, UserModel } from '../db/models/user.model';
 import {
 	type VerificationCodeDocument,
@@ -55,12 +59,14 @@ import type {
 	ListFaqsOptions,
 	ListItemsOptions,
 	ListJobsOptions,
+	ListNotificationsOptions,
 	MembershipRepository,
 	NewAccount,
 	NewInvite,
 	NewMembership,
 	NewUser,
 	NewVerificationCode,
+	NotificationRepository,
 	OnboardingRepository,
 	SignupInput,
 	SignupResult,
@@ -183,6 +189,21 @@ function mapFaq(doc: HydratedDocument<FaqDocument>): Faq {
 		answer: doc.answer,
 		category: doc.category,
 		status: doc.status,
+		createdAt: doc.createdAt.toISOString(),
+		updatedAt: doc.updatedAt.toISOString(),
+	};
+}
+
+function mapNotification(doc: HydratedDocument<NotificationDocument>): Notification {
+	return {
+		id: doc._id.toString() as NotificationId,
+		accountId: doc.accountId.toString() as AccountId,
+		userId: doc.userId.toString() as UserId,
+		type: doc.type,
+		title: doc.title,
+		body: doc.body,
+		readState: doc.readState,
+		linkHref: doc.linkHref,
 		createdAt: doc.createdAt.toISOString(),
 		updatedAt: doc.updatedAt.toISOString(),
 	};
@@ -941,5 +962,127 @@ export class MongoJobRepository implements JobRepository {
 		return docs
 			.filter((doc) => doc.startAt.getTime() + doc.durationMinutes * 60_000 > windowStartMs)
 			.map(mapJob);
+	}
+}
+
+export class MongoNotificationRepository implements NotificationRepository {
+	async create(
+		accountId: AccountId,
+		userId: UserId,
+		input: CreateNotificationInput,
+	): Promise<Notification> {
+		const doc = await NotificationModel.create({
+			accountId: new Types.ObjectId(accountId),
+			userId: new Types.ObjectId(userId),
+			...input,
+		});
+		return mapNotification(doc);
+	}
+
+	/** Filter pinned to one account+recipient, plus the optional unread narrowing. */
+	private scopedFilter(
+		accountId: AccountId,
+		userId: UserId,
+		unreadOnly = false,
+	): Record<string, unknown> {
+		const filter: Record<string, unknown> = {
+			accountId: new Types.ObjectId(accountId),
+			userId: new Types.ObjectId(userId),
+		};
+		if (unreadOnly) {
+			filter.readState = 'unread';
+		}
+		return filter;
+	}
+
+	async list(
+		options: ListNotificationsOptions,
+	): Promise<{ notifications: Notification[]; total: number }> {
+		if (!Types.ObjectId.isValid(options.accountId) || !Types.ObjectId.isValid(options.userId)) {
+			return { notifications: [], total: 0 };
+		}
+		const { pageSize } = normalizePagination(options.page, options.pageSize);
+		const skip = pageToSkip(options.page, options.pageSize);
+		const filter = this.scopedFilter(options.accountId, options.userId, options.unreadOnly);
+		const [docs, total] = await Promise.all([
+			NotificationModel.find(filter)
+				.sort({ createdAt: -1, _id: -1 })
+				.skip(skip)
+				.limit(pageSize)
+				.exec(),
+			NotificationModel.countDocuments(filter).exec(),
+		]);
+		return { notifications: docs.map(mapNotification), total };
+	}
+
+	async unreadCount(accountId: AccountId, userId: UserId): Promise<number> {
+		if (!Types.ObjectId.isValid(accountId) || !Types.ObjectId.isValid(userId)) {
+			return 0;
+		}
+		return NotificationModel.countDocuments(this.scopedFilter(accountId, userId, true)).exec();
+	}
+
+	async findById(
+		accountId: AccountId,
+		userId: UserId,
+		id: NotificationId,
+	): Promise<Notification | null> {
+		if (
+			!Types.ObjectId.isValid(id) ||
+			!Types.ObjectId.isValid(accountId) ||
+			!Types.ObjectId.isValid(userId)
+		) {
+			return null;
+		}
+		const doc = await NotificationModel.findOne({
+			_id: id,
+			...this.scopedFilter(accountId, userId),
+		}).exec();
+		return doc ? mapNotification(doc) : null;
+	}
+
+	async markRead(
+		accountId: AccountId,
+		userId: UserId,
+		id: NotificationId,
+	): Promise<Notification | null> {
+		if (
+			!Types.ObjectId.isValid(id) ||
+			!Types.ObjectId.isValid(accountId) ||
+			!Types.ObjectId.isValid(userId)
+		) {
+			return null;
+		}
+		const doc = await NotificationModel.findOneAndUpdate(
+			{ _id: id, ...this.scopedFilter(accountId, userId) },
+			{ $set: { readState: 'read' } },
+			{ new: true },
+		).exec();
+		return doc ? mapNotification(doc) : null;
+	}
+
+	async markAllRead(accountId: AccountId, userId: UserId): Promise<number> {
+		if (!Types.ObjectId.isValid(accountId) || !Types.ObjectId.isValid(userId)) {
+			return 0;
+		}
+		const result = await NotificationModel.updateMany(this.scopedFilter(accountId, userId, true), {
+			$set: { readState: 'read' },
+		}).exec();
+		return result.modifiedCount;
+	}
+
+	async delete(accountId: AccountId, userId: UserId, id: NotificationId): Promise<boolean> {
+		if (
+			!Types.ObjectId.isValid(id) ||
+			!Types.ObjectId.isValid(accountId) ||
+			!Types.ObjectId.isValid(userId)
+		) {
+			return false;
+		}
+		const result = await NotificationModel.deleteOne({
+			_id: id,
+			...this.scopedFilter(accountId, userId),
+		}).exec();
+		return result.deletedCount === 1;
 	}
 }

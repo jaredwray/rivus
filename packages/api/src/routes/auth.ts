@@ -33,7 +33,8 @@ const SLUG_RETRY_LIMIT = 5;
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
-	const { users, accounts, memberships, invites, onboarding, verificationCodes, mailer } = app.deps;
+	const { users, accounts, memberships, invites, onboarding, verificationCodes, mailer, notifier } =
+		app.deps;
 
 	/**
 	 * Deliver a code without blocking the response on it. Decoupling delivery keeps
@@ -299,6 +300,14 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 				accountId: account.id,
 				role: invite.role,
 				inviteId: invite.id,
+			});
+			// Let the member who sent the invite know it was accepted — best-effort.
+			await notifier.inviteAccepted({
+				accountId: account.id,
+				inviterId: invite.invitedBy,
+				memberName: user.name,
+				accountName: account.name,
+				logger: request.log,
 			});
 			const token = await issueSession(app, reply, {
 				sub: user.id,

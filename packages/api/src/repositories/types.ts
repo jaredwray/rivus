@@ -6,6 +6,7 @@ import type {
 	CreateFaqInput,
 	CreateItemInput,
 	CreateJobInput,
+	CreateNotificationInput,
 	Customer,
 	CustomerId,
 	Faq,
@@ -18,6 +19,8 @@ import type {
 	JobId,
 	JobStatus,
 	Membership,
+	Notification,
+	NotificationId,
 	Role,
 	UpdateCustomerInput,
 	UpdateFaqInput,
@@ -288,4 +291,44 @@ export interface JobRepository {
 	delete(accountId: AccountId, id: JobId): Promise<boolean>;
 	/** Jobs overlapping a window for one assignee (for double-booking checks). */
 	findOverlapping(options: FindOverlappingJobsOptions): Promise<Job[]>;
+}
+
+/**
+ * Options for {@link NotificationRepository.list}: a page of one user's
+ * notifications within an account, optionally narrowed to the unread ones.
+ * Results are ordered newest-first.
+ */
+export interface ListNotificationsOptions {
+	accountId: AccountId;
+	userId: UserId;
+	page: number;
+	pageSize: number;
+	/** When true, only unread notifications are returned. */
+	unreadOnly: boolean;
+}
+
+/**
+ * Per-user notifications, scoped by both account and recipient. Every method
+ * takes the `(accountId, userId)` pair so one member can never read or mutate
+ * another's notifications — the same isolation the account-scoped repositories
+ * enforce, with the recipient added.
+ */
+export interface NotificationRepository {
+	/** Mint a notification addressed to `userId` within `accountId`. */
+	create(
+		accountId: AccountId,
+		userId: UserId,
+		input: CreateNotificationInput,
+	): Promise<Notification>;
+	list(
+		options: ListNotificationsOptions,
+	): Promise<{ notifications: Notification[]; total: number }>;
+	/** How many of the user's notifications are unread. */
+	unreadCount(accountId: AccountId, userId: UserId): Promise<number>;
+	findById(accountId: AccountId, userId: UserId, id: NotificationId): Promise<Notification | null>;
+	/** Mark one notification read; returns it, or null when it isn't the user's. */
+	markRead(accountId: AccountId, userId: UserId, id: NotificationId): Promise<Notification | null>;
+	/** Mark every unread notification read; returns how many were changed. */
+	markAllRead(accountId: AccountId, userId: UserId): Promise<number>;
+	delete(accountId: AccountId, userId: UserId, id: NotificationId): Promise<boolean>;
 }
