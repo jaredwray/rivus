@@ -151,7 +151,10 @@ export default function HomeScreen() {
 
 	const todayLabel = useMemo(() => formatDayLabel(new Date()), []);
 	// Greet by first name, falling back to a plain greeting before the session loads.
-	const firstName = useMemo(() => session?.user.name?.trim().split(/\s+/)[0] ?? '', [session]);
+	const firstName = useMemo(
+		() => (session ? session.user.name.trim().split(/\s+/)[0] : ''),
+		[session],
+	);
 	const bookedCount = todayRows.length;
 	const pipeline = useMemo(
 		() =>
