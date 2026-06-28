@@ -51,6 +51,7 @@ import {
 	weekDays,
 	weekRange,
 } from '@/src/schedule/datetime';
+import { defaultScheduleView, type ScheduleView } from '@/src/schedule/view';
 import { colors, font, radii, SIDEBAR_BREAKPOINT, SIDEBAR_WIDTH } from '@/src/theme/tokens';
 
 const GUTTER = 58;
@@ -59,8 +60,6 @@ const MIN_DAY_WIDTH = 132;
 // without changing their visual size.
 const NAV_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 };
 const CLOSE_HIT_SLOP = { top: 13, bottom: 13, left: 13, right: 13 };
-
-type ScheduleView = 'week' | 'day' | 'list';
 
 /** Categorical colors for assignee lanes (not status — these just tell techs apart). */
 const ASSIGNEE_TONES = [
@@ -124,7 +123,13 @@ export default function ScheduleScreen() {
 	// (and wrap its own children) instead of overflowing off the right edge.
 	const narrow = width < SIDEBAR_BREAKPOINT;
 
-	const [view, setView] = useState<ScheduleView>('week');
+	// Open on the day view on the mobile layout (the week is too cramped on a phone)
+	// and on the week view when the sidebar layout has room. Only a manual choice lives
+	// in state; until then the view derives from the current width, so the static-web
+	// first paint (width 0 before hydration) and later device rotation both resolve
+	// correctly instead of latching to the mount-time default. Picking a view sticks.
+	const [manualView, setView] = useState<ScheduleView | null>(null);
+	const view = manualView ?? defaultScheduleView(width);
 	const [anchor, setAnchor] = useState<Date>(() => startOfDay(new Date()));
 	const [jobs, setJobs] = useState<Job[]>([]);
 	const [customers, setCustomers] = useState<Customer[]>([]);
