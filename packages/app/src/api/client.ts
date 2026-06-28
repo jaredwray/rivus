@@ -8,6 +8,7 @@ import {
 	type CustomerId,
 	createCustomerSchema,
 	createFaqSchema,
+	createJobSchema,
 	type Faq,
 	type FaqId,
 	faqSimilarityQuerySchema,
@@ -17,6 +18,12 @@ import {
 	type ItemId,
 	inviteMemberSchema,
 	itemStatusSchema,
+	type Job,
+	type JobId,
+	type JobListQuery,
+	jobConflictQuerySchema,
+	jobListQuerySchema,
+	jobStatusSchema,
 	type LoginInput,
 	loginSchema,
 	type PaginationMeta,
@@ -28,11 +35,13 @@ import {
 	type UpdateAccountInput,
 	type UpdateCustomerInput,
 	type UpdateFaqInput,
+	type UpdateJobInput,
 	type User,
 	type UserId,
 	updateAccountSchema,
 	updateCustomerSchema,
 	updateFaqSchema,
+	updateJobSchema,
 	type VerifyCodeInput,
 	verifyCodeSchema,
 } from '@rivus/core';
@@ -54,12 +63,20 @@ export type CreateFaqBody = z.input<typeof createFaqSchema>;
  */
 export type CreateCustomerBody = z.input<typeof createCustomerSchema>;
 
+/**
+ * createJob accepts the schema's *input*: only `title` and `startAt` are
+ * required; every other field (assignee, customer, duration, status, …) has a
+ * schema default the API fills, so callers may omit them.
+ */
+export type CreateJobBody = z.input<typeof createJobSchema>;
+
 // `@rivus/core` brands its ids so a user id can't be passed where an item id is
 // expected. The wire format is a plain string; these helpers validate as strings
 // while preserving the brand in the inferred type.
 const itemId = () => z.string().min(1) as unknown as z.ZodType<ItemId>;
 const faqId = () => z.string().min(1) as unknown as z.ZodType<FaqId>;
 const customerId = () => z.string().min(1) as unknown as z.ZodType<CustomerId>;
+const jobId = () => z.string().min(1) as unknown as z.ZodType<JobId>;
 const accountId = () => z.string().min(1) as unknown as z.ZodType<AccountId>;
 const userId = () => z.string().min(1) as unknown as z.ZodType<UserId>;
 
@@ -282,6 +299,48 @@ export interface CustomerListResponse {
 	meta: PaginationMeta;
 }
 
+const jobResponseSchema = z.object({
+	id: jobId(),
+	accountId: accountId(),
+	customerId: z.string(),
+	assignedUserId: z.string(),
+	title: z.string(),
+	status: jobStatusSchema,
+	startAt: z.string(),
+	durationMinutes: z.number().int(),
+	address: z.string(),
+	notes: z.string(),
+	estimatedValue: z.number().int(),
+	createdAt: z.string(),
+	updatedAt: z.string(),
+}) satisfies z.ZodType<Job>;
+
+const jobListResponseSchema = z.object({
+	data: z.array(jobResponseSchema),
+	meta: paginationMetaSchema,
+});
+
+export interface JobListResponse {
+	data: Job[];
+	meta: PaginationMeta;
+}
+
+const jobConflictsResponseSchema = z.object({
+	conflicts: z.array(jobResponseSchema),
+});
+
+/** Inputs for {@link RivusApiClient.getJobConflicts} (the double-booking pre-check). */
+export interface JobConflictQueryInput {
+	assignedUserId: string;
+	startAt: string;
+	durationMinutes?: number;
+	/** Omit the job being edited from its own conflict check. */
+	excludeJobId?: string;
+}
+
+/** Query for {@link RivusApiClient.listJobs}: pagination plus calendar filters. */
+export type JobListQueryInput = Partial<JobListQuery>;
+
 const faqSimilarityResponseSchema = z.object({
 	match: faqResponseSchema.nullable(),
 	reason: z.string(),
@@ -386,6 +445,21 @@ export interface RivusApiClient {
 	updateCustomer(token: string, id: CustomerId, input: UpdateCustomerInput): Promise<Customer>;
 	/** Delete one of the account's customers. */
 	deleteCustomer(token: string, id: CustomerId): Promise<void>;
+	/** List the account's scheduled jobs, optionally filtered to a calendar window. */
+	listJobs(token: string, query?: JobListQueryInput): Promise<JobListResponse>;
+	/** Schedule a job for the account. */
+	createJob(token: string, input: CreateJobBody): Promise<Job>;
+	/** Fetch one of the account's jobs. */
+	getJob(token: string, id: JobId): Promise<Job>;
+	/** Update or reschedule one of the account's jobs. */
+	updateJob(token: string, id: JobId, input: UpdateJobInput): Promise<Job>;
+	/** Delete one of the account's jobs. */
+	deleteJob(token: string, id: JobId): Promise<void>;
+	/**
+	 * Check whether a proposed booking would double-book the assignee. Returns the
+	 * overlapping jobs (empty when the slot is free).
+	 */
+	getJobConflicts(token: string, query: JobConflictQueryInput): Promise<{ conflicts: Job[] }>;
 	/**
 	 * List/search every company, for the staff company switcher. Restricted to Rivus
 	 * staff server-side (a regular customer gets 403).
@@ -625,6 +699,79 @@ export function createApiClient(
 			});
 		},
 
+		async listJobs(token: string, query?: JobListQueryInput) {
+			const parsed = parseInput(jobListQuerySchema, query ?? {});
+			const params = new URLSearchParams({
+				page: String(parsed.page),
+				pageSize: String(parsed.pageSize),
+			});
+			// Append only the filters that were actually supplied, so an unfiltered
+			// call stays `?page=&pageSize=` and the API returns the whole list.
+			if (parsed.from) {
+				params.set('from', parsed.from);
+			}
+			if (parsed.to) {
+				params.set('to', parsed.to);
+			}
+			if (parsed.assignedUserId) {
+				params.set('assignedUserId', parsed.assignedUserId);
+			}
+			if (parsed.status) {
+				params.set('status', parsed.status);
+			}
+			if (parsed.customerId) {
+				params.set('customerId', parsed.customerId);
+			}
+			return request(`/v1/jobs?${params.toString()}`, jobListResponseSchema, {
+				method: 'GET',
+				headers: authHeaders(token),
+			});
+		},
+
+		async createJob(token: string, input: CreateJobBody) {
+			const payload = parseInput(createJobSchema, input);
+			return request('/v1/jobs', jobResponseSchema, jsonInit('POST', payload, token));
+		},
+
+		getJob(token: string, id: JobId) {
+			return request(`/v1/jobs/${encodeURIComponent(id)}`, jobResponseSchema, {
+				method: 'GET',
+				headers: authHeaders(token),
+			});
+		},
+
+		async updateJob(token: string, id: JobId, input: UpdateJobInput) {
+			const payload = parseInput(updateJobSchema, input);
+			return request(
+				`/v1/jobs/${encodeURIComponent(id)}`,
+				jobResponseSchema,
+				jsonInit('PATCH', payload, token),
+			);
+		},
+
+		async deleteJob(token: string, id: JobId) {
+			await request(`/v1/jobs/${encodeURIComponent(id)}`, noContentSchema, {
+				method: 'DELETE',
+				headers: authHeaders(token),
+			});
+		},
+
+		async getJobConflicts(token: string, query: JobConflictQueryInput) {
+			const parsed = parseInput(jobConflictQuerySchema, query);
+			const params = new URLSearchParams({
+				assignedUserId: parsed.assignedUserId,
+				startAt: parsed.startAt,
+				durationMinutes: String(parsed.durationMinutes),
+			});
+			if (parsed.excludeJobId) {
+				params.set('excludeJobId', parsed.excludeJobId);
+			}
+			return request(`/v1/jobs/conflicts?${params.toString()}`, jobConflictsResponseSchema, {
+				method: 'GET',
+				headers: authHeaders(token),
+			});
+		},
+
 		async listCompanies(token: string, query?: CompanyListQuery) {
 			const { page, pageSize } = parseInput(paginationQuerySchema, {
 				page: query?.page,
@@ -659,4 +806,4 @@ function safeJsonParse(raw: string): unknown {
 	}
 }
 
-export type { Account, Customer, Faq, Item, PaginationMeta, Role, User };
+export type { Account, Customer, Faq, Item, Job, PaginationMeta, Role, User };

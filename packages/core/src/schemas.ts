@@ -304,3 +304,102 @@ export const paginationQuerySchema = z.object({
 		.default(20),
 });
 export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
+
+// --- Jobs (scheduling) --------------------------------------------------------
+
+/** Every state a scheduled job can be in (see {@link JobStatus} for the order). */
+export const jobStatusSchema = z.enum(
+	['scheduled', 'confirmed', 'in_progress', 'completed', 'canceled'],
+	{ error: 'Choose a valid job status.' },
+);
+
+/**
+ * A scheduled instant: an ISO-8601 date-time in UTC (a trailing `Z`, no offset),
+ * e.g. `2026-06-24T21:00:00.000Z`. Clients build it with `new Date(...).toISOString()`,
+ * so storage is always a single canonical instant — chronological string sort and
+ * cross-row comparisons stay correct regardless of the caller's local time zone.
+ */
+export const jobStartSchema = z.iso.datetime({
+	error: 'Enter a valid date and time.',
+});
+
+/** Duration in whole minutes, from a single minute up to a full day. */
+const durationMinutesSchema = z
+	.number({ error: 'Duration must be a number of minutes.' })
+	.int({ error: 'Duration must be a whole number of minutes.' })
+	.min(1, { error: 'Duration must be at least 1 minute.' })
+	.max(1440, { error: 'Duration must be 24 hours or less.' });
+
+/**
+ * An optional reference to another record by id (customer, team member). Empty
+ * string means "none"; a non-empty value's existence is enforced server-side.
+ */
+const optionalRefSchema = optionalText('Reference', 128);
+
+export const createJobSchema = z.object({
+	title: requiredText('Service', 160),
+	customerId: optionalRefSchema.default(''),
+	assignedUserId: optionalRefSchema.default(''),
+	startAt: jobStartSchema,
+	durationMinutes: durationMinutesSchema.default(60),
+	status: jobStatusSchema.default('scheduled'),
+	address: addressSchema.default(''),
+	notes: optionalText('Notes', 2000).default(''),
+	estimatedValue: moneyCents('Estimated value').default(0),
+});
+export type CreateJobInput = z.infer<typeof createJobSchema>;
+
+/**
+ * Every field optional, but at least one must be present — mirrors
+ * {@link updateItemSchema}. No `.default()`s (unlike create) so a partial update
+ * only touches the fields the caller actually sent.
+ */
+export const updateJobSchema = z
+	.object({
+		title: requiredText('Service', 160).optional(),
+		customerId: optionalRefSchema.optional(),
+		assignedUserId: optionalRefSchema.optional(),
+		startAt: jobStartSchema.optional(),
+		durationMinutes: durationMinutesSchema.optional(),
+		status: jobStatusSchema.optional(),
+		address: addressSchema.optional(),
+		notes: optionalText('Notes', 2000).optional(),
+		estimatedValue: moneyCents('Estimated value').optional(),
+	})
+	.refine((value) => Object.values(value).some((field) => field !== undefined), {
+		error: 'Provide at least one field to update.',
+	});
+export type UpdateJobInput = z.infer<typeof updateJobSchema>;
+
+/**
+ * Query for the job list: pagination plus optional filters. `from`/`to` bound the
+ * scheduled start (`from` inclusive, `to` exclusive) so a calendar can fetch
+ * exactly one visible window; the rest narrow by assignee, status, or customer.
+ */
+export const jobListQuerySchema = paginationQuerySchema.extend({
+	from: z.iso.datetime({ error: 'Provide a valid "from" date-time.' }).optional(),
+	to: z.iso.datetime({ error: 'Provide a valid "to" date-time.' }).optional(),
+	assignedUserId: optionalRefSchema.optional(),
+	status: jobStatusSchema.optional(),
+	customerId: optionalRefSchema.optional(),
+});
+export type JobListQuery = z.infer<typeof jobListQuerySchema>;
+
+/**
+ * Query for the double-booking pre-check: would a job of `durationMinutes` at
+ * `startAt` for `assignedUserId` overlap any of that member's existing jobs?
+ * `excludeJobId` omits the job being edited from its own conflict check. Sent as a
+ * query string, so `durationMinutes` is coerced from its string form.
+ */
+export const jobConflictQuerySchema = z.object({
+	assignedUserId: requiredText('Assignee', 128),
+	startAt: jobStartSchema,
+	durationMinutes: z.coerce
+		.number()
+		.int({ error: 'Duration must be a whole number of minutes.' })
+		.min(1, { error: 'Duration must be at least 1 minute.' })
+		.max(1440, { error: 'Duration must be 24 hours or less.' })
+		.default(60),
+	excludeJobId: optionalRefSchema.optional(),
+});
+export type JobConflictQuery = z.infer<typeof jobConflictQuerySchema>;

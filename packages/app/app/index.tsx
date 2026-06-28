@@ -1,5 +1,9 @@
+import type { JobStatus } from '@rivus/core';
 import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import type { Customer, Job, Member } from '@/src/api/client';
+import { useAuth } from '@/src/auth/AuthContext';
 import { BrandGradient, BriefingGradient } from '@/src/components/Gradient';
 import {
 	Card,
@@ -10,73 +14,25 @@ import {
 	SectionLabel,
 	Txt,
 } from '@/src/components/ui';
+import { dayRange, formatClock, formatDayLabel } from '@/src/schedule/datetime';
 import { colors, font, radii } from '@/src/theme/tokens';
 
-const metrics = [
-	{
-		label: 'Conversations today',
-		value: '38',
-		delta: '+12%',
-		deltaColor: colors.green,
-		sub: '34 handled by Rivus',
-	},
-	{
-		label: 'Jobs booked',
-		value: '6',
-		delta: 'today',
-		deltaColor: colors.textMuted,
-		sub: '$4,200 pipeline value',
-	},
-	{
-		label: 'Avg. response time',
-		value: '12s',
-		delta: '',
-		deltaColor: colors.textMuted,
-		sub: 'Was 4h before Rivus',
-	},
-	{
-		label: 'Open invoices',
-		value: '$8,140',
-		delta: '',
-		deltaColor: colors.textMuted,
-		sub: '5 invoices · via QuickBooks',
-	},
-];
+// Categorical dot colors per assignee (cycled by member order).
+const TECH_DOTS = ['#1ebefa', '#6e1ec8', '#1fb573', '#f0a020', '#f0584b', '#3b6ef0'] as const;
 
-const todaySchedule = [
-	{
-		time: '8:30',
-		dot: colors.brandCyan,
-		title: 'Water heater install · Dana Whitfield',
-		sub: 'Ballard · Marcus',
-		status: 'Confirmed',
-		statusColor: colors.green,
-	},
-	{
-		time: '10:00',
-		dot: colors.brandPurple,
-		title: 'Drain cleaning · Theo Marsh',
-		sub: 'Queen Anne · Priya',
-		status: 'Confirmed',
-		statusColor: colors.green,
-	},
-	{
-		time: '1:00',
-		dot: colors.brandCyan,
-		title: 'Leak inspection · Grace Kim',
-		sub: 'Fremont · Marcus',
-		status: 'Reminder sent',
-		statusColor: colors.amber,
-	},
-	{
-		time: '3:30',
-		dot: colors.brandPurple,
-		title: 'Faucet replacement · Luis Romero',
-		sub: 'Bellevue · Priya',
-		status: 'Confirmed',
-		statusColor: colors.green,
-	},
-];
+const STATUS_PILL: Record<JobStatus, { label: string; color: string; bg: string }> = {
+	scheduled: { label: 'Scheduled', color: colors.textSub, bg: colors.chipBg },
+	confirmed: { label: 'Confirmed', color: colors.green, bg: 'rgba(31,181,115,0.12)' },
+	in_progress: { label: 'In progress', color: colors.brandPurple, bg: colors.purpleTint },
+	completed: { label: 'Completed', color: '#157a4e', bg: 'rgba(31,181,115,0.16)' },
+	canceled: { label: 'Canceled', color: colors.redInk, bg: 'rgba(240,88,75,0.12)' },
+};
+
+/** Whole-dollar money for compact dashboard sums (420000 → "$4,200"). */
+function formatDollars(cents: number): string {
+	const dollars = String(Math.round(cents / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+	return `$${dollars}`;
+}
 
 const bars = [
 	{ h: 46, label: 'M', accent: false },
@@ -89,6 +45,138 @@ const bars = [
 
 export default function HomeScreen() {
 	const router = useRouter();
+	const { session, client } = useAuth();
+
+	const [jobs, setJobs] = useState<Job[]>([]);
+	const [customers, setCustomers] = useState<Customer[]>([]);
+	const [members, setMembers] = useState<Member[]>([]);
+	const [loadingJobs, setLoadingJobs] = useState(true);
+
+	const load = useCallback(
+		async (isActive: () => boolean) => {
+			if (!session) {
+				return;
+			}
+			setLoadingJobs(true);
+			try {
+				const { from, to } = dayRange(new Date());
+				const roster = await client.listMembers(session.token);
+				// Page through today's jobs and every customer so a busy day's count and
+				// pipeline aren't undercounted, and a job whose customer sits past the
+				// first page still resolves a name on the "Today's schedule" card.
+				const allJobs: Job[] = [];
+				const allCustomers: Customer[] = [];
+				let page = 1;
+				let hasNext = true;
+				while (hasNext && page <= 50) {
+					const { data, meta } = await client.listJobs(session.token, {
+						from,
+						to,
+						page,
+						pageSize: 100,
+					});
+					allJobs.push(...data);
+					hasNext = meta.hasNextPage;
+					page += 1;
+				}
+				page = 1;
+				hasNext = true;
+				while (hasNext && page <= 50) {
+					const { data, meta } = await client.listCustomers(session.token, { page, pageSize: 100 });
+					allCustomers.push(...data);
+					hasNext = meta.hasNextPage;
+					page += 1;
+				}
+				if (isActive()) {
+					setJobs(allJobs);
+					setCustomers(allCustomers);
+					setMembers(roster.members);
+				}
+			} catch {
+				// The dashboard degrades gracefully — an unreachable API just leaves the
+				// schedule card empty rather than blocking the whole home screen.
+				if (isActive()) {
+					setJobs([]);
+				}
+			} finally {
+				if (isActive()) {
+					setLoadingJobs(false);
+				}
+			}
+		},
+		[client, session],
+	);
+
+	useEffect(() => {
+		let active = true;
+		load(() => active);
+		return () => {
+			active = false;
+		};
+	}, [load]);
+
+	const todayRows = useMemo(() => {
+		const active = jobs
+			.filter((job) => job.status !== 'canceled')
+			.sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
+		return active.map((job) => {
+			const memberIndex = members.findIndex((member) => member.userId === job.assignedUserId);
+			const assignee = memberIndex >= 0 ? members[memberIndex].name : '';
+			const customer = customers.find((entry) => entry.id === job.customerId)?.name ?? '';
+			const pill = STATUS_PILL[job.status];
+			return {
+				id: job.id,
+				time: formatClock(job.startAt),
+				dot: memberIndex >= 0 ? TECH_DOTS[memberIndex % TECH_DOTS.length] : colors.textHint,
+				title: customer ? `${job.title} · ${customer}` : job.title,
+				sub: [job.address, assignee].filter(Boolean).join(' · ') || 'Unassigned',
+				status: pill.label,
+				statusColor: pill.color,
+				statusBg: pill.bg,
+			};
+		});
+	}, [jobs, members, customers]);
+
+	const todayLabel = useMemo(() => formatDayLabel(new Date()), []);
+	const bookedCount = todayRows.length;
+	const pipeline = useMemo(
+		() =>
+			jobs
+				.filter((job) => job.status !== 'canceled')
+				.reduce((sum, job) => sum + job.estimatedValue, 0),
+		[jobs],
+	);
+
+	const metrics = [
+		{
+			label: 'Conversations today',
+			value: '38',
+			delta: '+12%',
+			deltaColor: colors.green,
+			sub: '34 handled by Rivus',
+		},
+		{
+			label: 'Jobs booked',
+			value: String(bookedCount),
+			delta: 'today',
+			deltaColor: colors.textMuted,
+			sub: pipeline > 0 ? `${formatDollars(pipeline)} pipeline value` : 'No value estimated yet',
+		},
+		{
+			label: 'Avg. response time',
+			value: '12s',
+			delta: '',
+			deltaColor: colors.textMuted,
+			sub: 'Was 4h before Rivus',
+		},
+		{
+			label: 'Open invoices',
+			value: '$8,140',
+			delta: '',
+			deltaColor: colors.textMuted,
+			sub: '5 invoices · via QuickBooks',
+		},
+	];
 
 	return (
 		<ScrollView contentContainerStyle={styles.scroll}>
@@ -96,10 +184,10 @@ export default function HomeScreen() {
 				{/* Heading */}
 				<View style={styles.head}>
 					<View>
-						<SectionLabel>Monday, June 22</SectionLabel>
+						<SectionLabel>{todayLabel}</SectionLabel>
 						<Txt style={styles.h1}>Good morning, Marcus</Txt>
 					</View>
-					<GradientButton label="New job" icon="plus" />
+					<GradientButton label="New job" icon="plus" onPress={() => router.push('/schedule')} />
 				</View>
 
 				{/* Briefing */}
@@ -109,10 +197,9 @@ export default function HomeScreen() {
 					<View style={styles.briefingBody}>
 						<Txt style={styles.briefingEyebrow}>While you were away</Txt>
 						<Txt style={styles.briefingText}>
-							Rivus handled <Txt style={styles.briefingBold}>38 conversations</Txt>, booked{' '}
-							<Txt style={styles.briefingBold}>6 jobs</Txt>, and answered{' '}
-							<Txt style={styles.briefingBold}>19 questions</Txt> from your FAQs overnight. Two
-							items need a human eye.
+							Rivus handled <Txt style={styles.briefingBold}>38 conversations</Txt>, booked new
+							jobs, and answered <Txt style={styles.briefingBold}>19 questions</Txt> from your FAQs
+							overnight. Two items need a human eye.
 						</Txt>
 					</View>
 					<Pressable style={styles.reviewBtn} onPress={() => router.push('/inbox')}>
@@ -147,21 +234,33 @@ export default function HomeScreen() {
 								</Pressable>
 							</View>
 							<View>
-								{todaySchedule.map((row) => (
-									<View key={row.time} style={styles.schedRow}>
-										<Txt style={styles.schedTime}>{row.time}</Txt>
-										<Dot color={row.dot} />
-										<View style={{ flex: 1 }}>
-											<Txt style={styles.schedTitle}>{row.title}</Txt>
-											<Txt style={styles.schedSub}>{row.sub}</Txt>
-										</View>
-										<Pill
-											label={row.status}
-											color={row.statusColor}
-											background={`${row.statusColor}1f`}
-										/>
-									</View>
-								))}
+								{loadingJobs ? (
+									<ActivityIndicator color={colors.brandPurple} style={styles.schedLoading} />
+								) : todayRows.length === 0 ? (
+									<Txt style={styles.schedEmpty}>
+										No jobs scheduled today. Tap “New job” to book one.
+									</Txt>
+								) : (
+									todayRows.map((row) => (
+										<Pressable
+											key={row.id}
+											style={styles.schedRow}
+											onPress={() => router.push('/schedule')}
+										>
+											<Txt style={styles.schedTime}>{row.time}</Txt>
+											<Dot color={row.dot} />
+											<View style={{ flex: 1 }}>
+												<Txt style={styles.schedTitle} numberOfLines={1}>
+													{row.title}
+												</Txt>
+												<Txt style={styles.schedSub} numberOfLines={1}>
+													{row.sub}
+												</Txt>
+											</View>
+											<Pill label={row.status} color={row.statusColor} background={row.statusBg} />
+										</Pressable>
+									))
+								)}
 							</View>
 						</Card>
 
@@ -376,9 +475,17 @@ const styles = StyleSheet.create({
 		paddingHorizontal: 8,
 		borderRadius: radii.md,
 	},
-	schedTime: { width: 50, fontFamily: font.semibold, fontSize: 13, color: '#3a3b48' },
+	schedTime: { width: 68, fontFamily: font.semibold, fontSize: 12.5, color: '#3a3b48' },
 	schedTitle: { fontFamily: font.medium, fontSize: 13.5 },
 	schedSub: { fontFamily: font.regular, fontSize: 12, color: colors.textMuted },
+	schedLoading: { paddingVertical: 20 },
+	schedEmpty: {
+		fontFamily: font.regular,
+		fontSize: 12.5,
+		color: colors.textMuted,
+		paddingVertical: 16,
+		paddingHorizontal: 8,
+	},
 
 	alert: { flexDirection: 'row', gap: 13, padding: 13, borderRadius: radii.lg, borderWidth: 1 },
 	alertRed: { borderColor: '#f0e3e1', backgroundColor: '#fdf7f6' },

@@ -38,6 +38,7 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		items,
 		faqs,
 		customers,
+		jobs,
 		verificationCodes,
 	} = createInMemoryRepositories();
 	const app = buildApp({
@@ -50,6 +51,7 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		items,
 		faqs,
 		customers,
+		jobs,
 		verificationCodes,
 		// A recording mailer by default so helpers can read back the emailed code.
 		mailer: new RecordingMailer(),
@@ -81,6 +83,7 @@ export async function buildTestAppWithRepos(): Promise<{
 		items,
 		faqs,
 		customers,
+		jobs,
 		verificationCodes,
 	} = repos;
 	const app = buildApp({
@@ -93,6 +96,7 @@ export async function buildTestAppWithRepos(): Promise<{
 		items,
 		faqs,
 		customers,
+		jobs,
 		verificationCodes,
 		mailer: new RecordingMailer(),
 		faqSimilarity: new NoopFaqSimilarityService(),
