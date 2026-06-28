@@ -471,15 +471,26 @@ export default function ScheduleScreen() {
 								</Pressable>
 							</View>
 						) : null}
-						<Pressable
-							style={styles.addBtn}
-							onPress={() => openCreate(localDateKey(view === 'list' ? today : anchor), 540)}
-							accessibilityRole="button"
-							accessibilityLabel="New job"
-							hitSlop={NAV_HIT_SLOP}
-						>
-							<GradientMark size={36} radius={radii.md} icon="plus" iconSize={20} />
-						</Pressable>
+						{narrow ? (
+							// Mobile: the title row is tight, so use the compact icon-only button.
+							<Pressable
+								style={styles.addBtn}
+								onPress={() => openCreate(localDateKey(view === 'list' ? today : anchor), 540)}
+								accessibilityRole="button"
+								accessibilityLabel="New job"
+								hitSlop={NAV_HIT_SLOP}
+							>
+								<GradientMark size={36} radius={radii.md} icon="plus" iconSize={20} />
+							</Pressable>
+						) : (
+							// Desktop: there's room for the full labelled button.
+							<GradientButton
+								label="New job"
+								icon="plus"
+								onPress={() => openCreate(localDateKey(view === 'list' ? today : anchor), 540)}
+								style={styles.addBtn}
+							/>
+						)}
 					</View>
 					<Txt style={styles.rangeLabel}>{view === 'list' ? 'Next 30 days' : rangeLabel}</Txt>
 				</View>
