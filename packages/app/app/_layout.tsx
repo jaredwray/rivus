@@ -26,7 +26,7 @@ import { RivusWordmark } from '@/src/brand/RivusLogo';
 import { CompanySwitcher } from '@/src/components/CompanySwitcher';
 import { BrandGradient } from '@/src/components/Gradient';
 import { RivusChat } from '@/src/components/RivusChat';
-import { Avatar, Dot, Icon, RivusStatusChip, Txt } from '@/src/components/ui';
+import { Avatar, Icon, Txt } from '@/src/components/ui';
 import { NotificationsBell } from '@/src/notifications/NotificationsBell';
 import { NotificationsProvider } from '@/src/notifications/NotificationsContext';
 import { installFocusRing } from '@/src/theme/focusRing';
@@ -46,7 +46,7 @@ type NavItem = {
 	label: string;
 	icon: FeatherName;
 	badge?: string;
-	/** When true, only Owners see this destination (billing & account settings). */
+	/** When true, only Owners see this destination (account settings). */
 	ownerOnly?: boolean;
 };
 
@@ -58,7 +58,6 @@ const NAV: NavItem[] = [
 	{ href: '/marketing', label: 'Marketing', icon: 'trending-up' },
 	{ href: '/knowledge', label: 'Knowledge', icon: 'book' },
 	{ href: '/team', label: 'Team', icon: 'user-check' },
-	{ href: '/billing', label: 'Billing', icon: 'credit-card', ownerOnly: true },
 	{ href: '/settings', label: 'Settings', icon: 'settings', ownerOnly: true },
 ];
 
@@ -298,7 +297,6 @@ function TopBar() {
 			</View>
 
 			<View style={styles.topbarRight}>
-				<RivusStatusChip label="Rivus is online" />
 				<NotificationsBell variant="topbar" />
 			</View>
 		</View>
@@ -313,12 +311,6 @@ function CompactBar({ onOpenChat }: { onOpenChat: () => void }) {
 		<View style={[styles.compactBar, { paddingTop: insets.top + 12 }]}>
 			<HomeLink height={20} />
 			<View style={styles.compactRight}>
-				<View style={styles.compactStatus}>
-					<Dot color={colors.green} size={7} />
-					<Txt style={styles.compactStatusTxt} numberOfLines={1}>
-						Online
-					</Txt>
-				</View>
 				{/* Chat with Rivus — sits right before the bell and opens the agent chat
 				    full screen (the mobile layout has no floating chat launcher). */}
 				<Pressable
@@ -679,16 +671,6 @@ const styles = StyleSheet.create({
 		flexDirection: 'row',
 		alignItems: 'center',
 		gap: 14,
-	},
-	compactStatus: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: 7,
-	},
-	compactStatusTxt: {
-		fontFamily: font.semibold,
-		fontSize: 12,
-		color: '#cfd0dc',
 	},
 	compactIconBtn: {
 		width: 34,
