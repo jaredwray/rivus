@@ -1,7 +1,14 @@
 import type { JobStatus } from '@rivus/core';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import {
+	ActivityIndicator,
+	Pressable,
+	ScrollView,
+	StyleSheet,
+	useWindowDimensions,
+	View,
+} from 'react-native';
 import type { Customer, Job, Member } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { BrandGradient, BriefingGradient } from '@/src/components/Gradient';
@@ -15,7 +22,7 @@ import {
 	Txt,
 } from '@/src/components/ui';
 import { dayRange, formatClock, formatDayLabel } from '@/src/schedule/datetime';
-import { colors, font, radii } from '@/src/theme/tokens';
+import { colors, font, radii, SIDEBAR_BREAKPOINT } from '@/src/theme/tokens';
 
 // Categorical dot colors per assignee (cycled by member order).
 const TECH_DOTS = ['#1ebefa', '#6e1ec8', '#1fb573', '#f0a020', '#f0584b', '#3b6ef0'] as const;
@@ -46,6 +53,11 @@ const bars = [
 export default function HomeScreen() {
 	const router = useRouter();
 	const { session, client } = useAuth();
+	// Below the sidebar breakpoint the dashboard renders on a phone-width column,
+	// so the briefing stacks, padding tightens, and the two card columns go
+	// full-width instead of forcing the page wider than the viewport.
+	const { width } = useWindowDimensions();
+	const narrow = width < SIDEBAR_BREAKPOINT;
 
 	const [jobs, setJobs] = useState<Job[]>([]);
 	const [customers, setCustomers] = useState<Customer[]>([]);
@@ -179,7 +191,7 @@ export default function HomeScreen() {
 	];
 
 	return (
-		<ScrollView contentContainerStyle={styles.scroll}>
+		<ScrollView contentContainerStyle={[styles.scroll, narrow && styles.scrollNarrow]}>
 			<View style={styles.inner}>
 				{/* Heading */}
 				<View style={styles.head}>
@@ -191,10 +203,10 @@ export default function HomeScreen() {
 				</View>
 
 				{/* Briefing */}
-				<BriefingGradient wide style={styles.briefing}>
+				<BriefingGradient wide style={[styles.briefing, narrow && styles.briefingNarrow]}>
 					<View style={styles.glow} />
 					<RivusBadge size={46} />
-					<View style={styles.briefingBody}>
+					<View style={[styles.briefingBody, narrow && styles.briefingBodyNarrow]}>
 						<Txt style={styles.briefingEyebrow}>While you were away</Txt>
 						<Txt style={styles.briefingText}>
 							Rivus handled <Txt style={styles.briefingBold}>38 conversations</Txt>, booked new
@@ -202,7 +214,10 @@ export default function HomeScreen() {
 							overnight. Two items need a human eye.
 						</Txt>
 					</View>
-					<Pressable style={styles.reviewBtn} onPress={() => router.push('/inbox')}>
+					<Pressable
+						style={[styles.reviewBtn, narrow && styles.reviewBtnNarrow]}
+						onPress={() => router.push('/inbox')}
+					>
 						<Txt style={styles.reviewBtnTxt}>Review 2 items</Txt>
 					</Pressable>
 				</BriefingGradient>
@@ -225,7 +240,7 @@ export default function HomeScreen() {
 
 				{/* Two columns */}
 				<View style={styles.columns}>
-					<View style={styles.colLeft}>
+					<View style={[styles.colLeft, narrow && styles.colFull]}>
 						<Card>
 							<View style={styles.cardHead}>
 								<Txt style={styles.cardTitle}>Today's schedule</Txt>
@@ -305,7 +320,7 @@ export default function HomeScreen() {
 						</Card>
 					</View>
 
-					<View style={styles.colRight}>
+					<View style={[styles.colRight, narrow && styles.colFull]}>
 						<Card>
 							<Txt style={[styles.cardTitle, { marginBottom: 16 }]}>Jobs this week</Txt>
 							<View style={styles.chart}>
@@ -389,6 +404,7 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
 	scroll: { padding: 28, paddingBottom: 40 },
+	scrollNarrow: { padding: 16, paddingBottom: 32 },
 	inner: { maxWidth: 1180, width: '100%', alignSelf: 'center', gap: 22 },
 	head: {
 		flexDirection: 'row',
@@ -408,6 +424,9 @@ const styles = StyleSheet.create({
 		padding: 22,
 		overflow: 'hidden',
 	},
+	// On a phone the badge + copy + button can't share one row without forcing
+	// the page wider than the viewport, so stack them.
+	briefingNarrow: { flexDirection: 'column', alignItems: 'flex-start', gap: 16 },
 	glow: {
 		position: 'absolute',
 		right: -40,
@@ -417,7 +436,9 @@ const styles = StyleSheet.create({
 		borderRadius: 120,
 		backgroundColor: 'rgba(110,30,200,0.22)',
 	},
-	briefingBody: { flex: 1, minWidth: 220 },
+	briefingBody: { flex: 1, minWidth: 160 },
+	// Reset the row flex so the copy takes its natural height when stacked.
+	briefingBodyNarrow: { flexGrow: 0, flexBasis: 'auto', minWidth: 0, width: '100%' },
 	briefingEyebrow: {
 		fontFamily: font.semibold,
 		fontSize: 11,
@@ -436,6 +457,7 @@ const styles = StyleSheet.create({
 		paddingHorizontal: 16,
 		borderRadius: radii.md,
 	},
+	reviewBtnNarrow: { alignSelf: 'stretch', alignItems: 'center' },
 	reviewBtnTxt: { fontFamily: font.semibold, fontSize: 13, color: '#fff' },
 
 	// Metrics
@@ -456,6 +478,9 @@ const styles = StyleSheet.create({
 	columns: { flexDirection: 'row', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' },
 	colLeft: { flexGrow: 1, flexBasis: 420, minWidth: 300, gap: 18 },
 	colRight: { flexGrow: 1, flexBasis: 300, minWidth: 280, gap: 18 },
+	// Phone: each column spans the full width and stacks, so a 300px minWidth
+	// can't push the page past a narrow viewport.
+	colFull: { flexBasis: '100%', minWidth: 0 },
 
 	cardHead: {
 		flexDirection: 'row',
