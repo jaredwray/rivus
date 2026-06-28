@@ -51,6 +51,7 @@ import {
 	weekDays,
 	weekRange,
 } from '@/src/schedule/datetime';
+import { defaultScheduleView, type ScheduleView } from '@/src/schedule/view';
 import { colors, font, radii, SIDEBAR_BREAKPOINT, SIDEBAR_WIDTH } from '@/src/theme/tokens';
 
 const GUTTER = 58;
@@ -59,8 +60,6 @@ const MIN_DAY_WIDTH = 132;
 // without changing their visual size.
 const NAV_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 };
 const CLOSE_HIT_SLOP = { top: 13, bottom: 13, left: 13, right: 13 };
-
-type ScheduleView = 'week' | 'day' | 'list';
 
 /** Categorical colors for assignee lanes (not status — these just tell techs apart). */
 const ASSIGNEE_TONES = [
@@ -124,7 +123,13 @@ export default function ScheduleScreen() {
 	// (and wrap its own children) instead of overflowing off the right edge.
 	const narrow = width < SIDEBAR_BREAKPOINT;
 
-	const [view, setView] = useState<ScheduleView>('week');
+	// Open on the day view on the mobile layout (the week is too cramped on a phone)
+	// and on the week view when the sidebar layout has room. Only a manual choice lives
+	// in state; until then the view derives from the current width, so the static-web
+	// first paint (width 0 before hydration) and later device rotation both resolve
+	// correctly instead of latching to the mount-time default. Picking a view sticks.
+	const [manualView, setView] = useState<ScheduleView | null>(null);
+	const view = manualView ?? defaultScheduleView(width);
 	const [anchor, setAnchor] = useState<Date>(() => startOfDay(new Date()));
 	const [jobs, setJobs] = useState<Job[]>([]);
 	const [customers, setCustomers] = useState<Customer[]>([]);
@@ -445,41 +450,56 @@ export default function ScheduleScreen() {
 			<View style={[styles.header, narrow && styles.headerNarrow]}>
 				<View style={styles.headerLeft}>
 					<View style={styles.titleRow}>
-						<Txt style={styles.title}>Schedule</Txt>
-						{view !== 'list' ? (
-							<View style={styles.dateNav}>
-								<Pressable
-									style={styles.navBtn}
-									onPress={() => setAnchor((current) => addDays(current, -navStep))}
-									accessibilityRole="button"
-									accessibilityLabel="Previous"
-									hitSlop={NAV_HIT_SLOP}
-								>
-									<Icon name="chevron-left" size={16} color={colors.textSub} />
-								</Pressable>
-								<Pressable style={styles.todayBtn} onPress={() => setAnchor(today)}>
-									<Txt style={styles.todayBtnTxt}>Today</Txt>
-								</Pressable>
-								<Pressable
-									style={styles.navBtn}
-									onPress={() => setAnchor((current) => addDays(current, navStep))}
-									accessibilityRole="button"
-									accessibilityLabel="Next"
-									hitSlop={NAV_HIT_SLOP}
-								>
-									<Icon name="chevron-right" size={16} color={colors.textSub} />
-								</Pressable>
-							</View>
-						) : null}
-						<Pressable
-							style={styles.addBtn}
-							onPress={() => openCreate(localDateKey(view === 'list' ? today : anchor), 540)}
-							accessibilityRole="button"
-							accessibilityLabel="New job"
-							hitSlop={NAV_HIT_SLOP}
-						>
-							<GradientMark size={36} radius={radii.md} icon="plus" iconSize={20} />
-						</Pressable>
+						{/* Keep the title and date nav together so the action button to their
+						    right is never split off or pushed to its own line. */}
+						<View style={styles.titleGroup}>
+							<Txt style={styles.title}>Schedule</Txt>
+							{view !== 'list' ? (
+								<View style={styles.dateNav}>
+									<Pressable
+										style={styles.navBtn}
+										onPress={() => setAnchor((current) => addDays(current, -navStep))}
+										accessibilityRole="button"
+										accessibilityLabel="Previous"
+										hitSlop={NAV_HIT_SLOP}
+									>
+										<Icon name="chevron-left" size={16} color={colors.textSub} />
+									</Pressable>
+									<Pressable style={styles.todayBtn} onPress={() => setAnchor(today)}>
+										<Txt style={styles.todayBtnTxt}>Today</Txt>
+									</Pressable>
+									<Pressable
+										style={styles.navBtn}
+										onPress={() => setAnchor((current) => addDays(current, navStep))}
+										accessibilityRole="button"
+										accessibilityLabel="Next"
+										hitSlop={NAV_HIT_SLOP}
+									>
+										<Icon name="chevron-right" size={16} color={colors.textSub} />
+									</Pressable>
+								</View>
+							) : null}
+						</View>
+						{narrow ? (
+							// Mobile: the title row is tight, so use the compact icon-only button.
+							<Pressable
+								style={styles.addBtn}
+								onPress={() => openCreate(localDateKey(view === 'list' ? today : anchor), 540)}
+								accessibilityRole="button"
+								accessibilityLabel="New job"
+								hitSlop={NAV_HIT_SLOP}
+							>
+								<GradientMark size={36} radius={radii.md} icon="plus" iconSize={20} />
+							</Pressable>
+						) : (
+							// Desktop: there's room for the full labelled button.
+							<GradientButton
+								label="New job"
+								icon="plus"
+								onPress={() => openCreate(localDateKey(view === 'list' ? today : anchor), 540)}
+								style={styles.addBtn}
+							/>
+						)}
 					</View>
 					<Txt style={styles.rangeLabel}>{view === 'list' ? 'Next 30 days' : rangeLabel}</Txt>
 				</View>
@@ -973,10 +993,19 @@ const styles = StyleSheet.create({
 	// full width so `headerRight` wraps its children instead of overflowing.
 	headerNarrow: { flexDirection: 'column', alignItems: 'stretch', gap: 14 },
 	headerLeft: { gap: 8 },
-	// Title, date nav and the create button share one row; the range label sits on
+	// The title group and the create button share one row; the range label sits on
 	// its own line beneath. On mobile the row stretches full width so the button
 	// lands at the far right of the title/nav row.
 	titleRow: { flexDirection: 'row', alignItems: 'center', gap: 16, flexWrap: 'wrap' },
+	// Title + date nav stay grouped; the group shrinks/wraps internally on tight
+	// widths so the action button keeps its place beside it instead of dropping.
+	titleGroup: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 16,
+		flexShrink: 1,
+		flexWrap: 'wrap',
+	},
 	title: { fontFamily: font.semibold, fontSize: 20 },
 	// Push the create button to the far right of the title row.
 	addBtn: { marginLeft: 'auto', borderRadius: radii.md },
