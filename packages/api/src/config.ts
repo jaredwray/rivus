@@ -38,8 +38,15 @@ const envSchema = z
 		// duplicate), so none of these are required and none gate production boot.
 		OPENAI_API_KEY: z.string().min(1).optional(),
 		OPENAI_MODEL: z.string().min(1).default('gpt-5.4-mini'),
+		// Embedding model for semantic FAQ retrieval (used when a knowledge base grows
+		// past the prompt's candidate cap, so the most *relevant* FAQs — not just the
+		// newest — are sent to the model). The query and FAQs must be embedded by the
+		// same model, so retrieval uses a single provider: OpenAI when its key is set,
+		// otherwise Google. Both default to a small, inexpensive model.
+		OPENAI_EMBEDDING_MODEL: z.string().min(1).default('text-embedding-3-small'),
 		GOOGLE_GENERATIVE_AI_API_KEY: z.string().min(1).optional(),
 		GEMINI_MODEL: z.string().min(1).default('gemini-2.5-flash'),
+		GOOGLE_EMBEDDING_MODEL: z.string().min(1).default('text-embedding-004'),
 		XAI_API_KEY: z.string().min(1).optional(),
 		XAI_MODEL: z.string().min(1).default('grok-4-fast'),
 		ANTHROPIC_API_KEY: z.string().min(1).optional(),
