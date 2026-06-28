@@ -1,0 +1,16 @@
+{
+	"name": "Rivus",
+	"short_name": "Rivus",
+	"description": "Rivus — your AI-powered customer support and growth platform.",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"orientation": "portrait",
+	"background_color": "#f6f7fb",
+	"theme_color": "#6e1ec8",
+	"icons": [
+		{ "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
+		{ "src": "/icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any maskable" },
+		{ "src": "/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any maskable" }
+	]
+}
