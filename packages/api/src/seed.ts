@@ -1,18 +1,33 @@
 import { faker } from '@faker-js/faker';
 import type { Account, AccountId } from '@rivus/core';
+import { loadConfig } from './config';
 import { connectMongoose, disconnectMongoose } from './db/mongoose';
 import {
 	MongoAccountRepository,
 	MongoCustomerRepository,
 	MongoFaqRepository,
+	MongoJobRepository,
+	MongoMembershipRepository,
 } from './repositories/mongo';
-import type { AccountRepository, CustomerRepository, FaqRepository } from './repositories/types';
+import type {
+	AccountRepository,
+	CustomerRepository,
+	FaqRepository,
+	JobRepository,
+} from './repositories/types';
 import {
-	generateCustomers,
+	type BusinessContext,
+	createSeedGenerator,
+	DeterministicSeedGenerator,
+	type SeedGenerator,
+} from './seed-ai';
+import {
 	parseSeedArgs,
-	pickFaqSeeds,
+	SEED_APPOINTMENT_MAX,
+	SEED_APPOINTMENT_MIN,
 	SEED_CUSTOMER_MAX,
 	SEED_CUSTOMER_MIN,
+	SEED_FAQ_DEFAULT,
 	SEED_USAGE,
 	SeedArgError,
 	type SeedOptions,
@@ -20,19 +35,22 @@ import {
 } from './seed-data';
 
 /**
- * Seed a single account with demo data: 20–30 CRM customers and a library of
- * common business FAQs. It points at an account by slug or id and writes through
- * the same Mongo repositories and Zod schemas the API uses, so seeded rows are
- * identical to ones created over HTTP.
+ * Seed a single account with demo data: CRM customers, a business-FAQ knowledge
+ * base, and scheduled appointments (Jobs). It points at an account by slug or id
+ * and writes through the same Mongo repositories and Zod schemas the API uses, so
+ * seeded rows are identical to ones created over HTTP.
+ *
+ * Data is generated with AI when a provider key is configured (tailored to the
+ * account's business), and falls back to deterministic faker/curated generation
+ * otherwise or with `--no-ai`.
  *
  * Usage (see {@link SEED_USAGE} or run with `--help`):
- *   pnpm --filter @rivus/api seed --account <slug-or-id> [--customers n] [--faqs n]
+ *   pnpm --filter @rivus/api seed --account <slug-or-id> [--customers n] [--faqs n] [--appointments n]
  *
- * The pure data generation, CLI parsing, and de-duplication live in `seed-data.ts`
- * (and are unit-tested); this module is just the database wrapper.
+ * The pure data generation, CLI parsing, de-duplication, and AI layer live in
+ * `seed-data.ts` / `seed-ai.ts` (and are unit-tested); this module is just the
+ * database wrapper.
  */
-
-const DEFAULT_MONGODB_URI = 'mongodb://localhost:27017/rivus?replicaSet=rs0&directConnection=true';
 
 /** Resolve an account by id first (when the identifier is a valid id), then by slug. */
 async function resolveAccount(
@@ -75,59 +93,95 @@ function write(message: string): void {
 	process.stdout.write(`${message}\n`);
 }
 
+/** Create `count` customers via the generator; returns the new customers' ids. */
 async function seedCustomers(
 	customers: CustomerRepository,
+	generator: SeedGenerator,
 	account: Account,
-	options: SeedOptions,
-): Promise<number> {
-	const count =
-		options.customers ?? faker.number.int({ min: SEED_CUSTOMER_MIN, max: SEED_CUSTOMER_MAX });
+	context: BusinessContext,
+	count: number,
+): Promise<string[]> {
 	if (count === 0) {
 		write('Customers: skipped (count 0).');
-		return 0;
+		return [];
 	}
-	const batch = generateCustomers(count);
-	if (options.dryRun) {
-		write(`Customers: would create ${batch.length} (dry run).`);
-		return 0;
+	const inputs = await generator.generateCustomers(count, context);
+	const ids: string[] = [];
+	for (const input of inputs) {
+		const created = await customers.create(account.id, input);
+		ids.push(created.id);
 	}
-	for (const input of batch) {
-		await customers.create(account.id, input);
-	}
-	write(`Customers: created ${batch.length}.`);
-	return batch.length;
+	write(`Customers: created ${ids.length}.`);
+	return ids;
 }
 
+/** Create up to `count` FAQs, skipping any whose question already exists. */
 async function seedFaqs(
 	faqs: FaqRepository,
+	generator: SeedGenerator,
 	account: Account,
-	options: SeedOptions,
-): Promise<number> {
-	const candidates = pickFaqSeeds(options.faqs);
-	if (candidates.length === 0) {
+	context: BusinessContext,
+	count: number,
+): Promise<void> {
+	if (count === 0) {
 		write('FAQs: skipped (count 0).');
-		return 0;
+		return;
 	}
+	const candidates = await generator.generateFaqs(count, context);
 	const existing = await collectExistingFaqQuestions(faqs, account.id);
 	const { toCreate, skipped } = selectNewFaqs(candidates, existing);
 	const skipNote = skipped.length > 0 ? ` (${skipped.length} already present, skipped)` : '';
-	if (options.dryRun) {
-		write(`FAQs: would create ${toCreate.length}${skipNote} (dry run).`);
-		return 0;
-	}
 	for (const input of toCreate) {
 		await faqs.create(account.id, input);
 	}
 	write(`FAQs: created ${toCreate.length}${skipNote}.`);
-	return toCreate.length;
+}
+
+/** Create `count` appointments (Jobs) linked to the given customers and members. */
+async function seedAppointments(
+	jobs: JobRepository,
+	generator: SeedGenerator,
+	account: Account,
+	context: BusinessContext,
+	count: number,
+	customerIds: string[],
+	memberIds: string[],
+): Promise<void> {
+	if (count === 0) {
+		write('Appointments: skipped (count 0).');
+		return;
+	}
+	const inputs = await generator.generateAppointments(
+		{ count, customerIds, memberIds, referenceDate: new Date() },
+		context,
+	);
+	for (const input of inputs) {
+		await jobs.create(account.id, input);
+	}
+	const linkNote = customerIds.length === 0 ? ' (no customers to link)' : '';
+	write(`Appointments: created ${inputs.length}${linkNote}.`);
 }
 
 async function run(options: SeedOptions): Promise<void> {
 	if (options.seed !== undefined) {
 		faker.seed(options.seed);
 	}
-	const uri = process.env.MONGODB_URI ?? DEFAULT_MONGODB_URI;
-	await connectMongoose(uri);
+	// Force a non-production env so loading config never trips the prod-only secret
+	// checks (mirrors openapi.ts); we only need the Mongo URI and AI provider keys.
+	const config = loadConfig({ ...process.env, NODE_ENV: 'development' });
+	const generator: SeedGenerator = options.ai
+		? createSeedGenerator(config)
+		: new DeterministicSeedGenerator();
+
+	// Resolve the planned counts up front so a dry run can report them without work.
+	const customerCount =
+		options.customers ?? faker.number.int({ min: SEED_CUSTOMER_MIN, max: SEED_CUSTOMER_MAX });
+	const faqCount = options.faqs ?? SEED_FAQ_DEFAULT;
+	const appointmentCount =
+		options.appointments ??
+		faker.number.int({ min: SEED_APPOINTMENT_MIN, max: SEED_APPOINTMENT_MAX });
+
+	await connectMongoose(config.MONGODB_URI);
 	try {
 		const accounts = new MongoAccountRepository();
 		// `options.account` is guaranteed present by `main` before we get here.
@@ -145,9 +199,61 @@ async function run(options: SeedOptions): Promise<void> {
 			`Seeding account "${account.name}" (slug: ${account.slug}, id: ${account.id})` +
 				`${options.dryRun ? ' [dry run]' : ''}`,
 		);
-		await seedCustomers(new MongoCustomerRepository(), account, options);
-		await seedFaqs(new MongoFaqRepository(), account, options);
-		write(options.dryRun ? 'Dry run complete — nothing was written.' : 'Seeding complete.');
+		// Make the active mode explicit — especially when AI was requested but no key
+		// is set, so the deterministic fallback isn't a silent surprise.
+		if (options.ai && !generator.usesAi) {
+			write('Generation: deterministic — no AI provider key set (see .env.example).');
+		} else {
+			write(
+				`Generation: ${generator.usesAi ? 'AI (OpenAI/Google/xAI/Anthropic, with faker fallback)' : 'deterministic (faker/curated)'}.`,
+			);
+		}
+
+		if (options.dryRun) {
+			write(`Customers: would create ${customerCount}.`);
+			write(`FAQs: would create up to ${faqCount} (new questions only).`);
+			write(`Appointments: would create ${appointmentCount}.`);
+			write('Dry run complete — no AI calls, nothing written.');
+			return;
+		}
+
+		const context: BusinessContext = {
+			businessName: account.name,
+			website: account.website,
+			address: account.address,
+		};
+		const customers = new MongoCustomerRepository();
+		const memberIds = (await new MongoMembershipRepository().listByAccount(account.id)).map(
+			(membership) => membership.userId,
+		);
+
+		const newCustomerIds = await seedCustomers(
+			customers,
+			generator,
+			account,
+			context,
+			customerCount,
+		);
+		await seedFaqs(new MongoFaqRepository(), generator, account, context, faqCount);
+
+		// Link appointments to the customers we just created; if none were (e.g.
+		// `--customers 0`), fall back to the account's existing customers.
+		let customerIds = newCustomerIds;
+		if (customerIds.length === 0 && appointmentCount > 0) {
+			const existing = await customers.list({ accountId: account.id, page: 1, pageSize: 100 });
+			customerIds = existing.customers.map((customer) => customer.id);
+		}
+		await seedAppointments(
+			new MongoJobRepository(),
+			generator,
+			account,
+			context,
+			appointmentCount,
+			customerIds,
+			memberIds,
+		);
+
+		write('Seeding complete.');
 	} finally {
 		await disconnectMongoose();
 	}
