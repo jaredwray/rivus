@@ -322,6 +322,9 @@ function CompactBar({ onOpenChat }: { onOpenChat: () => void }) {
 		<View style={[styles.compactBar, { paddingTop: insets.top + 12 }]}>
 			<HomeLink height={20} />
 			<View style={styles.compactRight}>
+				{/* Full search — the narrow counterpart to the top bar's search field, an
+				    icon button that opens the same customers-and-jobs dropdown. */}
+				<GlobalSearch variant="compact" />
 				{/* Chat with Rivus — sits right before the bell and opens the agent chat
 				    full screen (the mobile layout has no floating chat launcher). */}
 				<Pressable

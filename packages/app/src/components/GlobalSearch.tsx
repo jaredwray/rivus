@@ -24,13 +24,16 @@ const RESULT_LIMIT = 8;
 const EMPTY_RESULTS: SearchResults = { customers: [], jobs: [] };
 
 /**
- * The dashboard's global search box. A field-styled trigger in the top bar opens
- * a dropdown that searches the account's customers and jobs (via `GET /v1/search`,
- * backed by MongoDB) as you type, debounced. Selecting a result deep-links to the
- * relevant screen — a customer focuses their CRM record, a job opens the schedule
- * on its day.
+ * The dashboard's global search box. A trigger opens a dropdown that searches the
+ * account's customers and jobs (via `GET /v1/search`, backed by MongoDB) as you
+ * type, debounced. Selecting a result deep-links to the relevant screen — a
+ * customer focuses their CRM record, a job opens the schedule on its day.
+ *
+ * The trigger adapts to the layout: `topbar` (the default) is the wide layout's
+ * field-styled search bar, while `compact` is a bare icon button that sits beside
+ * the chat and bell icons in the narrow top bar. Both open the same dropdown.
  */
-export function GlobalSearch() {
+export function GlobalSearch({ variant = 'topbar' }: { variant?: 'topbar' | 'compact' }) {
 	const { session, client } = useAuth();
 	const router = useRouter();
 
@@ -120,20 +123,33 @@ export function GlobalSearch() {
 
 	const trimmed = query.trim();
 	const hasResults = results.customers.length > 0 || results.jobs.length > 0;
+	const isCompact = variant === 'compact';
 
 	return (
-		<View style={styles.wrap}>
-			<Pressable
-				style={styles.trigger}
-				onPress={() => setOpen(true)}
-				accessibilityRole="button"
-				accessibilityLabel="Search customers and jobs"
-			>
-				<Icon name="search" size={16} color={colors.textFaint} />
-				<Txt style={styles.triggerTxt} numberOfLines={1}>
-					Search customers and jobs…
-				</Txt>
-			</Pressable>
+		<View style={isCompact ? undefined : styles.wrap}>
+			{isCompact ? (
+				<Pressable
+					style={styles.compactTrigger}
+					onPress={() => setOpen(true)}
+					accessibilityRole="button"
+					accessibilityLabel="Search customers and jobs"
+					hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+				>
+					<Feather name="search" size={18} color="#cfd0dc" />
+				</Pressable>
+			) : (
+				<Pressable
+					style={styles.trigger}
+					onPress={() => setOpen(true)}
+					accessibilityRole="button"
+					accessibilityLabel="Search customers and jobs"
+				>
+					<Icon name="search" size={16} color={colors.textFaint} />
+					<Txt style={styles.triggerTxt} numberOfLines={1}>
+						Search customers and jobs…
+					</Txt>
+				</Pressable>
+			)}
 
 			<Modal
 				visible={open}
@@ -266,6 +282,14 @@ const styles = StyleSheet.create({
 		flex: 1,
 		fontSize: 13,
 		color: colors.textFaint,
+	},
+	// Bare icon button for the narrow top bar, sized to match the chat icon and
+	// notifications bell it sits beside.
+	compactTrigger: {
+		width: 34,
+		height: 34,
+		alignItems: 'center',
+		justifyContent: 'center',
 	},
 	// Anchor the dropdown near the top center, approximating the trigger's place.
 	backdrop: {
