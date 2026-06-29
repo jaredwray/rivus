@@ -1,3 +1,4 @@
+import { useLocalSearchParams } from 'expo-router';
 import { type ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
 import {
 	ActivityIndicator,
@@ -143,6 +144,15 @@ export default function CustomersScreen() {
 			active = false;
 		};
 	}, [load]);
+
+	// Deep link from the global search: `?focus=<id>` selects (and, where the panel
+	// shows, opens) that customer once the list has loaded.
+	const { focus } = useLocalSearchParams<{ focus?: string }>();
+	useEffect(() => {
+		if (typeof focus === 'string' && focus) {
+			setSelectedId(focus);
+		}
+	}, [focus]);
 
 	function resetForm() {
 		setName('');

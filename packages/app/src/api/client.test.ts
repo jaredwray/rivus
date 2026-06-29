@@ -1147,6 +1147,41 @@ describe('createApiClient', () => {
 		});
 	});
 
+	describe('search', () => {
+		it('sends the term with the default limit and parses grouped results', async () => {
+			const customers = [makeCustomer(), makeCustomer()];
+			const jobs = [makeJob()];
+			fetchMock.mockResolvedValueOnce(jsonResponse({ customers, jobs }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const token = faker.string.alphanumeric(32);
+			const result = await client.search(token, { q: 'grace' });
+
+			expect(result.customers).toEqual(customers);
+			expect(result.jobs).toEqual(jobs);
+
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/search?q=grace&limit=8`);
+			expect(init.headers).toMatchObject({ Authorization: `Bearer ${token}` });
+		});
+
+		it('forwards a custom limit', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ customers: [], jobs: [] }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.search('token', { q: 'heater', limit: 3 });
+
+			const [url] = fetchMock.mock.calls[0] as [string];
+			expect(url).toBe(`${BASE}/v1/search?q=heater&limit=3`);
+		});
+
+		it('rejects a blank term before calling the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.search('token', { q: '   ' })).rejects.toBeInstanceOf(ValidationError);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+	});
+
 	describe('listCompanies', () => {
 		function companyPage(accounts: ReturnType<typeof makeAccount>[]) {
 			return {
