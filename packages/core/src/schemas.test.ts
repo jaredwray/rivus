@@ -4,21 +4,30 @@ import {
 	acceptInviteSchema,
 	accountBusinessSchema,
 	accountStatusSchema,
+	approveReplySchema,
+	conversationChannelSchema,
+	conversationListQuerySchema,
+	conversationStatusSchema,
+	createConversationSchema,
 	createCustomerSchema,
 	createFaqSchema,
 	createItemSchema,
 	createJobSchema,
+	createMessageSchema,
 	createNotificationSchema,
 	inviteMemberSchema,
 	jobConflictQuerySchema,
 	jobListQuerySchema,
 	jobStatusSchema,
 	loginSchema,
+	messageAuthorSchema,
 	notificationReadStateSchema,
 	notificationTypeSchema,
 	paginationQuerySchema,
+	sendMessageSchema,
 	signupSchema,
 	updateAccountSchema,
+	updateConversationSchema,
 	updateCustomerSchema,
 	updateFaqSchema,
 	updateItemSchema,
@@ -559,5 +568,184 @@ describe('jobConflictQuerySchema', () => {
 			excludeJobId: 'job_1',
 		});
 		expect(parsed.excludeJobId).toBe('job_1');
+	});
+});
+
+describe('conversationChannelSchema', () => {
+	it('accepts every channel', () => {
+		for (const channel of ['whatsapp', 'phone', 'email', 'sms']) {
+			expect(conversationChannelSchema.parse(channel)).toBe(channel);
+		}
+	});
+
+	it('rejects an unknown channel', () => {
+		const result = conversationChannelSchema.safeParse('telegram');
+		expect(result.success).toBe(false);
+		expect(result.error?.issues[0]?.message).toBe('Choose a valid channel.');
+	});
+});
+
+describe('conversationStatusSchema', () => {
+	it('accepts every status', () => {
+		for (const status of ['rivus_handling', 'needs_attention', 'resolved']) {
+			expect(conversationStatusSchema.parse(status)).toBe(status);
+		}
+	});
+
+	it('rejects an unknown status', () => {
+		const result = conversationStatusSchema.safeParse('archived');
+		expect(result.success).toBe(false);
+		expect(result.error?.issues[0]?.message).toBe('Choose a valid conversation status.');
+	});
+});
+
+describe('messageAuthorSchema', () => {
+	it('accepts every author', () => {
+		for (const author of ['customer', 'rivus', 'agent', 'note']) {
+			expect(messageAuthorSchema.parse(author)).toBe(author);
+		}
+	});
+
+	it('rejects an unknown author', () => {
+		const result = messageAuthorSchema.safeParse('bot');
+		expect(result.success).toBe(false);
+		expect(result.error?.issues[0]?.message).toBe('Choose a valid message author.');
+	});
+});
+
+describe('createConversationSchema', () => {
+	it('fills defaults from just a contact name and channel', () => {
+		expect(
+			createConversationSchema.parse({ contactName: 'Dana Whitfield', channel: 'whatsapp' }),
+		).toEqual({
+			contactName: 'Dana Whitfield',
+			channel: 'whatsapp',
+			customerId: '',
+			contactPhone: '',
+			status: 'rivus_handling',
+			tags: [],
+			lastInvoice: '',
+		});
+	});
+
+	it('accepts a full conversation record', () => {
+		const parsed = createConversationSchema.parse({
+			contactName: 'Priya Anand',
+			channel: 'email',
+			customerId: 'cust_1',
+			contactPhone: '(206) 555-0119',
+			status: 'needs_attention',
+			tags: ['Repeat client', 'Billing flag'],
+			lastInvoice: '#1051 · $540 · Due Jun 30',
+		});
+		expect(parsed).toMatchObject({
+			contactName: 'Priya Anand',
+			channel: 'email',
+			customerId: 'cust_1',
+			status: 'needs_attention',
+			tags: ['Repeat client', 'Billing flag'],
+		});
+	});
+
+	it('requires a contact name', () => {
+		const result = createConversationSchema.safeParse({ channel: 'sms' });
+		expect(result.success).toBe(false);
+		expect(result.error?.issues[0]?.message).toBe('Contact name is required.');
+	});
+
+	it('requires a channel', () => {
+		expect(createConversationSchema.safeParse({ contactName: 'No channel' }).success).toBe(false);
+	});
+
+	it('rejects more than twelve tags', () => {
+		const tags = Array.from({ length: 13 }, (_unused, index) => `tag-${index}`);
+		expect(
+			createConversationSchema.safeParse({ contactName: 'X', channel: 'sms', tags }).success,
+		).toBe(false);
+	});
+
+	it('rejects a blank tag', () => {
+		expect(
+			createConversationSchema.safeParse({ contactName: 'X', channel: 'sms', tags: [' '] }).success,
+		).toBe(false);
+	});
+});
+
+describe('updateConversationSchema', () => {
+	it('accepts a partial update of one field', () => {
+		expect(updateConversationSchema.parse({ status: 'resolved' })).toEqual({ status: 'resolved' });
+	});
+
+	it('accepts retagging alone', () => {
+		expect(updateConversationSchema.parse({ tags: ['VIP'] })).toEqual({ tags: ['VIP'] });
+	});
+
+	it('rejects an empty update', () => {
+		expect(() => updateConversationSchema.parse({})).toThrow();
+	});
+
+	it('rejects an invalid field even within a partial update', () => {
+		expect(updateConversationSchema.safeParse({ channel: 'pigeon' }).success).toBe(false);
+	});
+});
+
+describe('createMessageSchema', () => {
+	it('defaults the author to a human agent', () => {
+		expect(createMessageSchema.parse({ body: 'On my way' })).toEqual({
+			author: 'agent',
+			body: 'On my way',
+		});
+	});
+
+	it('accepts an explicit author', () => {
+		expect(
+			createMessageSchema.parse({ author: 'customer', body: 'Is the tech still coming?' }),
+		).toEqual({ author: 'customer', body: 'Is the tech still coming?' });
+	});
+
+	it('requires a body', () => {
+		const result = createMessageSchema.safeParse({ author: 'agent', body: '   ' });
+		expect(result.success).toBe(false);
+		expect(result.error?.issues[0]?.message).toBe('Message is required.');
+	});
+
+	it('rejects an unknown author', () => {
+		expect(createMessageSchema.safeParse({ author: 'spam', body: 'hi' }).success).toBe(false);
+	});
+});
+
+describe('sendMessageSchema', () => {
+	it('accepts a body', () => {
+		expect(sendMessageSchema.parse({ body: 'Sounds good!' })).toEqual({ body: 'Sounds good!' });
+	});
+
+	it('requires a non-empty body', () => {
+		expect(sendMessageSchema.safeParse({ body: '' }).success).toBe(false);
+	});
+});
+
+describe('approveReplySchema', () => {
+	it('defaults to an empty body (send the pending draft as-is)', () => {
+		expect(approveReplySchema.parse({})).toEqual({ body: '' });
+	});
+
+	it('carries an edited body', () => {
+		expect(approveReplySchema.parse({ body: 'Edited reply' })).toEqual({ body: 'Edited reply' });
+	});
+});
+
+describe('conversationListQuerySchema', () => {
+	it('applies pagination defaults and omits an absent status filter', () => {
+		expect(conversationListQuerySchema.parse({})).toEqual({ page: 1, pageSize: 20 });
+	});
+
+	it('coerces pagination and keeps the status filter', () => {
+		expect(
+			conversationListQuerySchema.parse({ page: '2', pageSize: '50', status: 'needs_attention' }),
+		).toMatchObject({ page: 2, pageSize: 50, status: 'needs_attention' });
+	});
+
+	it('rejects an invalid status filter', () => {
+		expect(conversationListQuerySchema.safeParse({ status: 'spam' }).success).toBe(false);
 	});
 });

@@ -4,6 +4,7 @@ import { loadConfig } from './config';
 import { connectMongoose, disconnectMongoose } from './db/mongoose';
 import {
 	MongoAccountRepository,
+	MongoConversationRepository,
 	MongoCustomerRepository,
 	MongoFaqRepository,
 	MongoJobRepository,
@@ -12,6 +13,7 @@ import {
 } from './repositories/mongo';
 import type {
 	AccountRepository,
+	ConversationRepository,
 	CustomerRepository,
 	FaqRepository,
 	JobRepository,
@@ -24,10 +26,14 @@ import {
 	type SeedGenerator,
 } from './seed-ai';
 import {
+	type ConversationContact,
+	generateConversations,
 	generateNotifications,
 	parseSeedArgs,
 	SEED_APPOINTMENT_MAX,
 	SEED_APPOINTMENT_MIN,
+	SEED_CONVERSATION_MAX,
+	SEED_CONVERSATION_MIN,
 	SEED_CUSTOMER_MAX,
 	SEED_CUSTOMER_MIN,
 	SEED_FAQ_DEFAULT,
@@ -207,6 +213,39 @@ async function seedNotifications(
 	write(`Notifications: created ${created} across ${memberIds.length} member(s).`);
 }
 
+/**
+ * Create `count` inbox conversations linked to the account's customers, replaying
+ * each scripted message through the repository (and setting the review state for
+ * the flagged thread) so the seeded inbox is identical to one built over HTTP.
+ */
+async function seedConversations(
+	conversations: ConversationRepository,
+	account: Account,
+	contacts: ConversationContact[],
+	count: number,
+): Promise<void> {
+	if (count === 0) {
+		write('Conversations: skipped (count 0).');
+		return;
+	}
+	const seeds = generateConversations(count, contacts);
+	for (const seed of seeds) {
+		const created = await conversations.create(account.id, seed.conversation);
+		for (const message of seed.messages) {
+			await conversations.addMessage(account.id, created.id, message);
+		}
+		if (seed.review) {
+			await conversations.setReviewState(account.id, created.id, {
+				status: 'needs_attention',
+				pendingReply: seed.review.pendingReply,
+				flagReason: seed.review.flagReason,
+			});
+		}
+	}
+	const linkNote = contacts.length === 0 ? ' (no customers to link)' : '';
+	write(`Conversations: created ${seeds.length}${linkNote}.`);
+}
+
 async function run(options: SeedOptions): Promise<void> {
 	if (options.seed !== undefined) {
 		faker.seed(options.seed);
@@ -228,6 +267,9 @@ async function run(options: SeedOptions): Promise<void> {
 	const notificationCount =
 		options.notifications ??
 		faker.number.int({ min: SEED_NOTIFICATION_MIN, max: SEED_NOTIFICATION_MAX });
+	const conversationCount =
+		options.conversations ??
+		faker.number.int({ min: SEED_CONVERSATION_MIN, max: SEED_CONVERSATION_MAX });
 
 	await connectMongoose(config.MONGODB_URI);
 	try {
@@ -262,6 +304,7 @@ async function run(options: SeedOptions): Promise<void> {
 			write(`FAQs: would create up to ${faqCount} (new questions only).`);
 			write(`Appointments: would create ${appointmentCount}.`);
 			write(`Notifications: would create ${notificationCount} per member.`);
+			write(`Conversations: would create ${conversationCount}.`);
 			write('Dry run complete — no AI calls, nothing written.');
 			return;
 		}
@@ -306,6 +349,24 @@ async function run(options: SeedOptions): Promise<void> {
 			account,
 			memberIds,
 			notificationCount,
+		);
+
+		// Link conversations to the account's customers (the ones just seeded, or the
+		// existing roster when customers were skipped) so each thread has a real contact.
+		let contacts: ConversationContact[] = [];
+		if (conversationCount > 0) {
+			const roster = await customers.list({ accountId: account.id, page: 1, pageSize: 100 });
+			contacts = roster.customers.map((customer) => ({
+				customerId: customer.id,
+				name: customer.name,
+				phone: customer.phone,
+			}));
+		}
+		await seedConversations(
+			new MongoConversationRepository(),
+			account,
+			contacts,
+			conversationCount,
 		);
 
 		write('Seeding complete.');

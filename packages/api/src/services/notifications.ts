@@ -53,6 +53,15 @@ export interface RoleChangedArgs extends BaseArgs {
 	accountName: string;
 }
 
+export interface ConversationNeedsReviewArgs extends BaseArgs {
+	/** The user who triggered the draft (e.g. tapped "let Rivus reply"); not notified. */
+	actorId: UserId;
+	/** The account's members; everyone but the actor is alerted that a thread is waiting. */
+	memberIds: UserId[];
+	/** The contact whose conversation Rivus paused on, for the message body. */
+	contactName: string;
+}
+
 export interface NotificationService {
 	/** A job was created; notify its assignee when it isn't the creator. */
 	jobCreated(args: JobEventArgs): Promise<void>;
@@ -64,11 +73,14 @@ export interface NotificationService {
 	inviteAccepted(args: InviteAcceptedArgs): Promise<void>;
 	/** A member's role changed; notify that member (unless they changed it themselves). */
 	roleChanged(args: RoleChangedArgs): Promise<void>;
+	/** Rivus paused a conversation for a human; alert every member except the actor. */
+	conversationNeedsReview(args: ConversationNeedsReviewArgs): Promise<void>;
 }
 
 /** Where each notification type deep-links in the app. */
 const SCHEDULE_LINK = '/schedule';
 const TEAM_LINK = '/team';
+const INBOX_LINK = '/inbox';
 
 const ROLE_LABELS: Record<Role, string> = {
 	owner: 'an Owner',
@@ -240,6 +252,31 @@ class NotificationServiceImpl implements NotificationService {
 			},
 			logger,
 		);
+	}
+
+	async conversationNeedsReview({
+		accountId,
+		actorId,
+		memberIds,
+		contactName,
+		logger,
+	}: ConversationNeedsReviewArgs): Promise<void> {
+		// The person who asked Rivus to reply already knows it paused, so alert the
+		// rest of the team — they're the ones who might pick the thread up.
+		const recipients = memberIds.filter((memberId) => memberId !== actorId);
+		for (const recipient of recipients) {
+			await this.emit(
+				accountId,
+				recipient,
+				{
+					type: 'system',
+					title: 'A conversation needs you',
+					body: `Rivus paused on ${contactName} and is waiting for your review.`,
+					linkHref: INBOX_LINK,
+				},
+				logger,
+			);
+		}
 	}
 }
 

@@ -26,6 +26,7 @@ async function main(): Promise<void> {
 		customers,
 		jobs,
 		notifications,
+		conversations,
 		verificationCodes,
 	} = createInMemoryRepositories();
 	const app = buildApp({
@@ -40,6 +41,7 @@ async function main(): Promise<void> {
 		customers,
 		jobs,
 		notifications,
+		conversations,
 		verificationCodes,
 		mailer: new NoopMailer(),
 		notifier: createNotificationService({ notifications }),

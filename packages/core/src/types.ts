@@ -13,6 +13,8 @@ export type AccountId = Id<'Account'>;
 export type MembershipId = Id<'Membership'>;
 export type InviteId = Id<'Invite'>;
 export type NotificationId = Id<'Notification'>;
+export type ConversationId = Id<'Conversation'>;
+export type MessageId = Id<'Message'>;
 
 /** ISO-8601 timestamp, e.g. `2026-06-19T12:00:00.000Z`. */
 export type IsoDateString = string;
@@ -231,6 +233,90 @@ export interface Notification {
 	linkHref: string;
 	createdAt: IsoDateString;
 	updatedAt: IsoDateString;
+}
+
+/**
+ * The channel a customer conversation arrives on. Stored lower-case and canonical;
+ * the UI maps each to a display label ("WhatsApp", "SMS") and a channel colour.
+ */
+export type ConversationChannel = 'whatsapp' | 'phone' | 'email' | 'sms';
+
+/**
+ * Where a conversation stands with Rivus:
+ * - `rivus_handling` — Rivus is auto-replying from the knowledge base; nothing is
+ *   needed from the team.
+ * - `needs_attention` — Rivus paused for a human: it drafted a reply it wants
+ *   approved (e.g. a billing dispute), or it couldn't answer. The team is on the
+ *   hook. This is what the red "Needs you" filter and the sidebar badge count.
+ * - `resolved` — the thread is closed; no further action.
+ */
+export type ConversationStatus = 'rivus_handling' | 'needs_attention' | 'resolved';
+
+/**
+ * Who authored a message in a conversation:
+ * - `customer` — the external customer (left side of the thread).
+ * - `rivus` — Rivus's AI reply (right side, with the Rivus mark).
+ * - `agent` — a human team member's reply (right side, with their avatar).
+ * - `note` — a system note Rivus drops inline (centered pill), e.g. "Rivus booked…".
+ */
+export type MessageAuthor = 'customer' | 'rivus' | 'agent' | 'note';
+
+/**
+ * A single customer conversation (thread) owned by an account; all members share
+ * the account's inbox. The message transcript is stored separately and fetched
+ * with the conversation detail — list responses carry only the metadata below.
+ */
+export interface Conversation {
+	id: ConversationId;
+	accountId: AccountId;
+	/**
+	 * The linked CRM {@link Customer}, or an empty string for a lead with no
+	 * customer record yet. When set, the context panel derives the customer's
+	 * phone, lifetime value, and balance from it. Existence is enforced on write.
+	 */
+	customerId: string;
+	/** Display name of the contact (denormalized so leads without a customer still show a name). */
+	contactName: string;
+	/** Contact phone for this thread's channel; empty string when none. */
+	contactPhone: string;
+	channel: ConversationChannel;
+	status: ConversationStatus;
+	/** One-line preview of the most recent message, kept in sync as messages arrive. */
+	snippet: string;
+	/** Free-text tags shown in the context panel (e.g. "Repeat client", "Billing flag"). */
+	tags: string[];
+	/** Last-invoice label for the billing card (e.g. "#1051 · $540 · Due Jun 30"); empty when none. */
+	lastInvoice: string;
+	/**
+	 * Rivus's held draft reply awaiting human approval; empty string when there's
+	 * nothing pending. Only meaningful while `status` is `needs_attention`.
+	 */
+	pendingReply: string;
+	/**
+	 * Why Rivus paused for review (shown in the approve banner); empty when the
+	 * thread isn't flagged.
+	 */
+	flagReason: string;
+	/** When the most recent message arrived — drives list ordering and the row time. */
+	lastMessageAt: IsoDateString;
+	createdAt: IsoDateString;
+	updatedAt: IsoDateString;
+}
+
+/** One message in a {@link Conversation}'s transcript. Append-only. */
+export interface Message {
+	id: MessageId;
+	conversationId: ConversationId;
+	author: MessageAuthor;
+	/** Message text (or the note text when `author` is `note`). */
+	body: string;
+	createdAt: IsoDateString;
+}
+
+/** A conversation together with its full message transcript (the detail view). */
+export interface ConversationDetail {
+	conversation: Conversation;
+	messages: Message[];
 }
 
 /** A page of results plus the metadata a client needs to paginate. */

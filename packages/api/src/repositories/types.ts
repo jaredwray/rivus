@@ -2,10 +2,16 @@ import type {
 	Account,
 	AccountBusinessInput,
 	AccountId,
+	Conversation,
+	ConversationDetail,
+	ConversationId,
+	ConversationStatus,
+	CreateConversationInput,
 	CreateCustomerInput,
 	CreateFaqInput,
 	CreateItemInput,
 	CreateJobInput,
+	CreateMessageInput,
 	CreateNotificationInput,
 	Customer,
 	CustomerId,
@@ -19,9 +25,11 @@ import type {
 	JobId,
 	JobStatus,
 	Membership,
+	Message,
 	Notification,
 	NotificationId,
 	Role,
+	UpdateConversationInput,
 	UpdateCustomerInput,
 	UpdateFaqInput,
 	UpdateItemInput,
@@ -361,4 +369,71 @@ export interface NotificationRepository {
 	/** Mark every unread notification read; returns how many were changed. */
 	markAllRead(accountId: AccountId, userId: UserId): Promise<number>;
 	delete(accountId: AccountId, userId: UserId, id: NotificationId): Promise<boolean>;
+}
+
+/**
+ * Options for {@link ConversationRepository.list}: a page of an account's
+ * conversations, newest activity first, optionally narrowed to a single status.
+ */
+export interface ListConversationsOptions {
+	accountId: AccountId;
+	page: number;
+	pageSize: number;
+	/** When set, only conversations in this status are returned. */
+	status?: ConversationStatus;
+}
+
+/**
+ * The server-managed "review state" of a conversation, set as one tuple. These
+ * fields aren't part of the public update shape ({@link UpdateConversationInput})
+ * because only the inbox flow (Rivus drafting, a human approving) may change them:
+ * a held draft and its flag reason always move together with the status.
+ */
+export interface ConversationReviewPatch {
+	status: ConversationStatus;
+	/** Rivus's held draft awaiting approval; empty string to clear it. */
+	pendingReply: string;
+	/** Why Rivus paused; empty string to clear it. */
+	flagReason: string;
+}
+
+/**
+ * Account-scoped inbox of customer conversations. Each conversation owns an
+ * append-only message transcript; `list`/`findById` return conversation metadata
+ * only (no messages), and {@link listMessages} fetches the transcript on demand —
+ * so the thread list stays cheap while the detail view loads the full history.
+ */
+export interface ConversationRepository {
+	create(accountId: AccountId, input: CreateConversationInput): Promise<Conversation>;
+	list(
+		options: ListConversationsOptions,
+	): Promise<{ conversations: Conversation[]; total: number }>;
+	findById(accountId: AccountId, id: ConversationId): Promise<Conversation | null>;
+	/** Apply a partial metadata update (tags, status, contact, …); returns it, or null. */
+	update(
+		accountId: AccountId,
+		id: ConversationId,
+		input: UpdateConversationInput,
+	): Promise<Conversation | null>;
+	delete(accountId: AccountId, id: ConversationId): Promise<boolean>;
+	/** How many of the account's conversations are `needs_attention` (the sidebar badge). */
+	needsAttentionCount(accountId: AccountId): Promise<number>;
+	/** The transcript for one conversation, oldest-first; null when it isn't the account's. */
+	listMessages(accountId: AccountId, id: ConversationId): Promise<Message[] | null>;
+	/**
+	 * Append a message, refreshing the conversation's `snippet` (skipped for `note`
+	 * messages) and `lastMessageAt`. Returns the updated conversation with its full
+	 * transcript, or null when the conversation isn't the account's.
+	 */
+	addMessage(
+		accountId: AccountId,
+		id: ConversationId,
+		input: CreateMessageInput,
+	): Promise<ConversationDetail | null>;
+	/** Set the server-managed review state (status + held draft + flag); returns it, or null. */
+	setReviewState(
+		accountId: AccountId,
+		id: ConversationId,
+		patch: ConversationReviewPatch,
+	): Promise<Conversation | null>;
 }

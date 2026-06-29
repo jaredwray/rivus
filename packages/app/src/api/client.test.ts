@@ -1,5 +1,12 @@
 import { faker } from '@faker-js/faker';
-import type { AccountId, CustomerId, FaqId, JobId, NotificationId } from '@rivus/core';
+import type {
+	AccountId,
+	ConversationId,
+	CustomerId,
+	FaqId,
+	JobId,
+	NotificationId,
+} from '@rivus/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, createApiClient, ValidationError } from './client';
 
@@ -1383,6 +1390,239 @@ describe('createApiClient', () => {
 				.catch((e) => e);
 			expect(error).toBeInstanceOf(ApiError);
 			expect(error.status).toBe(404);
+		});
+	});
+
+	describe('conversations', () => {
+		function makeConversation(overrides: Record<string, unknown> = {}) {
+			const now = new Date().toISOString();
+			return {
+				id: faker.string.uuid(),
+				accountId: faker.string.uuid(),
+				customerId: '',
+				contactName: faker.person.fullName(),
+				contactPhone: '',
+				channel: 'whatsapp' as const,
+				status: 'rivus_handling' as const,
+				snippet: faker.lorem.sentence(),
+				tags: [] as string[],
+				lastInvoice: '',
+				pendingReply: '',
+				flagReason: '',
+				lastMessageAt: now,
+				createdAt: now,
+				updatedAt: now,
+				...overrides,
+			};
+		}
+
+		function makeMessage(overrides: Record<string, unknown> = {}) {
+			return {
+				id: faker.string.uuid(),
+				conversationId: faker.string.uuid(),
+				author: 'customer' as const,
+				body: faker.lorem.sentence(),
+				createdAt: new Date().toISOString(),
+				...overrides,
+			};
+		}
+
+		function conversationPage(conversations: ReturnType<typeof makeConversation>[]) {
+			return {
+				data: conversations,
+				meta: {
+					page: 1,
+					pageSize: 20,
+					total: conversations.length,
+					totalPages: 1,
+					hasNextPage: false,
+					hasPreviousPage: false,
+				},
+			};
+		}
+
+		it('lists conversations with the bearer token and default pagination', async () => {
+			const conversations = [makeConversation(), makeConversation()];
+			fetchMock.mockResolvedValueOnce(jsonResponse(conversationPage(conversations)));
+
+			const client = createApiClient(BASE, fetchMock);
+			const token = faker.string.alphanumeric(32);
+			const result = await client.listConversations(token);
+
+			expect(result.data).toEqual(conversations);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/conversations?page=1&pageSize=20`);
+			expect(init.headers).toMatchObject({ Authorization: `Bearer ${token}` });
+		});
+
+		it('forwards pagination and the status filter', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(conversationPage([])));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.listConversations('token', { page: 2, pageSize: 50, status: 'needs_attention' });
+
+			const [url] = fetchMock.mock.calls[0] as [string];
+			expect(url).toBe(`${BASE}/v1/conversations?page=2&pageSize=50&status=needs_attention`);
+		});
+
+		it('omits the status param when not filtering', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(conversationPage([])));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.listConversations('token');
+
+			const [url] = fetchMock.mock.calls[0] as [string];
+			expect(url).toBe(`${BASE}/v1/conversations?page=1&pageSize=20`);
+		});
+
+		it('creates a conversation and returns it', async () => {
+			const conversation = makeConversation({ contactName: 'Dana Whitfield' });
+			fetchMock.mockResolvedValueOnce(jsonResponse(conversation, { status: 201 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.createConversation('owner-token', {
+				contactName: 'Dana Whitfield',
+				channel: 'whatsapp',
+			});
+
+			expect(result.contactName).toBe('Dana Whitfield');
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/conversations`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer owner-token' });
+		});
+
+		it('rejects creating a conversation with no contact name before fetching', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.createConversation('token', { contactName: '', channel: 'sms' }),
+			).rejects.toBeInstanceOf(ValidationError);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it('fetches a conversation with its transcript', async () => {
+			const conversation = makeConversation();
+			const detail = {
+				conversation,
+				messages: [makeMessage({ conversationId: conversation.id })],
+			};
+			fetchMock.mockResolvedValueOnce(jsonResponse(detail));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.getConversation('token', conversation.id as ConversationId);
+
+			expect(result.conversation.id).toBe(conversation.id);
+			expect(result.messages).toHaveLength(1);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/conversations/${conversation.id}`);
+			expect(init.method).toBe('GET');
+		});
+
+		it('updates a conversation', async () => {
+			const conversation = makeConversation({ status: 'resolved', tags: ['VIP'] });
+			fetchMock.mockResolvedValueOnce(jsonResponse(conversation));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.updateConversation('token', 'conv-1' as ConversationId, {
+				status: 'resolved',
+			});
+
+			expect(result.status).toBe('resolved');
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/conversations/conv-1`);
+			expect(init.method).toBe('PATCH');
+		});
+
+		it('deletes a conversation and resolves on 204', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(undefined, { status: 204 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.deleteConversation('token', 'conv-1' as ConversationId),
+			).resolves.toBeUndefined();
+
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/conversations/conv-1`);
+			expect(init.method).toBe('DELETE');
+		});
+
+		it('returns the needs-attention count as a number', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ count: 3 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const count = await client.needsAttentionCount('token');
+
+			expect(count).toBe(3);
+			const [url] = fetchMock.mock.calls[0] as [string];
+			expect(url).toBe(`${BASE}/v1/conversations/needs-attention-count`);
+		});
+
+		it('sends a team-member message and returns the updated detail', async () => {
+			const conversation = makeConversation();
+			const detail = {
+				conversation,
+				messages: [makeMessage({ author: 'agent', body: 'On my way' })],
+			};
+			fetchMock.mockResolvedValueOnce(jsonResponse(detail, { status: 201 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.sendMessage('token', conversation.id as ConversationId, {
+				body: 'On my way',
+			});
+
+			expect(result.messages.at(-1)?.body).toBe('On my way');
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/conversations/${conversation.id}/messages`);
+			expect(init.method).toBe('POST');
+		});
+
+		it('rejects sending an empty message before fetching', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.sendMessage('token', 'conv-1' as ConversationId, { body: '   ' }),
+			).rejects.toBeInstanceOf(ValidationError);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it('asks Rivus to reply', async () => {
+			const conversation = makeConversation({ status: 'needs_attention' });
+			fetchMock.mockResolvedValueOnce(jsonResponse({ conversation, messages: [] }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.replyWithRivus('token', conversation.id as ConversationId);
+
+			expect(result.conversation.status).toBe('needs_attention');
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/conversations/${conversation.id}/reply`);
+			expect(init.method).toBe('POST');
+		});
+
+		it('approves the held draft as-is', async () => {
+			const conversation = makeConversation();
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse({ conversation, messages: [makeMessage({ author: 'rivus' })] }),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.approveReply('token', conversation.id as ConversationId);
+
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/conversations/${conversation.id}/approve`);
+			expect(init.method).toBe('POST');
+			expect(init.body).toBe(JSON.stringify({ body: '' }));
+		});
+
+		it('approves with an edited body', async () => {
+			const conversation = makeConversation();
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse({ conversation, messages: [makeMessage({ author: 'rivus' })] }),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.approveReply('token', conversation.id as ConversationId, { body: 'Edited' });
+
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(init.body).toBe(JSON.stringify({ body: 'Edited' }));
 		});
 	});
 

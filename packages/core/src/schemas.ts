@@ -452,3 +452,94 @@ export const jobConflictQuerySchema = z.object({
 	excludeJobId: optionalRefSchema.optional(),
 });
 export type JobConflictQuery = z.infer<typeof jobConflictQuerySchema>;
+
+// --- Conversations (inbox) ----------------------------------------------------
+
+// `ConversationChannel`/`ConversationStatus`/`MessageAuthor` are the source-of-truth
+// unions in `types.ts` (mirroring the `ItemStatus`/`itemStatusSchema` split); here
+// we only add the runtime schemas.
+
+/** The channel a conversation arrives on (see {@link ConversationChannel}). */
+export const conversationChannelSchema = z.enum(['whatsapp', 'phone', 'email', 'sms'], {
+	error: 'Choose a valid channel.',
+});
+
+/** Where a conversation stands with Rivus (see {@link ConversationStatus}). */
+export const conversationStatusSchema = z.enum(['rivus_handling', 'needs_attention', 'resolved'], {
+	error: 'Choose a valid conversation status.',
+});
+
+/** Who authored a message (see {@link MessageAuthor}). */
+export const messageAuthorSchema = z.enum(['customer', 'rivus', 'agent', 'note'], {
+	error: 'Choose a valid message author.',
+});
+
+/** The tags on a conversation: short free-text labels, capped so the panel stays tidy. */
+const conversationTagsSchema = z
+	.array(requiredText('Tag', 40))
+	.max(12, { error: 'A conversation can have at most 12 tags.' });
+
+/** Body text for a message (a chat turn or an inline note); generous but bounded. */
+const messageBodySchema = requiredText('Message', 4000);
+
+/** An invoice label for the billing card, e.g. "#1051 · $540 · Due Jun 30". */
+const invoiceLabelSchema = optionalText('Invoice', 120);
+
+export const createConversationSchema = z.object({
+	contactName: requiredText('Contact name', 120),
+	channel: conversationChannelSchema,
+	customerId: optionalRefSchema.default(''),
+	contactPhone: phoneSchema.default(''),
+	status: conversationStatusSchema.default('rivus_handling'),
+	tags: conversationTagsSchema.default([]),
+	lastInvoice: invoiceLabelSchema.default(''),
+});
+export type CreateConversationInput = z.infer<typeof createConversationSchema>;
+
+/**
+ * Every field optional, but at least one must be present — mirrors
+ * {@link updateItemSchema}. No `.default()`s (unlike create) so a partial update
+ * only touches the fields the caller actually sent.
+ */
+export const updateConversationSchema = z
+	.object({
+		contactName: requiredText('Contact name', 120).optional(),
+		channel: conversationChannelSchema.optional(),
+		customerId: optionalRefSchema.optional(),
+		contactPhone: phoneSchema.optional(),
+		status: conversationStatusSchema.optional(),
+		tags: conversationTagsSchema.optional(),
+		lastInvoice: invoiceLabelSchema.optional(),
+	})
+	.refine((value) => Object.values(value).some((field) => field !== undefined), {
+		error: 'Provide at least one field to update.',
+	});
+export type UpdateConversationInput = z.infer<typeof updateConversationSchema>;
+
+/** Mint a message in a conversation. `author` defaults to a human `agent` reply. */
+export const createMessageSchema = z.object({
+	author: messageAuthorSchema.default('agent'),
+	body: messageBodySchema,
+});
+export type CreateMessageInput = z.infer<typeof createMessageSchema>;
+
+/** The composer's "send" payload — the team always sends as a human `agent`. */
+export const sendMessageSchema = z.object({
+	body: messageBodySchema,
+});
+export type SendMessageInput = z.infer<typeof sendMessageSchema>;
+
+/**
+ * Approve (and send) Rivus's held draft. An empty/absent `body` sends the pending
+ * draft as-is; a non-empty `body` is the human's edited version, sent instead.
+ */
+export const approveReplySchema = z.object({
+	body: optionalText('Message', 4000).default(''),
+});
+export type ApproveReplyInput = z.infer<typeof approveReplySchema>;
+
+/** List filter for the inbox: pagination plus an optional status narrowing. */
+export const conversationListQuerySchema = paginationQuerySchema.extend({
+	status: conversationStatusSchema.optional(),
+});
+export type ConversationListQuery = z.infer<typeof conversationListQuerySchema>;
