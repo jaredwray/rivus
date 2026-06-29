@@ -22,7 +22,7 @@ import {
 	idParamsSchema,
 	needsAttentionCountResponseSchema,
 } from '../http-schemas';
-import { decideRivusReply, latestCustomerMessage } from '../services/inbox';
+import { awaitingRivusReply, decideRivusReply, latestCustomerMessage } from '../services/inbox';
 
 // The newest page of FAQs handed to Rivus as the knowledge base when drafting a
 // reply — mirrors the FAQ "answer" route. The answer service caps its own input,
@@ -293,10 +293,19 @@ export const conversationRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!conversation) {
 				throw app.httpErrors.notFound('Conversation not found');
 			}
+			// A thread already held for review is waiting on a human, not on Rivus.
+			if (conversation.status === 'needs_attention') {
+				throw app.httpErrors.conflict('This conversation is already waiting for your review.');
+			}
 			const messages = (await conversations.listMessages(accountId, id)) ?? [];
 			const question = latestCustomerMessage(messages);
 			if (question === null) {
 				throw app.httpErrors.conflict('There is no customer message for Rivus to reply to.');
+			}
+			// Idempotency: don't append a second answer if the latest customer turn has
+			// already been replied to (a double-tap, a retry, or two members at once).
+			if (!awaitingRivusReply(messages)) {
+				throw app.httpErrors.conflict('The latest message has already been answered.');
 			}
 
 			// Ground the draft in the account's published FAQs (drafts are staged, never
@@ -367,6 +376,7 @@ export const conversationRoutes: FastifyPluginAsync = async (fastify) => {
 					200: conversationDetailResponseSchema,
 					400: errorResponseSchema,
 					404: errorResponseSchema,
+					409: errorResponseSchema,
 					401: errorResponseSchema,
 				},
 			},
@@ -377,6 +387,12 @@ export const conversationRoutes: FastifyPluginAsync = async (fastify) => {
 			const conversation = await conversations.findById(accountId, id);
 			if (!conversation) {
 				throw app.httpErrors.notFound('Conversation not found');
+			}
+			// Approve only sends a held draft. Without this guard any member could POST
+			// here on a normal thread and inject a `rivus`-authored message, bypassing the
+			// `/messages` path that records human replies as `agent`.
+			if (conversation.status !== 'needs_attention') {
+				throw app.httpErrors.conflict('This conversation is not awaiting approval.');
 			}
 			// An empty body sends the held draft as-is; a non-empty body is the edited
 			// version. With neither there is nothing to send.

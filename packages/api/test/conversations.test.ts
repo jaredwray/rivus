@@ -371,6 +371,43 @@ describe('conversation routes', () => {
 			expect(theirs[0]).toMatchObject({ title: 'A conversation needs you' });
 			expect(mine).toHaveLength(0);
 		});
+
+		async function reply(id: string) {
+			return app.inject({
+				method: 'POST',
+				url: `/v1/conversations/${id}/reply`,
+				headers: authHeader(token),
+			});
+		}
+
+		it('does not answer the same customer turn twice (idempotent)', async () => {
+			await seedFaq('What are your business hours?', 'We are open Monday to Friday, 9 AM to 6 PM.');
+			const conversation = (await createConversation()).json();
+			await addMessage(conversation.id, 'customer', 'What are your hours?');
+
+			expect((await reply(conversation.id)).statusCode).toBe(200);
+			// The latest turn now has a Rivus answer, so a second call is a 409, not a dup.
+			const second = await reply(conversation.id);
+			expect(second.statusCode).toBe(409);
+		});
+
+		it('409s when the thread is already awaiting review', async () => {
+			const conversation = (await createConversation()).json();
+			await addMessage(conversation.id, 'customer', 'Can you refund my invoice?');
+			expect((await reply(conversation.id)).statusCode).toBe(200); // holds for review
+			expect((await reply(conversation.id)).statusCode).toBe(409); // already held
+		});
+
+		it('409s a thread whose latest turn is a note or agent reply, not a question', async () => {
+			const noteOnly = (await createConversation()).json();
+			await addMessage(noteOnly.id, 'note', 'Inbound call transcribed by Rivus');
+			expect((await reply(noteOnly.id)).statusCode).toBe(409);
+
+			const answered = (await createConversation()).json();
+			await addMessage(answered.id, 'customer', 'Do you serve Bellevue?');
+			await addMessage(answered.id, 'agent', 'Yes we do!');
+			expect((await reply(answered.id)).statusCode).toBe(409);
+		});
 	});
 
 	describe('approving a held draft', () => {
@@ -430,25 +467,101 @@ describe('conversation routes', () => {
 			});
 			expect(response.statusCode).toBe(400);
 		});
+
+		it('409s approving a thread that is not awaiting review', async () => {
+			// A normal (rivus_handling) thread has no held draft to approve; approving it
+			// would otherwise inject a Rivus-authored message, bypassing /messages.
+			const conversation = (await createConversation()).json();
+			const response = await app.inject({
+				method: 'POST',
+				url: `/v1/conversations/${conversation.id}/approve`,
+				headers: authHeader(token),
+				payload: { body: 'sneaky' },
+			});
+			expect(response.statusCode).toBe(409);
+		});
 	});
 
-	it('does not leak conversations across accounts', async () => {
+	describe('review-state lifecycle', () => {
+		it('a human reply leaves a non-flagged thread untouched', async () => {
+			const conversation = (await createConversation()).json();
+			const response = await app.inject({
+				method: 'POST',
+				url: `/v1/conversations/${conversation.id}/messages`,
+				headers: authHeader(token),
+				payload: { body: 'Following up here.' },
+			});
+			expect(response.statusCode).toBe(201);
+			expect(response.json().conversation).toMatchObject({
+				status: 'rivus_handling',
+				pendingReply: '',
+				flagReason: '',
+			});
+		});
+
+		it('a status change away from needs_attention clears the held draft', async () => {
+			const conversation = (await createConversation({ status: 'needs_attention' })).json();
+			await repos.conversations.setReviewState(
+				accountId as AccountId,
+				conversation.id as ConversationId,
+				{ status: 'needs_attention', pendingReply: 'a held draft', flagReason: 'billing' },
+			);
+
+			const response = await app.inject({
+				method: 'PATCH',
+				url: `/v1/conversations/${conversation.id}`,
+				headers: authHeader(token),
+				payload: { status: 'resolved' },
+			});
+			expect(response.statusCode).toBe(200);
+			expect(response.json()).toMatchObject({
+				status: 'resolved',
+				pendingReply: '',
+				flagReason: '',
+			});
+		});
+
+		it('a note does not change the list snippet but joins the transcript', async () => {
+			const conversation = (await createConversation()).json();
+			await addMessage(conversation.id, 'customer', 'Hi there');
+			await addMessage(conversation.id, 'rivus', 'Hello!');
+			await addMessage(conversation.id, 'note', 'Rivus booked a visit');
+
+			const detail = await app.inject({
+				method: 'GET',
+				url: `/v1/conversations/${conversation.id}`,
+				headers: authHeader(token),
+			});
+			// The snippet stays the last real reply, not the note...
+			expect(detail.json().conversation.snippet).toBe('Hello!');
+			// ...but the note is still in the transcript.
+			expect(detail.json().messages.map((m: { body: string }) => m.body)).toContain(
+				'Rivus booked a visit',
+			);
+		});
+	});
+
+	it('does not leak conversations across accounts on any route', async () => {
 		const conversation = (await createConversation()).json();
+		await addMessage(conversation.id, 'customer', 'private question');
 		const otherToken = (await signupOwner(app)).token;
+		const headers = authHeader(otherToken);
+		const url = (path: string) => `/v1/conversations/${conversation.id}${path}`;
 
-		const get = await app.inject({
-			method: 'GET',
-			url: `/v1/conversations/${conversation.id}`,
-			headers: authHeader(otherToken),
-		});
-		expect(get.statusCode).toBe(404);
-
-		const del = await app.inject({
-			method: 'DELETE',
-			url: `/v1/conversations/${conversation.id}`,
-			headers: authHeader(otherToken),
-		});
-		expect(del.statusCode).toBe(404);
+		expect((await app.inject({ method: 'GET', url: url(''), headers })).statusCode).toBe(404);
+		expect((await app.inject({ method: 'DELETE', url: url(''), headers })).statusCode).toBe(404);
+		// The mutating sub-routes must be account-scoped too (valid bodies so they reach
+		// the handler's own-conversation check rather than failing body validation first).
+		expect(
+			(await app.inject({ method: 'POST', url: url('/messages'), headers, payload: { body: 'x' } }))
+				.statusCode,
+		).toBe(404);
+		expect((await app.inject({ method: 'POST', url: url('/reply'), headers })).statusCode).toBe(
+			404,
+		);
+		expect(
+			(await app.inject({ method: 'POST', url: url('/approve'), headers, payload: {} })).statusCode,
+		).toBe(404);
 	});
 });
 

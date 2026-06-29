@@ -2,6 +2,7 @@ import type { ConversationId, Message, MessageId } from '@rivus/core';
 import { describe, expect, it } from 'vitest';
 import type { FaqAnswer } from '../src/services/faq-answer';
 import {
+	awaitingRivusReply,
 	BILLING_PAUSE_REASON,
 	decideRivusReply,
 	isBillingSensitive,
@@ -64,6 +65,24 @@ describe('latestCustomerMessage', () => {
 	});
 });
 
+describe('awaitingRivusReply', () => {
+	it('is true when the newest real message is from the customer', () => {
+		expect(awaitingRivusReply([message('customer', 'hi')])).toBe(true);
+		// A trailing note doesn't count as a reply.
+		expect(awaitingRivusReply([message('customer', 'hi'), message('note', 'flagged')])).toBe(true);
+	});
+
+	it('is false once Rivus or a human has replied', () => {
+		expect(awaitingRivusReply([message('customer', 'hi'), message('rivus', 'answer')])).toBe(false);
+		expect(awaitingRivusReply([message('customer', 'hi'), message('agent', 'on it')])).toBe(false);
+	});
+
+	it('is false when the customer has not written', () => {
+		expect(awaitingRivusReply([])).toBe(false);
+		expect(awaitingRivusReply([message('note', 'call transcribed')])).toBe(false);
+	});
+});
+
 describe('decideRivusReply', () => {
 	it('sends a grounded answer to an everyday question', () => {
 		const decision = decideRivusReply({
@@ -100,5 +119,7 @@ describe('decideRivusReply', () => {
 		});
 		expect(decision.pause).toBe(true);
 		expect(decision.reason).toBe(BILLING_PAUSE_REASON);
+		// Held with no draft — a human writes the reply.
+		expect(decision.draft).toBe('');
 	});
 });

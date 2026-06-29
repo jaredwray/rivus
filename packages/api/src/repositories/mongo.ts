@@ -1203,9 +1203,16 @@ export class MongoConversationRepository implements ConversationRepository {
 		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
 			return null;
 		}
+		const set: Record<string, unknown> = { ...input };
+		// Moving the status away from `needs_attention` clears any held draft — it's
+		// only meaningful while the thread is flagged (mirrors the in-memory store).
+		if (input.status !== undefined && input.status !== 'needs_attention') {
+			set.pendingReply = '';
+			set.flagReason = '';
+		}
 		const doc = await ConversationModel.findOneAndUpdate(
 			{ _id: id, accountId: new Types.ObjectId(accountId) },
-			{ $set: input },
+			{ $set: set },
 			{ new: true },
 		)
 			.select('-messages')
@@ -1258,29 +1265,31 @@ export class MongoConversationRepository implements ConversationRepository {
 		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
 			return null;
 		}
-		const doc = await ConversationModel.findOne({
-			_id: id,
-			accountId: new Types.ObjectId(accountId),
-		}).exec();
-		if (!doc) {
-			return null;
-		}
 		const now = new Date();
-		doc.messages.push({
+		const message: MessageSubdocument = {
 			_id: new Types.ObjectId(),
 			author: input.author,
 			body: input.body,
 			createdAt: now,
-		});
+		};
 		// A `note` belongs in the timeline but never becomes the list preview.
-		if (input.author !== 'note') {
-			doc.snippet = input.body;
+		const set: Partial<ConversationDocument> =
+			input.author === 'note'
+				? { lastMessageAt: now }
+				: { lastMessageAt: now, snippet: input.body };
+		// Append atomically with $push so two concurrent replies can't clobber each
+		// other — a read-modify-write on the messages array would silently drop one.
+		const doc = await ConversationModel.findOneAndUpdate(
+			{ _id: id, accountId: new Types.ObjectId(accountId) },
+			{ $push: { messages: message }, $set: set },
+			{ new: true },
+		).exec();
+		if (!doc) {
+			return null;
 		}
-		doc.lastMessageAt = now;
-		await doc.save();
 		return {
 			conversation: mapConversation(doc),
-			messages: doc.messages.map((message) => mapMessage(message, id)),
+			messages: doc.messages.map((entry) => mapMessage(entry, id)),
 		};
 	}
 

@@ -1,4 +1,4 @@
-import type { CustomerId } from '@rivus/core';
+import type { ConversationId, CustomerId } from '@rivus/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
 	ActivityIndicator,
@@ -78,6 +78,24 @@ function rowTime(iso: string): string {
 	return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+/** A day label for the transcript divider: 'Today', 'Yesterday', or a date. */
+function dayLabel(iso: string): string {
+	const date = new Date(iso);
+	if (Number.isNaN(date.getTime())) {
+		return 'Today';
+	}
+	const now = new Date();
+	const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+	const dayMs = 24 * 60 * 60 * 1000;
+	if (date >= startOfToday) {
+		return 'Today';
+	}
+	if (date >= new Date(startOfToday.getTime() - dayMs)) {
+		return 'Yesterday';
+	}
+	return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 /** Order conversations newest-activity-first, matching the API's list order. */
 function byActivity(a: Conversation, b: Conversation): number {
 	return b.lastMessageAt.localeCompare(a.lastMessageAt);
@@ -97,6 +115,7 @@ export default function InboxScreen() {
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [detail, setDetail] = useState<ConversationDetail | null>(null);
 	const [detailLoading, setDetailLoading] = useState(false);
+	const [detailError, setDetailError] = useState<string | null>(null);
 	const [customer, setCustomer] = useState<Customer | null>(null);
 	const [showDetail, setShowDetail] = useState(false);
 
@@ -173,57 +192,80 @@ export default function InboxScreen() {
 	const selected =
 		list.find((conversation) => conversation.id === selectedId) ?? filtered[0] ?? null;
 
-	// Load the selected thread's transcript and linked customer whenever it changes.
-	useEffect(() => {
-		if (!session || !selected) {
+	/**
+	 * Load a thread's transcript and linked customer. Extracted as a stable callback
+	 * (the `isActive` guard drops results that resolve after unmount / a re-select),
+	 * matching the codebase's other loaders.
+	 */
+	const loadDetail = useCallback(
+		async (conversationId: string, customerId: string, isActive: () => boolean = () => true) => {
+			if (!session) {
+				return;
+			}
+			// Clear the prior thread's transcript and customer up front so the panels
+			// never show one thread's data under another's name while the new one loads.
 			setDetail(null);
 			setCustomer(null);
-			return;
-		}
-		let active = true;
-		setDetailLoading(true);
-		setEditingDraft(false);
-		setDraft('');
-		(async () => {
+			setDetailError(null);
+			setDetailLoading(true);
+			setEditingDraft(false);
+			setDraft('');
 			try {
-				const result = await client.getConversation(session.token, selected.id);
-				if (!active) {
+				const result = await client.getConversation(
+					session.token,
+					conversationId as ConversationId,
+				);
+				if (!isActive()) {
 					return;
 				}
 				setDetail(result);
-				if (result.conversation.customerId) {
+				if (customerId) {
 					try {
-						const linked = await client.getCustomer(
-							session.token,
-							result.conversation.customerId as CustomerId,
-						);
-						if (active) {
+						const linked = await client.getCustomer(session.token, customerId as CustomerId);
+						if (isActive()) {
 							setCustomer(linked);
 						}
 					} catch {
 						// The linked customer may have been deleted; the panel falls back to the
 						// conversation's own contact fields.
-						if (active) {
+						if (isActive()) {
 							setCustomer(null);
 						}
 					}
-				} else if (active) {
+				} else if (isActive()) {
 					setCustomer(null);
 				}
 			} catch {
-				if (active) {
+				if (isActive()) {
 					setDetail(null);
+					setDetailError('Could not load this conversation.');
 				}
 			} finally {
-				if (active) {
+				if (isActive()) {
 					setDetailLoading(false);
 				}
 			}
-		})();
+		},
+		[client, session],
+	);
+
+	// Re-load only when the *selected id* (or its linked customer) changes — not when a
+	// mutation replaces the conversation object in the list, which would otherwise flash
+	// the spinner and refetch on every send.
+	const selectedKey = selected?.id ?? null;
+	const selectedCustomerId = selected?.customerId ?? '';
+	useEffect(() => {
+		if (!selectedKey) {
+			setDetail(null);
+			setCustomer(null);
+			return;
+		}
+		let active = true;
+		void loadDetail(selectedKey, selectedCustomerId, () => active);
 		return () => {
 			active = false;
 		};
-	}, [client, session, selected]);
+	}, [selectedKey, selectedCustomerId, loadDetail]);
 
 	const pick = (id: string) => {
 		setSelectedId(id);
@@ -287,14 +329,21 @@ export default function InboxScreen() {
 		}
 		setBusy(true);
 		try {
-			const result = await client.approveReply(session.token, selected.id);
+			// If the user tapped Edit and changed the composer text, send that edited
+			// version; otherwise approve and send the held draft as-is.
+			const edited = editingDraft ? draft.trim() : '';
+			const result = edited
+				? await client.approveReply(session.token, selected.id, { body: edited })
+				: await client.approveReply(session.token, selected.id);
 			applyDetail(result);
+			setDraft('');
+			setEditingDraft(false);
 		} catch {
 			// Best effort.
 		} finally {
 			setBusy(false);
 		}
-	}, [session, selected, busy, client, applyDetail]);
+	}, [session, selected, busy, editingDraft, draft, client, applyDetail]);
 
 	const onEditDraft = () => {
 		if (detail) {
@@ -306,8 +355,6 @@ export default function InboxScreen() {
 	if (!session) {
 		return null;
 	}
-
-	const userInitials = initialsOf(session.user.name);
 
 	const listView = (
 		<ThreadList
@@ -328,10 +375,10 @@ export default function InboxScreen() {
 			conversation={selected}
 			detail={detail}
 			loading={detailLoading}
+			error={detailError}
 			busy={busy}
 			draft={draft}
 			editingDraft={editingDraft}
-			userInitials={userInitials}
 			onBack={wide ? undefined : () => setShowDetail(false)}
 			onChangeDraft={setDraft}
 			onSend={onSend}
@@ -388,7 +435,7 @@ function ThreadList({
 					<FilterChip
 						label={`Needs you · ${needsCount}`}
 						active={filter === 'needs'}
-						dot
+						dot={needsCount > 0}
 						onPress={() => onFilter('needs')}
 					/>
 					<FilterChip label="Rivus" active={filter === 'rivus'} onPress={() => onFilter('rivus')} />
@@ -431,6 +478,8 @@ function ThreadList({
 									<Dot color={colors.red} size={8} />
 								) : conversation.status === 'rivus_handling' ? (
 									<GradientMark size={18} />
+								) : conversation.status === 'resolved' ? (
+									<Icon name="check" size={15} color={colors.textGhost} />
 								) : null}
 							</Pressable>
 						);
@@ -471,10 +520,10 @@ function ConversationPane({
 	conversation,
 	detail,
 	loading,
+	error,
 	busy,
 	draft,
 	editingDraft,
-	userInitials,
 	onBack,
 	onChangeDraft,
 	onSend,
@@ -485,10 +534,10 @@ function ConversationPane({
 	conversation: Conversation | null;
 	detail: ConversationDetail | null;
 	loading: boolean;
+	error: string | null;
 	busy: boolean;
 	draft: string;
 	editingDraft: boolean;
-	userInitials: string;
 	onBack?: () => void;
 	onChangeDraft: (text: string) => void;
 	onSend: () => void;
@@ -531,15 +580,18 @@ function ConversationPane({
 
 			{loading ? (
 				<ActivityIndicator color={colors.brandPurple} style={styles.detailLoading} />
+			) : error ? (
+				<View style={styles.detailErrorWrap}>
+					<Txt style={styles.errorTxt}>{error}</Txt>
+				</View>
 			) : (
 				<ScrollView contentContainerStyle={styles.convoScroll}>
-					<Txt style={styles.dayDivider}>{rowTime(conversation.lastMessageAt) || 'Today'}</Txt>
+					<Txt style={styles.dayDivider}>{dayLabel(conversation.lastMessageAt)}</Txt>
 					{messages.map((message) => (
 						<MessageRow
 							key={message.id}
 							message={message}
 							contactInitials={initialsOf(conversation.contactName)}
-							userInitials={userInitials}
 						/>
 					))}
 				</ScrollView>
@@ -577,6 +629,8 @@ function ConversationPane({
 					</Pressable>
 				) : null}
 				<View style={styles.composer}>
+					{/* A multiline TextInput's Enter inserts a newline (it never fires
+					    onSubmitEditing), so sending is via the button — no dead submit handler. */}
 					<TextInput
 						style={styles.composerInput}
 						value={draft}
@@ -584,7 +638,6 @@ function ConversationPane({
 						placeholder={editingDraft ? 'Edit Rivus’s reply…' : 'Type a message…'}
 						placeholderTextColor={colors.textGhost}
 						multiline
-						onSubmitEditing={onSend}
 					/>
 					<Pressable onPress={onSend} disabled={busy || draft.trim() === ''}>
 						<BrandGradient style={styles.sendBtn}>
@@ -597,15 +650,7 @@ function ConversationPane({
 	);
 }
 
-function MessageRow({
-	message,
-	contactInitials,
-	userInitials,
-}: {
-	message: Message;
-	contactInitials: string;
-	userInitials: string;
-}) {
+function MessageRow({ message, contactInitials }: { message: Message; contactInitials: string }) {
 	if (message.author === 'note') {
 		return (
 			<View style={styles.noteWrap}>
@@ -628,7 +673,13 @@ function MessageRow({
 				<Txt style={styles.bubbleTime}>{clockTime(message.createdAt)}</Txt>
 			</View>
 			{isRivus ? <RivusBadge size={30} radius={8} /> : null}
-			{message.author === 'agent' ? <Avatar initials={userInitials} size={30} /> : null}
+			{/* A human teammate's reply: a neutral team avatar, never the viewer's own —
+			    messages carry no sender identity, so the viewer's initials would misattribute. */}
+			{message.author === 'agent' ? (
+				<View style={styles.agentAvatar}>
+					<Icon name="user" size={15} color={colors.textMuted} />
+				</View>
+			) : null}
 		</View>
 	);
 }
@@ -840,6 +891,14 @@ const styles = StyleSheet.create({
 	msgRow: { flexDirection: 'row', gap: 10, marginVertical: 12, alignItems: 'flex-end' },
 	msgRowStart: { justifyContent: 'flex-start' },
 	msgRowEnd: { justifyContent: 'flex-end' },
+	agentAvatar: {
+		width: 30,
+		height: 30,
+		borderRadius: 15,
+		alignItems: 'center',
+		justifyContent: 'center',
+		backgroundColor: colors.avatarBg,
+	},
 	bubbleCol: { gap: 4, maxWidth: '78%', alignItems: 'flex-start' },
 	bubbleColEnd: { alignItems: 'flex-end' },
 	bubble: { paddingVertical: 11, paddingHorizontal: 14 },
@@ -1014,6 +1073,7 @@ const styles = StyleSheet.create({
 		color: colors.redInk,
 		padding: 18,
 	},
+	detailErrorWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 	empty: {
 		fontFamily: font.regular,
 		fontSize: 13,

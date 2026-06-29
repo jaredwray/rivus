@@ -63,6 +63,23 @@ export function latestCustomerMessage(messages: Message[]): string | null {
 	return null;
 }
 
+/**
+ * Whether the newest customer turn is still awaiting a reply: scanning from the
+ * end (past system `note`s), the first real message is from the customer. False
+ * when Rivus or a human already answered it — so re-running `/reply` can't append
+ * a duplicate answer — or when the customer hasn't written at all.
+ */
+export function awaitingRivusReply(messages: Message[]): boolean {
+	for (let i = messages.length - 1; i >= 0; i -= 1) {
+		const author = messages[i]?.author;
+		if (author === 'note') {
+			continue;
+		}
+		return author === 'customer';
+	}
+	return false;
+}
+
 export interface RivusReplyDecision {
 	/** When false, Rivus sends the draft itself; when true, it's held for approval. */
 	pause: boolean;

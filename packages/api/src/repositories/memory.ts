@@ -984,6 +984,12 @@ export class InMemoryConversationRepository implements ConversationRepository {
 		}
 		if (input.status !== undefined) {
 			patch.status = input.status;
+			// A held draft is only meaningful while a thread needs review, so moving the
+			// status away from `needs_attention` clears it — a draft can't outlive its flag.
+			if (input.status !== 'needs_attention') {
+				patch.pendingReply = '';
+				patch.flagReason = '';
+			}
 		}
 		if (input.tags !== undefined) {
 			patch.tags = [...input.tags];
