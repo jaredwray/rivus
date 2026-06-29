@@ -27,6 +27,13 @@ const EMPTY_RESULTS: SearchResults = { customers: [], jobs: [] };
 
 const IS_WEB = Platform.OS === 'web';
 
+// react-native-web maps `dataSet` to data-* attributes (here `data-no-focus-ring`).
+// It opts the search field out of the global brand focus ring (see focusRing.ts):
+// the search row's own border already frames the focused input, so without this the
+// web build draws a second purple box around the box. The prop isn't in RN's
+// TextInput types, so this is cast; it's a no-op off the web.
+const WEB_NO_FOCUS_RING = (IS_WEB ? { dataSet: { noFocusRing: 'true' } } : null) as object | null;
+
 /**
  * The dashboard's global search box. A trigger opens a dropdown that searches the
  * account's customers and jobs (via `GET /v1/search`, backed by MongoDB) as you
@@ -186,6 +193,7 @@ export function GlobalSearch({ variant = 'topbar' }: { variant?: 'topbar' | 'com
 									// prevented here rather than rejected with a 400.
 									maxLength={200}
 									style={[styles.searchInput, IS_WEB && styles.searchInputWeb]}
+									{...WEB_NO_FOCUS_RING}
 								/>
 								{loading ? <ActivityIndicator size="small" color={colors.brandPurple} /> : null}
 							</View>
