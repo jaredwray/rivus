@@ -24,9 +24,10 @@ import { AuthProvider, initialsOf, roleLabel, useAuth } from '@/src/auth/AuthCon
 import { AuthScreen } from '@/src/auth/AuthScreen';
 import { RivusWordmark } from '@/src/brand/RivusLogo';
 import { CompanySwitcher } from '@/src/components/CompanySwitcher';
+import { GlobalSearch } from '@/src/components/GlobalSearch';
 import { BrandGradient } from '@/src/components/Gradient';
 import { RivusChat } from '@/src/components/RivusChat';
-import { Avatar, Icon, Txt } from '@/src/components/ui';
+import { Avatar, Txt } from '@/src/components/ui';
 import { NotificationsBell } from '@/src/notifications/NotificationsBell';
 import { NotificationsProvider } from '@/src/notifications/NotificationsContext';
 import { installFocusRing } from '@/src/theme/focusRing';
@@ -287,14 +288,7 @@ function TopBar() {
 		<View style={styles.topbar}>
 			<CompanySwitcher />
 
-			<View style={styles.searchWrap}>
-				<View style={styles.search}>
-					<Icon name="search" size={16} color={colors.textFaint} />
-					<Txt style={styles.searchTxt} numberOfLines={1}>
-						Search customers, jobs, messages…
-					</Txt>
-				</View>
-			</View>
+			<GlobalSearch />
 
 			<View style={styles.topbarRight}>
 				<NotificationsBell variant="topbar" />
@@ -630,28 +624,6 @@ const styles = StyleSheet.create({
 		borderBottomWidth: 1,
 		borderBottomColor: colors.border,
 		backgroundColor: colors.surface,
-	},
-	searchWrap: {
-		flex: 1,
-		alignItems: 'center',
-	},
-	search: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: 9,
-		width: 420,
-		maxWidth: '100%',
-		backgroundColor: colors.field,
-		borderWidth: 1,
-		borderColor: colors.borderField,
-		borderRadius: radii.md,
-		paddingVertical: 8,
-		paddingHorizontal: 13,
-	},
-	searchTxt: {
-		flex: 1,
-		fontSize: 13,
-		color: colors.textFaint,
 	},
 	topbarRight: {
 		flexDirection: 'row',

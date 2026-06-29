@@ -594,6 +594,7 @@ describe('job delete race', () => {
 		const jobs: JobRepository = {
 			create: (accountId, input) => base.create(accountId, input),
 			list: (options) => base.list(options),
+			search: (options) => base.search(options),
 			findById: (accountId, id) => base.findById(accountId, id),
 			update: (accountId, id, input) => base.update(accountId, id, input),
 			delete: async () => false,

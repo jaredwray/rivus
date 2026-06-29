@@ -22,6 +22,7 @@ import { itemRoutes } from './routes/items';
 import { jobRoutes } from './routes/jobs';
 import { memberRoutes } from './routes/members';
 import { notificationRoutes } from './routes/notifications';
+import { searchRoutes } from './routes/search';
 import type { AppDeps } from './types';
 
 function buildLogger(deps: AppDeps) {
@@ -184,6 +185,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 	app.register(customerRoutes, { prefix: '/v1/customers' });
 	app.register(jobRoutes, { prefix: '/v1/jobs' });
 	app.register(notificationRoutes, { prefix: '/v1/notifications' });
+	app.register(searchRoutes, { prefix: '/v1/search' });
 
 	return app;
 }

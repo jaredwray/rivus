@@ -8,6 +8,7 @@ import {
 	type CreateNotificationInput,
 	type Customer,
 	type CustomerId,
+	escapeRegex,
 	type Faq,
 	type FaqId,
 	type Invite,
@@ -68,6 +69,8 @@ import type {
 	NewVerificationCode,
 	NotificationRepository,
 	OnboardingRepository,
+	SearchCustomersOptions,
+	SearchJobsOptions,
 	SignupInput,
 	SignupResult,
 	StoredUser,
@@ -295,15 +298,15 @@ export class MongoAccountRepository implements AccountRepository {
 		const { pageSize } = normalizePagination(options.page, options.pageSize);
 		const skip = pageToSkip(options.page, options.pageSize);
 		const needle = options.search?.trim();
-		// Escape regex metacharacters so a search like "a.b" is matched literally, then
-		// match it case-insensitively against either the name or the slug. Only active
-		// accounts are listed — a canceled one can't be entered.
+		// Match the term case-insensitively against either the name or the slug (escaped
+		// so it's literal text). Only active accounts are listed — a canceled one can't
+		// be entered.
 		const filter = needle
 			? {
 					status: 'active' as const,
 					$or: [
-						{ name: new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
-						{ slug: new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+						{ name: new RegExp(escapeRegex(needle), 'i') },
+						{ slug: new RegExp(escapeRegex(needle), 'i') },
 					],
 				}
 			: { status: 'active' as const };
@@ -752,6 +755,33 @@ export class MongoCustomerRepository implements CustomerRepository {
 		return { customers: docs.map(mapCustomer), total };
 	}
 
+	async search(options: SearchCustomersOptions): Promise<Customer[]> {
+		const term = options.query.trim();
+		if (term === '' || !Types.ObjectId.isValid(options.accountId)) {
+			return [];
+		}
+		const limit = Math.max(1, Math.trunc(options.limit));
+		const rx = new RegExp(escapeRegex(term), 'i');
+		// `area` is the legacy location field that `mapCustomer` still surfaces as
+		// `address` for customers created before the rename — match it too so those
+		// records are findable by the location the app shows for them.
+		const docs = await CustomerModel.find({
+			accountId: new Types.ObjectId(options.accountId),
+			$or: [
+				{ name: rx },
+				{ email: rx },
+				{ phone: rx },
+				{ address: rx },
+				{ area: rx },
+				{ notes: rx },
+			],
+		})
+			.sort({ createdAt: -1, _id: -1 })
+			.limit(limit)
+			.exec();
+		return docs.map(mapCustomer);
+	}
+
 	async findById(accountId: AccountId, id: CustomerId): Promise<Customer | null> {
 		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
 			return null;
@@ -890,6 +920,23 @@ export class MongoJobRepository implements JobRepository {
 			JobModel.countDocuments(filter).exec(),
 		]);
 		return { jobs: docs.map(mapJob), total };
+	}
+
+	async search(options: SearchJobsOptions): Promise<Job[]> {
+		const term = options.query.trim();
+		if (term === '' || !Types.ObjectId.isValid(options.accountId)) {
+			return [];
+		}
+		const limit = Math.max(1, Math.trunc(options.limit));
+		const rx = new RegExp(escapeRegex(term), 'i');
+		const docs = await JobModel.find({
+			accountId: new Types.ObjectId(options.accountId),
+			$or: [{ title: rx }, { address: rx }, { notes: rx }],
+		})
+			.sort({ createdAt: -1, _id: -1 })
+			.limit(limit)
+			.exec();
+		return docs.map(mapJob);
 	}
 
 	async findById(accountId: AccountId, id: JobId): Promise<Job | null> {
