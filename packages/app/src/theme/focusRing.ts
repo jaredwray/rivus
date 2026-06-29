@@ -33,6 +33,12 @@ export function installFocusRing(): void {
 		// Pointer focus (mouse/touch): no outline.
 		`${SELECTOR}:focus:not(:focus-visible){outline:none;}` +
 		// Keyboard focus: a 2px brand ring sitting just outside the control.
-		`${SELECTOR}:focus-visible{outline:2px solid ${colors.brandPurple};outline-offset:2px;}`;
+		`${SELECTOR}:focus-visible{outline:2px solid ${colors.brandPurple};outline-offset:2px;}` +
+		// Opt-out: controls carrying data-no-focus-ring never get the ring. Browsers
+		// treat text inputs as `:focus-visible` whenever focused, so a field that
+		// already lives inside a bordered container (e.g. the global search box)
+		// would otherwise draw a second purple box around itself. Appended last so it
+		// wins over the ring rule above at equal specificity.
+		`:where([data-no-focus-ring]):focus,:where([data-no-focus-ring]):focus-visible{outline:none;}`;
 	document.head.appendChild(style);
 }
