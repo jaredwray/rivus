@@ -32,7 +32,7 @@ const IS_WEB = Platform.OS === 'web';
 // the search row's own border already frames the focused input, so without this the
 // web build draws a second purple box around the box. The prop isn't in RN's
 // TextInput types, so this is cast; it's a no-op off the web.
-const WEB_NO_FOCUS_RING = (IS_WEB ? { dataSet: { noFocusRing: 'true' } } : null) as object | null;
+const WEB_NO_FOCUS_RING = (IS_WEB ? { dataSet: { noFocusRing: 'true' } } : {}) as object;
 
 /**
  * The dashboard's global search box. A trigger opens a dropdown that searches the
