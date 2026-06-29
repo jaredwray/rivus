@@ -3,7 +3,9 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
 	ActivityIndicator,
+	KeyboardAvoidingView,
 	Modal,
+	Platform,
 	Pressable,
 	ScrollView,
 	StyleSheet,
@@ -22,6 +24,8 @@ const SEARCH_DEBOUNCE_MS = 250;
 const RESULT_LIMIT = 8;
 
 const EMPTY_RESULTS: SearchResults = { customers: [], jobs: [] };
+
+const IS_WEB = Platform.OS === 'web';
 
 /**
  * The dashboard's global search box. A trigger opens a dropdown that searches the
@@ -158,103 +162,112 @@ export function GlobalSearch({ variant = 'topbar' }: { variant?: 'topbar' | 'com
 				onRequestClose={close}
 				onShow={() => inputRef.current?.focus()}
 			>
-				<Pressable style={styles.backdrop} onPress={close}>
-					{/* Stop taps inside the panel from dismissing it. */}
-					<Pressable style={styles.panel} onPress={() => {}}>
-						<View style={styles.searchRow}>
-							<Feather name="search" size={15} color={colors.textFaint} />
-							<TextInput
-								ref={inputRef}
-								placeholder="Search customers and jobs…"
-								placeholderTextColor={colors.textHint}
-								value={query}
-								onChangeText={handleQuery}
-								autoCorrect={false}
-								autoCapitalize="none"
-								autoFocus
-								// Match the API's `q` cap (searchQuerySchema) so an over-long query is
-								// prevented here rather than rejected with a 400.
-								maxLength={200}
-								style={styles.searchInput}
-							/>
-							{loading ? <ActivityIndicator size="small" color={colors.brandPurple} /> : null}
-						</View>
+				{/* Lift the panel above the on-screen keyboard so the focused input and
+				    results stay visible on a phone (matches RivusChat's composer). */}
+				<KeyboardAvoidingView
+					style={styles.kav}
+					behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+				>
+					<Pressable style={styles.backdrop} onPress={close}>
+						{/* Stop taps inside the panel from dismissing it. */}
+						<Pressable style={styles.panel} onPress={() => {}}>
+							<View style={styles.searchRow}>
+								<Feather name="search" size={15} color={colors.textFaint} />
+								<TextInput
+									ref={inputRef}
+									placeholder="Search customers and jobs…"
+									placeholderTextColor={colors.textHint}
+									value={query}
+									onChangeText={handleQuery}
+									autoCorrect={false}
+									autoCapitalize="none"
+									autoFocus
+									// Match the API's `q` cap (searchQuerySchema) so an over-long query is
+									// prevented here rather than rejected with a 400.
+									maxLength={200}
+									style={[styles.searchInput, IS_WEB && styles.searchInputWeb]}
+								/>
+								{loading ? <ActivityIndicator size="small" color={colors.brandPurple} /> : null}
+							</View>
 
-						{error ? (
-							<View style={styles.state}>
-								<Txt style={styles.stateTxt}>{error}</Txt>
-							</View>
-						) : trimmed === '' ? (
-							<View style={styles.state}>
-								<Txt style={styles.stateTxt}>Search your customers and jobs by name or detail.</Txt>
-							</View>
-						) : !hasResults && !loading ? (
-							<View style={styles.state}>
-								<Txt style={styles.stateTxt}>No matches for “{trimmed}”.</Txt>
-							</View>
-						) : (
-							<ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
-								{results.customers.length > 0 ? (
-									<View style={styles.section}>
-										<Txt style={styles.sectionLabel}>Customers</Txt>
-										{results.customers.map((customer) => {
-											const detail = customer.email || customer.phone || customer.address;
-											return (
-												<Pressable
-													key={customer.id}
-													style={styles.row}
-													onPress={() => goTo('/customers', customer.id)}
-													accessibilityRole="button"
-												>
-													<Avatar initials={initialsOf(customer.name)} size={32} />
-													<View style={styles.rowText}>
-														<Txt style={styles.rowTitle} numberOfLines={1}>
-															{customer.name}
-														</Txt>
-														{detail ? (
-															<Txt style={styles.rowSub} numberOfLines={1}>
-																{detail}
+							{error ? (
+								<View style={styles.state}>
+									<Txt style={styles.stateTxt}>{error}</Txt>
+								</View>
+							) : trimmed === '' ? (
+								<View style={styles.state}>
+									<Txt style={styles.stateTxt}>
+										Search your customers and jobs by name or detail.
+									</Txt>
+								</View>
+							) : !hasResults && !loading ? (
+								<View style={styles.state}>
+									<Txt style={styles.stateTxt}>No matches for “{trimmed}”.</Txt>
+								</View>
+							) : (
+								<ScrollView style={styles.list} keyboardShouldPersistTaps="handled">
+									{results.customers.length > 0 ? (
+										<View style={styles.section}>
+											<Txt style={styles.sectionLabel}>Customers</Txt>
+											{results.customers.map((customer) => {
+												const detail = customer.email || customer.phone || customer.address;
+												return (
+													<Pressable
+														key={customer.id}
+														style={styles.row}
+														onPress={() => goTo('/customers', customer.id)}
+														accessibilityRole="button"
+													>
+														<Avatar initials={initialsOf(customer.name)} size={32} />
+														<View style={styles.rowText}>
+															<Txt style={styles.rowTitle} numberOfLines={1}>
+																{customer.name}
 															</Txt>
-														) : null}
-													</View>
-												</Pressable>
-											);
-										})}
-									</View>
-								) : null}
+															{detail ? (
+																<Txt style={styles.rowSub} numberOfLines={1}>
+																	{detail}
+																</Txt>
+															) : null}
+														</View>
+													</Pressable>
+												);
+											})}
+										</View>
+									) : null}
 
-								{results.jobs.length > 0 ? (
-									<View style={styles.section}>
-										<Txt style={styles.sectionLabel}>Jobs</Txt>
-										{results.jobs.map((job) => {
-											const start = new Date(job.startAt);
-											return (
-												<Pressable
-													key={job.id}
-													style={styles.row}
-													onPress={() => goTo('/schedule', localDateKey(start))}
-													accessibilityRole="button"
-												>
-													<View style={styles.jobIcon}>
-														<Icon name="calendar" size={16} color={colors.brandPurple} />
-													</View>
-													<View style={styles.rowText}>
-														<Txt style={styles.rowTitle} numberOfLines={1}>
-															{job.title}
-														</Txt>
-														<Txt style={styles.rowSub} numberOfLines={1}>
-															{formatDayLabel(start)} · {formatClock(job.startAt)}
-														</Txt>
-													</View>
-												</Pressable>
-											);
-										})}
-									</View>
-								) : null}
-							</ScrollView>
-						)}
+									{results.jobs.length > 0 ? (
+										<View style={styles.section}>
+											<Txt style={styles.sectionLabel}>Jobs</Txt>
+											{results.jobs.map((job) => {
+												const start = new Date(job.startAt);
+												return (
+													<Pressable
+														key={job.id}
+														style={styles.row}
+														onPress={() => goTo('/schedule', localDateKey(start))}
+														accessibilityRole="button"
+													>
+														<View style={styles.jobIcon}>
+															<Icon name="calendar" size={16} color={colors.brandPurple} />
+														</View>
+														<View style={styles.rowText}>
+															<Txt style={styles.rowTitle} numberOfLines={1}>
+																{job.title}
+															</Txt>
+															<Txt style={styles.rowSub} numberOfLines={1}>
+																{formatDayLabel(start)} · {formatClock(job.startAt)}
+															</Txt>
+														</View>
+													</Pressable>
+												);
+											})}
+										</View>
+									) : null}
+								</ScrollView>
+							)}
+						</Pressable>
 					</Pressable>
-				</Pressable>
+				</KeyboardAvoidingView>
 			</Modal>
 		</View>
 	);
@@ -291,6 +304,10 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		justifyContent: 'center',
 	},
+	// Keyboard-avoiding wrapper that fills the modal; the backdrop centers within it.
+	kav: {
+		flex: 1,
+	},
 	// Anchor the dropdown near the top center, approximating the trigger's place.
 	backdrop: {
 		flex: 1,
@@ -325,6 +342,10 @@ const styles = StyleSheet.create({
 		fontSize: 13.5,
 		color: colors.text,
 		paddingVertical: 9,
+	},
+	// 16px is the threshold below which mobile Safari auto-zooms a focused input.
+	searchInputWeb: {
+		fontSize: 16,
 	},
 	list: {
 		flexGrow: 0,
