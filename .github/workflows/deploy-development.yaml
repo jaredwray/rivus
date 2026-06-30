@@ -72,6 +72,9 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       # Selects the disallow-all robots.txt for the dev app (dev-app.rivus.ai).
       RIVUS_ENV: development
+      # Inlined into the Expo web bundle; lets the dev app show the staff-only
+      # account seeder in Settings (the API enforces the same gate server-side).
+      EXPO_PUBLIC_RIVUS_ENV: development
       # Baked into the Expo web bundle at export time.
       EXPO_PUBLIC_API_URL: https://dev-api.rivus.ai
       # The deployed app talks to the deployed agent.

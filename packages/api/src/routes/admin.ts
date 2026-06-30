@@ -8,6 +8,7 @@ import {
 import type { FastifyPluginAsync } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { isSeedingEnabled } from '../config';
 import {
 	accountListResponseSchema,
 	authResponseSchema,
@@ -114,19 +115,23 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
 		},
 	);
 
-	// Development-only account seeder. The deployed dev and prod containers both run
-	// `NODE_ENV=production` (see app.ts), so this route is registered *only* when the
-	// API is running locally in development — it doesn't exist (404) anywhere else,
-	// and even then it's gated to Rivus staff (`@rivus.ai`). It fills the *current*
-	// account with demo customers, FAQs, appointments, notifications, and inbox
-	// conversations so staff can populate a fresh test account from the app's
-	// Settings screen without touching the CLI.
-	if (app.deps.config.NODE_ENV === 'development') {
+	// Development-only account seeder. Both deployed containers run
+	// `NODE_ENV=production` (see app.ts), so this route keys off `RIVUS_ENV` instead:
+	// it's registered on a local dev API (`NODE_ENV=development`) and on the deployed
+	// `development` environment (`RIVUS_ENV=development`, dev-api.rivus.ai), but never
+	// in production — where it doesn't exist (404) — and even then it's gated to Rivus
+	// staff (`@rivus.ai`). It fills the *current* account with demo customers, FAQs,
+	// appointments, notifications, and inbox conversations so staff can populate a
+	// fresh test account from the app's Settings screen without touching the CLI.
+	if (isSeedingEnabled(app.deps.config)) {
 		// Lazy-load the seeder so its dev-only `@faker-js/faker` dependency (and the AI
-		// generation machinery) is split into a chunk loaded only here, in development —
-		// never pulled into the production startup bundle, where faker isn't a runtime
-		// dependency. `adminRoutes` is async, so awaiting an import during registration
-		// is fine.
+		// generation machinery) is split into a chunk imported only when seeding is
+		// enabled — never in the production startup bundle. faker is a devDependency, so
+		// tsdown *bundles* it into that chunk rather than leaving an external import;
+		// that's what lets the chunk load on the deployed dev container (which runs
+		// NODE_ENV=production, with devDependencies pruned from node_modules) without
+		// faker being a runtime dependency. `adminRoutes` is async, so awaiting an
+		// import during registration is fine.
 		const [{ createSeedGenerator, DeterministicSeedGenerator }, { seedAccountData }] =
 			await Promise.all([import('../seed-ai'), import('../services/seed')]);
 		const { customers, faqs, jobs, notifications, conversations } = app.deps;
