@@ -240,7 +240,6 @@ export default function SettingsScreen() {
 			showsVerticalScrollIndicator={false}
 		>
 			<Txt style={styles.h1}>Account settings</Txt>
-			<Txt style={styles.subtitle}>Business details for {session.account.name}.</Txt>
 
 			<Card style={styles.card}>
 				<SectionLabel>Business information</SectionLabel>
@@ -374,12 +373,6 @@ const styles = StyleSheet.create({
 		fontFamily: font.bold,
 		fontSize: 22,
 		color: colors.text,
-	},
-	subtitle: {
-		fontFamily: font.regular,
-		fontSize: 13.5,
-		color: colors.textMuted,
-		marginTop: -8,
 	},
 	card: {
 		gap: 12,
