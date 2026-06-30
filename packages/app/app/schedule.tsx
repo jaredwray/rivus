@@ -117,7 +117,7 @@ function centsToInput(cents: number): string {
 
 export default function ScheduleScreen() {
 	const { session, client } = useAuth();
-	const { width } = useWindowDimensions();
+	const { width, height } = useWindowDimensions();
 	const sidebar = width >= SIDEBAR_BREAKPOINT ? SIDEBAR_WIDTH : 0;
 	// On the mobile layout the header's controls can't fit beside the title on
 	// one row, so stack it into a column and let each group take the full width
@@ -455,6 +455,11 @@ export default function ScheduleScreen() {
 	];
 
 	const bookedCount = jobs.filter((job) => job.status !== 'canceled').length;
+	// Cap the edit/new-job card well short of the viewport so it always has room to
+	// scroll internally — it sits in normal flow above the grid (not a Modal), and
+	// without a bound its bottom (the Delete button) can run off-screen with no way
+	// to reach it.
+	const formMaxHeight = Math.min(640, height * 0.72);
 
 	return (
 		<View style={styles.screen}>
@@ -551,146 +556,148 @@ export default function ScheduleScreen() {
 
 			{formOpen ? (
 				<View style={styles.formWrap}>
-					<Card style={styles.form}>
-						<View style={styles.formHead}>
-							<Txt style={styles.formTitle}>{editing ? 'Edit job' : 'New job'}</Txt>
-							<Pressable
-								onPress={closeForm}
-								accessibilityRole="button"
-								accessibilityLabel="Close"
-								hitSlop={CLOSE_HIT_SLOP}
-							>
-								<Icon name="x" size={18} color={colors.textMuted} />
-							</Pressable>
-						</View>
-
-						<TextField
-							label="Service"
-							value={title}
-							onChangeText={setTitle}
-							placeholder="Water heater install"
-							autoCapitalize="sentences"
-						/>
-
-						<View style={styles.formRow}>
-							<View style={styles.formCol}>
-								<Select
-									label="Customer"
-									value={customerId}
-									options={customerOptions}
-									onSelect={setCustomerId}
-									placeholder="— No customer —"
-									searchable
-								/>
+					<ScrollView style={{ maxHeight: formMaxHeight }}>
+						<Card style={styles.form}>
+							<View style={styles.formHead}>
+								<Txt style={styles.formTitle}>{editing ? 'Edit job' : 'New job'}</Txt>
+								<Pressable
+									onPress={closeForm}
+									accessibilityRole="button"
+									accessibilityLabel="Close"
+									hitSlop={CLOSE_HIT_SLOP}
+								>
+									<Icon name="x" size={18} color={colors.textMuted} />
+								</Pressable>
 							</View>
-							<View style={styles.formCol}>
-								<Select
-									label="Assigned to"
-									value={assignedUserId}
-									options={assigneeOptions}
-									onSelect={setAssignedUserId}
-									placeholder="— Unassigned —"
-								/>
-							</View>
-						</View>
 
-						<View style={styles.formRow}>
-							<View style={styles.formCol}>
-								<TextField
-									label="Date"
-									value={dateKey}
-									onChangeText={setDateKey}
-									placeholder="2026-06-24"
-									autoCapitalize="none"
-								/>
-							</View>
-							<View style={styles.formCol}>
-								<Select
-									label="Start"
-									value={startMinutes}
-									options={timeOptions()}
-									onSelect={setStartMinutes}
-								/>
-							</View>
-							<View style={styles.formCol}>
-								<Select
-									label="Duration"
-									value={durationMinutes}
-									options={DURATION_OPTIONS}
-									onSelect={setDurationMinutes}
-								/>
-							</View>
-						</View>
-
-						<View style={styles.formRow}>
-							<View style={styles.formCol}>
-								<Select
-									label="Status"
-									value={status}
-									options={STATUS_OPTIONS}
-									onSelect={(value) => setStatus(value as JobStatus)}
-								/>
-							</View>
-							<View style={styles.formCol}>
-								<TextField
-									label="Estimated value ($)"
-									value={valueInput}
-									onChangeText={setValueInput}
-									placeholder="0.00"
-									keyboardType="decimal-pad"
-								/>
-							</View>
-						</View>
-
-						<AddressAutocomplete
-							label="Service address"
-							value={address}
-							onChangeText={setAddress}
-							placeholder="Defaults to the customer's address"
-							apiKey={mapsApiKey}
-						/>
-
-						<TextField
-							label="Notes"
-							value={notes}
-							onChangeText={setNotes}
-							placeholder="Gate code 1234 · bring the auger"
-							multiline
-							style={styles.notesInput}
-						/>
-
-						{conflicts.length > 0 ? (
-							<View style={styles.conflict}>
-								<Icon name="alert-triangle" size={15} color={colors.amberInk} />
-								<Txt style={styles.conflictTxt}>
-									Heads up — {memberName(assignedUserId) || 'this tech'} already has{' '}
-									{conflicts.length === 1
-										? `"${conflicts[0].title}" at ${formatClock(conflicts[0].startAt)}`
-										: `${conflicts.length} overlapping jobs`}
-									. You can still book it.
-								</Txt>
-							</View>
-						) : null}
-
-						{formError ? <Txt style={styles.errorTxt}>{formError}</Txt> : null}
-
-						<View style={styles.btnRow}>
-							<GradientButton
-								label={saving ? 'Saving…' : editing ? 'Save changes' : 'Schedule job'}
-								icon="check"
-								onPress={onSave}
-								style={styles.btnGrow}
+							<TextField
+								label="Service"
+								value={title}
+								onChangeText={setTitle}
+								placeholder="Water heater install"
+								autoCapitalize="sentences"
 							/>
-							<OutlineButton label="Cancel" onPress={closeForm} style={styles.btnGrow} />
-						</View>
-						{editing ? (
-							<OutlineButton
-								label={deleting ? 'Deleting…' : 'Delete job'}
-								onPress={onDelete}
-								style={styles.deleteBtn}
+
+							<View style={styles.formRow}>
+								<View style={styles.formCol}>
+									<Select
+										label="Customer"
+										value={customerId}
+										options={customerOptions}
+										onSelect={setCustomerId}
+										placeholder="— No customer —"
+										searchable
+									/>
+								</View>
+								<View style={styles.formCol}>
+									<Select
+										label="Assigned to"
+										value={assignedUserId}
+										options={assigneeOptions}
+										onSelect={setAssignedUserId}
+										placeholder="— Unassigned —"
+									/>
+								</View>
+							</View>
+
+							<View style={styles.formRow}>
+								<View style={styles.formCol}>
+									<TextField
+										label="Date"
+										value={dateKey}
+										onChangeText={setDateKey}
+										placeholder="2026-06-24"
+										autoCapitalize="none"
+									/>
+								</View>
+								<View style={styles.formCol}>
+									<Select
+										label="Start"
+										value={startMinutes}
+										options={timeOptions()}
+										onSelect={setStartMinutes}
+									/>
+								</View>
+								<View style={styles.formCol}>
+									<Select
+										label="Duration"
+										value={durationMinutes}
+										options={DURATION_OPTIONS}
+										onSelect={setDurationMinutes}
+									/>
+								</View>
+							</View>
+
+							<View style={styles.formRow}>
+								<View style={styles.formCol}>
+									<Select
+										label="Status"
+										value={status}
+										options={STATUS_OPTIONS}
+										onSelect={(value) => setStatus(value as JobStatus)}
+									/>
+								</View>
+								<View style={styles.formCol}>
+									<TextField
+										label="Estimated value ($)"
+										value={valueInput}
+										onChangeText={setValueInput}
+										placeholder="0.00"
+										keyboardType="decimal-pad"
+									/>
+								</View>
+							</View>
+
+							<AddressAutocomplete
+								label="Service address"
+								value={address}
+								onChangeText={setAddress}
+								placeholder="Defaults to the customer's address"
+								apiKey={mapsApiKey}
 							/>
-						) : null}
-					</Card>
+
+							<TextField
+								label="Notes"
+								value={notes}
+								onChangeText={setNotes}
+								placeholder="Gate code 1234 · bring the auger"
+								multiline
+								style={styles.notesInput}
+							/>
+
+							{conflicts.length > 0 ? (
+								<View style={styles.conflict}>
+									<Icon name="alert-triangle" size={15} color={colors.amberInk} />
+									<Txt style={styles.conflictTxt}>
+										Heads up — {memberName(assignedUserId) || 'this tech'} already has{' '}
+										{conflicts.length === 1
+											? `"${conflicts[0].title}" at ${formatClock(conflicts[0].startAt)}`
+											: `${conflicts.length} overlapping jobs`}
+										. You can still book it.
+									</Txt>
+								</View>
+							) : null}
+
+							{formError ? <Txt style={styles.errorTxt}>{formError}</Txt> : null}
+
+							<View style={styles.btnRow}>
+								<GradientButton
+									label={saving ? 'Saving…' : editing ? 'Save changes' : 'Schedule job'}
+									icon="check"
+									onPress={onSave}
+									style={styles.btnGrow}
+								/>
+								<OutlineButton label="Cancel" onPress={closeForm} style={styles.btnGrow} />
+							</View>
+							{editing ? (
+								<OutlineButton
+									label={deleting ? 'Deleting…' : 'Delete job'}
+									onPress={onDelete}
+									style={styles.deleteBtn}
+								/>
+							) : null}
+						</Card>
+					</ScrollView>
 				</View>
 			) : null}
 
