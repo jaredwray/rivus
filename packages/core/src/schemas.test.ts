@@ -37,6 +37,7 @@ import {
 	updateMemberRoleSchema,
 	updateProfileSchema,
 	verifyCodeSchema,
+	verifyEmailChangeSchema,
 } from './schemas';
 
 const FUTURE_ISO = '2026-06-24T21:00:00.000Z';
@@ -206,28 +207,58 @@ describe('updateAccountSchema', () => {
 });
 
 describe('updateProfileSchema', () => {
+	it('accepts a partial update of one field', () => {
+		expect(updateProfileSchema.parse({ name: 'Marcus Thompson' })).toEqual({
+			name: 'Marcus Thompson',
+		});
+	});
+
+	it('normalizes a changed email (trim + lowercase)', () => {
+		expect(updateProfileSchema.parse({ email: '  New@Example.com ' }).email).toBe(
+			'new@example.com',
+		);
+	});
+
+	it('accepts clearing the phone with an empty string', () => {
+		expect(updateProfileSchema.parse({ phone: '' })).toEqual({ phone: '' });
+	});
+
 	it('accepts a valid image URL', () => {
 		expect(updateProfileSchema.parse({ avatarUrl: 'https://example.com/photo.jpg' })).toEqual({
 			avatarUrl: 'https://example.com/photo.jpg',
 		});
 	});
 
-	it('accepts an empty string (reverts to Gravatar)', () => {
+	it('accepts an empty avatarUrl (reverts to Gravatar)', () => {
 		expect(updateProfileSchema.parse({ avatarUrl: '' })).toEqual({ avatarUrl: '' });
 	});
 
-	it('trims the URL', () => {
+	it('trims the avatar URL', () => {
 		expect(
 			updateProfileSchema.parse({ avatarUrl: '  https://example.com/me.png  ' }).avatarUrl,
 		).toBe('https://example.com/me.png');
 	});
 
-	it('rejects a malformed URL', () => {
+	it('rejects a malformed avatar URL', () => {
 		expect(() => updateProfileSchema.parse({ avatarUrl: 'not a url' })).toThrow();
 	});
 
-	it('rejects a missing avatarUrl field', () => {
+	it('rejects an empty update', () => {
 		expect(() => updateProfileSchema.parse({})).toThrow();
+	});
+
+	it('rejects a malformed email', () => {
+		expect(() => updateProfileSchema.parse({ email: 'not-an-email' })).toThrow();
+	});
+});
+
+describe('verifyEmailChangeSchema', () => {
+	it('accepts a 6-digit code', () => {
+		expect(verifyEmailChangeSchema.parse({ code: '123456' })).toEqual({ code: '123456' });
+	});
+
+	it('rejects a non 6-digit code', () => {
+		expect(() => verifyEmailChangeSchema.parse({ code: '12' })).toThrow();
 	});
 });
 

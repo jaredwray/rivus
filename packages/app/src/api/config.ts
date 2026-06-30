@@ -36,6 +36,7 @@ function ambientEnv(): Record<string, string | undefined> {
 		EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
 		EXPO_PUBLIC_APP_URL: process.env.EXPO_PUBLIC_APP_URL,
 		EXPO_PUBLIC_GOOGLE_MAPS_API_KEY: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
+		EXPO_PUBLIC_RIVUS_ENV: process.env.EXPO_PUBLIC_RIVUS_ENV,
 	};
 }
 
@@ -57,15 +58,27 @@ function ambientNodeEnv(): string | undefined {
 }
 
 /**
- * Whether the app is running a development build. The development-only account
- * seeder in Settings is gated on this (together with Rivus-staff status) so it
- * never appears in a production build — mirroring the API, which only registers
- * `POST /v1/admin/seed` when its own `NODE_ENV` is `development`. Expo/Metro
- * inlines `process.env.NODE_ENV` at build time; the `nodeEnv` parameter keeps
- * this hermetically testable.
+ * Whether the development-only account seeder in Settings should be available
+ * (it's still additionally gated to Rivus staff at the call site).
+ *
+ * It has to surface in two distinct places: a local dev build (`expo start`,
+ * where `NODE_ENV` is `development`) and the deployed Rivus *development*
+ * environment (`dev-app.rivus.ai`). The latter is produced by `expo export`,
+ * which forces `NODE_ENV=production`, so `NODE_ENV` alone can't tell it apart
+ * from the production app. The deploy workflow bakes `EXPO_PUBLIC_RIVUS_ENV`
+ * into the bundle (`development` vs `production`) to mark which deployment this
+ * is — the same `RIVUS_ENV` signal the API and robots.txt use. Seeding turns on
+ * when either input says development and stays off everywhere else; an unset or
+ * unexpected `EXPO_PUBLIC_RIVUS_ENV` fails safe (off) unless this is a local
+ * `NODE_ENV=development` build. Both inputs are injectable so this stays
+ * hermetically testable; Expo/Metro inlines the literal `process.env.*` reads at
+ * build time.
  */
-export function isDevelopment(nodeEnv: string | undefined = ambientNodeEnv()): boolean {
-	return nodeEnv === 'development';
+export function isSeedingEnabled(
+	env: Record<string, string | undefined> = ambientEnv(),
+	nodeEnv: string | undefined = ambientNodeEnv(),
+): boolean {
+	return env.EXPO_PUBLIC_RIVUS_ENV?.trim() === 'development' || nodeEnv === 'development';
 }
 
 export function getApiBaseUrl(env: Record<string, string | undefined> = ambientEnv()): string {

@@ -28,6 +28,8 @@ function makeUser() {
 		id: faker.string.uuid(),
 		email: faker.internet.email().toLowerCase(),
 		name: faker.person.fullName(),
+		phone: '',
+		pendingEmail: '',
 		avatarUrl: faker.internet.url(),
 		createdAt: now,
 		updatedAt: now,
@@ -338,6 +340,117 @@ describe('createApiClient', () => {
 		});
 	});
 
+	describe('updateProfile', () => {
+		it('PATCHes the profile with the bearer token and returns the updated user', async () => {
+			const updated = { ...makeUser(), name: 'Marcus Thompson', phone: '+1 206 555 0100' };
+			fetchMock.mockResolvedValueOnce(jsonResponse(updated));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.updateProfile('tok', {
+				name: 'Marcus Thompson',
+				phone: '+1 206 555 0100',
+			});
+
+			expect(result).toEqual(updated);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/auth/me`);
+			expect(init.method).toBe('PATCH');
+			expect(init.headers).toMatchObject({
+				Authorization: 'Bearer tok',
+				'Content-Type': 'application/json',
+			});
+			expect(JSON.parse(init.body as string)).toEqual({
+				name: 'Marcus Thompson',
+				phone: '+1 206 555 0100',
+			});
+		});
+
+		it('normalizes a changed email and surfaces the pending address it returns', async () => {
+			const pending = { ...makeUser(), email: 'old@example.com', pendingEmail: 'new@example.com' };
+			fetchMock.mockResolvedValueOnce(jsonResponse(pending));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.updateProfile('tok', { email: '  New@Example.com ' });
+
+			expect(result.pendingEmail).toBe('new@example.com');
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(JSON.parse(init.body as string)).toEqual({ email: 'new@example.com' });
+		});
+
+		it('rejects an empty update before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.updateProfile('tok', {})).rejects.toThrow(ValidationError);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it('rejects a malformed email before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.updateProfile('tok', { email: 'not-an-email' })).rejects.toThrow(
+				ValidationError,
+			);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it('PATCHes a custom avatar URL and returns it', async () => {
+			const updated = { ...makeUser(), avatarUrl: 'https://example.com/me.jpg' };
+			fetchMock.mockResolvedValueOnce(jsonResponse(updated));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.updateProfile('owner-token', {
+				avatarUrl: 'https://example.com/me.jpg',
+			});
+
+			expect(result.avatarUrl).toBe('https://example.com/me.jpg');
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/auth/me`);
+			expect(init.method).toBe('PATCH');
+			expect(JSON.parse(init.body as string)).toEqual({ avatarUrl: 'https://example.com/me.jpg' });
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer owner-token' });
+		});
+
+		it('accepts an empty string to clear a custom avatar', async () => {
+			const user = makeUser();
+			fetchMock.mockResolvedValueOnce(jsonResponse(user));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.updateProfile('owner-token', { avatarUrl: '' });
+
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(JSON.parse(init.body as string)).toEqual({ avatarUrl: '' });
+		});
+
+		it('rejects a malformed image URL before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.updateProfile('tok', { avatarUrl: 'not a url' })).rejects.toThrow();
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('verifyEmailChange', () => {
+		it('POSTs the code and returns the fresh session', async () => {
+			const auth = makeAuthResponse('owner');
+			fetchMock.mockResolvedValueOnce(jsonResponse(auth));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.verifyEmailChange('tok', { code: '123456' });
+
+			expect(result).toEqual(auth);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/auth/me/email/verify`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer tok' });
+			expect(JSON.parse(init.body as string)).toEqual({ code: '123456' });
+		});
+
+		it('rejects a malformed code before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.verifyEmailChange('tok', { code: '12' })).rejects.toThrow(
+				ValidationError,
+			);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+	});
+
 	describe('listMembers', () => {
 		it('returns members and pending invites with the bearer token', async () => {
 			const now = new Date().toISOString();
@@ -424,43 +537,6 @@ describe('createApiClient', () => {
 		it('rejects an empty update before hitting the network', async () => {
 			const client = createApiClient(BASE, fetchMock);
 			await expect(client.updateAccount('tok', {})).rejects.toThrow();
-			expect(fetchMock).not.toHaveBeenCalled();
-		});
-	});
-
-	describe('updateProfile', () => {
-		it('PATCHes the current user with the bearer token and returns it', async () => {
-			const user = makeUser();
-			const updated = { ...user, avatarUrl: 'https://example.com/me.jpg' };
-			fetchMock.mockResolvedValueOnce(jsonResponse(updated));
-
-			const client = createApiClient(BASE, fetchMock);
-			const result = await client.updateProfile('owner-token', {
-				avatarUrl: 'https://example.com/me.jpg',
-			});
-
-			expect(result.avatarUrl).toBe('https://example.com/me.jpg');
-			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-			expect(url).toBe(`${BASE}/v1/auth/me`);
-			expect(init.method).toBe('PATCH');
-			expect(JSON.parse(init.body as string)).toEqual({ avatarUrl: 'https://example.com/me.jpg' });
-			expect(init.headers).toMatchObject({ Authorization: 'Bearer owner-token' });
-		});
-
-		it('accepts an empty string to clear a custom avatar', async () => {
-			const user = makeUser();
-			fetchMock.mockResolvedValueOnce(jsonResponse(user));
-
-			const client = createApiClient(BASE, fetchMock);
-			await client.updateProfile('owner-token', { avatarUrl: '' });
-
-			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-			expect(JSON.parse(init.body as string)).toEqual({ avatarUrl: '' });
-		});
-
-		it('rejects a malformed image URL before hitting the network', async () => {
-			const client = createApiClient(BASE, fetchMock);
-			await expect(client.updateProfile('tok', { avatarUrl: 'not a url' })).rejects.toThrow();
 			expect(fetchMock).not.toHaveBeenCalled();
 		});
 	});

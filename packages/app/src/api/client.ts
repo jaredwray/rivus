@@ -67,7 +67,9 @@ import {
 	updateJobSchema,
 	updateProfileSchema,
 	type VerifyCodeInput,
+	type VerifyEmailChangeInput,
 	verifyCodeSchema,
+	verifyEmailChangeSchema,
 } from '@rivus/core';
 import { z } from 'zod';
 
@@ -167,10 +169,14 @@ const userResponseSchema = z.object({
 	id: userId(),
 	email: z.string(),
 	name: z.string(),
+	phone: z.string(),
+	pendingEmail: z.string(),
 	avatarUrl: z.string(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
 }) satisfies z.ZodType<User>;
+/** The signed-in user as returned by the API (id is a plain string on the wire). */
+export type ProfileUser = z.infer<typeof userResponseSchema>;
 
 const accountResponseSchema = z.object({
 	id: accountId(),
@@ -552,10 +558,19 @@ export interface RivusApiClient {
 	me(token?: string): Promise<Session>;
 	/** Clear the server-side session cookie (web sign-out). */
 	logout(): Promise<void>;
+	/**
+	 * Update your own profile (name, phone, email). Changing the email doesn't take
+	 * effect immediately: the API stages it on `pendingEmail` and emails a one-time
+	 * code, which {@link RivusApiClient.verifyEmailChange} confirms.
+	 */
+	updateProfile(token: string, input: UpdateProfileInput): Promise<ProfileUser>;
+	/**
+	 * Confirm a pending email change with the code sent to the new address. Returns
+	 * a fresh session (the new token/cookie carry the updated email).
+	 */
+	verifyEmailChange(token: string, input: VerifyEmailChangeInput): Promise<AuthResponse>;
 	listMembers(token: string): Promise<MemberList>;
 	inviteMember(token: string, input: InviteMemberInput): Promise<Invite>;
-	/** Update the signed-in user's own profile image (any member may edit their own). */
-	updateProfile(token: string, input: UpdateProfileInput): Promise<User>;
 	/** Update the account's business settings (owner only). */
 	updateAccount(token: string, input: UpdateAccountInput): Promise<Account>;
 	/** Cancel (soft-delete) the account (owner only). */
@@ -779,6 +794,20 @@ export function createApiClient(
 			await request('/v1/auth/logout', signedOutResponseSchema, { method: 'POST' });
 		},
 
+		async updateProfile(token: string, input: UpdateProfileInput) {
+			const payload = parseInput(updateProfileSchema, input);
+			return request('/v1/auth/me', userResponseSchema, jsonInit('PATCH', payload, token));
+		},
+
+		async verifyEmailChange(token: string, input: VerifyEmailChangeInput) {
+			const payload = parseInput(verifyEmailChangeSchema, input);
+			return request(
+				'/v1/auth/me/email/verify',
+				authResponseSchema,
+				jsonInit('POST', payload, token),
+			);
+		},
+
 		listMembers(token: string) {
 			return request('/v1/members', memberListResponseSchema, {
 				method: 'GET',
@@ -789,11 +818,6 @@ export function createApiClient(
 		async inviteMember(token: string, input: InviteMemberInput) {
 			const payload = parseInput(inviteMemberSchema, input);
 			return request('/v1/members/invites', inviteResponseSchema, jsonInit('POST', payload, token));
-		},
-
-		async updateProfile(token: string, input: UpdateProfileInput) {
-			const payload = parseInput(updateProfileSchema, input);
-			return request('/v1/auth/me', userResponseSchema, jsonInit('PATCH', payload, token));
 		},
 
 		async updateAccount(token: string, input: UpdateAccountInput) {

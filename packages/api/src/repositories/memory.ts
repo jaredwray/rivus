@@ -73,7 +73,7 @@ import type {
 	StoredUser,
 	StoredVerificationCode,
 	UpdateAccount,
-	UpdateUserProfile,
+	UpdateUser,
 	UserRepository,
 	VerificationCodeRepository,
 } from './types';
@@ -133,6 +133,9 @@ export class InMemoryUserRepository implements UserRepository {
 			id: randomUUID() as UserId,
 			email,
 			name: input.name,
+			phone: '',
+			pendingEmail: '',
+			avatarUrl: '',
 			createdAt: timestamp,
 			updatedAt: timestamp,
 		};
@@ -166,18 +169,36 @@ export class InMemoryUserRepository implements UserRepository {
 		return found;
 	}
 
-	async update(id: UserId, input: UpdateUserProfile): Promise<StoredUser | null> {
+	async update(id: UserId, input: UpdateUser): Promise<StoredUser | null> {
 		const user = this.data.users.get(id);
 		if (!user) {
 			return null;
 		}
-		const updated: StoredUser = { ...user, updatedAt: now() };
-		if (input.avatarUrl !== undefined) {
-			const trimmed = input.avatarUrl.trim();
-			// An empty override clears back to the Gravatar default — `undefined`,
-			// not `''`, so the presenter's `||` fallback actually kicks in.
-			updated.avatarUrl = trimmed === '' ? undefined : trimmed;
+		const patch: Partial<StoredUser> = {};
+		if (input.name !== undefined) {
+			patch.name = input.name;
 		}
+		if (input.email !== undefined) {
+			const normalized = input.email.trim().toLowerCase();
+			// Enforce the same uniqueness as `create`, ignoring the user's own row, so a
+			// verified email change can't collide with another account's address.
+			for (const existing of this.data.users.values()) {
+				if (existing.id !== id && existing.email === normalized) {
+					throw new ConflictError('email', 'An account with this email already exists');
+				}
+			}
+			patch.email = normalized;
+		}
+		if (input.phone !== undefined) {
+			patch.phone = input.phone;
+		}
+		if (input.pendingEmail !== undefined) {
+			patch.pendingEmail = input.pendingEmail.trim().toLowerCase();
+		}
+		if (input.avatarUrl !== undefined) {
+			patch.avatarUrl = input.avatarUrl.trim();
+		}
+		const updated: StoredUser = { ...user, ...patch, updatedAt: now() };
 		this.data.users.set(id, updated);
 		return structuredClone(updated);
 	}
@@ -443,6 +464,7 @@ export class InMemoryVerificationCodeRepository implements VerificationCodeRepos
 			codeHash: input.codeHash,
 			expiresAt: input.expiresAt,
 			signup: input.signup,
+			emailChange: input.emailChange,
 			attempts: 0,
 			createdAt: now(),
 		};

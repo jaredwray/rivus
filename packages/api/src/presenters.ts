@@ -3,7 +3,7 @@ import type { StoredUser } from './repositories/types';
 
 /** The user's custom avatar override, or their Gravatar if none is set. */
 function resolveAvatarUrl(user: StoredUser): string {
-	return user.avatarUrl?.trim() || gravatarUrl(user.email);
+	return user.avatarUrl || gravatarUrl(user.email);
 }
 
 /** Strip the password hash before a user ever leaves the API. */
@@ -12,6 +12,8 @@ export function toPublicUser(user: StoredUser): User {
 		id: user.id,
 		email: user.email,
 		name: user.name,
+		phone: user.phone,
+		pendingEmail: user.pendingEmail,
 		avatarUrl: resolveAvatarUrl(user),
 		createdAt: user.createdAt,
 		updatedAt: user.updatedAt,

@@ -168,16 +168,38 @@ export const updateAccountSchema = z
 	});
 export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;
 
+// --- Profile (the signed-in user's own account) -------------------------------
+
 /**
- * Update the signed-in user's own profile image. Any member may edit their own
- * profile (unlike account settings, this isn't owner-gated). An empty string
- * clears a custom override and reverts to the Gravatar derived from the email.
+ * Update your own profile: name, sign-in email, contact phone, and profile
+ * image. Every field is optional — like {@link updateAccountSchema}, a partial
+ * update only touches what the caller sends — but at least one must be present.
+ * Changing `email` doesn't apply immediately: the server emails a one-time code
+ * to the new address and the change lands only once
+ * {@link verifyEmailChangeSchema} confirms it. `avatarUrl` applies immediately;
+ * an empty string clears a custom override and reverts to the Gravatar derived
+ * from the email.
  */
-export const updateProfileSchema = z.object({
-	avatarUrl: avatarUrlSchema,
-});
+export const updateProfileSchema = z
+	.object({
+		name: nameSchema.optional(),
+		email: emailSchema.optional(),
+		phone: phoneSchema.optional(),
+		avatarUrl: avatarUrlSchema.optional(),
+	})
+	.refine((value) => Object.values(value).some((field) => field !== undefined), {
+		error: 'Provide at least one field to update.',
+	});
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 
+/**
+ * Confirm a pending email change with the one-time code sent to the new address.
+ * The signed-in session identifies whose change it is, so only the code is needed.
+ */
+export const verifyEmailChangeSchema = z.object({
+	code: verificationCodeSchema,
+});
+export type VerifyEmailChangeInput = z.infer<typeof verifyEmailChangeSchema>;
 export const itemStatusSchema = z.enum(['active', 'archived'], {
 	error: 'Status must be either active or archived.',
 });

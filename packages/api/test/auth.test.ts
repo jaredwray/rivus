@@ -8,6 +8,7 @@ import { createInMemoryRepositories } from '../src/repositories/memory';
 import { hashSecret } from '../src/services/hash';
 import { MAX_VERIFICATION_ATTEMPTS } from '../src/services/verification';
 import {
+	addMember,
 	authHeader,
 	buildTestApp,
 	buildTestAppWithRepos,
@@ -393,9 +394,233 @@ describe('me', () => {
 		});
 		expect(response.statusCode).toBe(401);
 	});
+
+	it('exposes the new profile fields (phone, pendingEmail) defaulting to empty', async () => {
+		const { token } = await signupOwner(app);
+		const response = await app.inject({
+			method: 'GET',
+			url: '/v1/auth/me',
+			headers: authHeader(token),
+		});
+		expect(response.json().user).toMatchObject({ phone: '', pendingEmail: '' });
+	});
 });
 
-describe('update profile (PATCH /v1/auth/me)', () => {
+describe('profile (update + email re-verify)', () => {
+	let app: FastifyInstance;
+
+	beforeEach(async () => {
+		app = await buildTestApp();
+	});
+
+	afterEach(async () => {
+		await app.close();
+	});
+
+	function updateProfile(token: string, payload: Record<string, unknown>) {
+		return app.inject({ method: 'PATCH', url: '/v1/auth/me', headers: authHeader(token), payload });
+	}
+
+	function verifyEmailChange(token: string, code: string) {
+		return app.inject({
+			method: 'POST',
+			url: '/v1/auth/me/email/verify',
+			headers: authHeader(token),
+			payload: { code },
+		});
+	}
+
+	function getMe(token: string) {
+		return app.inject({ method: 'GET', url: '/v1/auth/me', headers: authHeader(token) });
+	}
+
+	it('requires authentication', async () => {
+		const response = await app.inject({
+			method: 'PATCH',
+			url: '/v1/auth/me',
+			payload: { name: 'Nobody' },
+		});
+		expect(response.statusCode).toBe(401);
+	});
+
+	it('updates name and phone and reflects them on /me', async () => {
+		const owner = await signupOwner(app);
+		const response = await updateProfile(owner.token, {
+			name: 'Marcus Thompson',
+			phone: '+1 206 555 0100',
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			name: 'Marcus Thompson',
+			phone: '+1 206 555 0100',
+			pendingEmail: '',
+		});
+		expect((await getMe(owner.token)).json().user).toMatchObject({
+			name: 'Marcus Thompson',
+			phone: '+1 206 555 0100',
+		});
+	});
+
+	it('applies a partial update without blanking untouched fields', async () => {
+		const owner = await signupOwner(app);
+		await updateProfile(owner.token, { phone: '+1 555 0001' });
+		const response = await updateProfile(owner.token, { name: 'Renamed Person' });
+
+		expect(response.statusCode).toBe(200);
+		// The earlier phone survives a name-only update.
+		expect(response.json()).toMatchObject({ name: 'Renamed Person', phone: '+1 555 0001' });
+	});
+
+	it('rejects an empty update (400)', async () => {
+		const owner = await signupOwner(app);
+		expect((await updateProfile(owner.token, {})).statusCode).toBe(400);
+	});
+
+	it('lets a non-owner member update their own profile', async () => {
+		const owner = await signupOwner(app);
+		const member = await addMember(app, owner.token, 'member', 'tm@example.com');
+		const response = await updateProfile(member.token, { name: 'Team Member' });
+		expect(response.statusCode).toBe(200);
+		expect(response.json().name).toBe('Team Member');
+	});
+
+	it('submitting your current email is a no-op (no code sent)', async () => {
+		const owner = await signupOwner(app, { email: 'owner@example.com' });
+		const mailer = app.deps.mailer as RecordingMailer;
+		const sentBefore = mailer.codes.length;
+
+		const response = await updateProfile(owner.token, { email: 'owner@example.com' });
+		expect(response.statusCode).toBe(200);
+		expect(response.json().pendingEmail).toBe('');
+		// No verification code was emailed for a same-address "change".
+		expect(mailer.codes.length).toBe(sentBefore);
+	});
+
+	it('does not change the email immediately — it stages it and emails a code', async () => {
+		const owner = await signupOwner(app, { email: 'owner@example.com' });
+		const response = await updateProfile(owner.token, { email: 'new@example.com' });
+
+		expect(response.statusCode).toBe(200);
+		// Live email is unchanged; the new address is staged as pending.
+		expect(response.json()).toMatchObject({
+			email: 'owner@example.com',
+			pendingEmail: 'new@example.com',
+		});
+		// The code goes to the NEW address, with the email-change purpose.
+		expect(latestCodeFor(app, 'new@example.com')).toMatch(/^\d{6}$/);
+		const mailer = app.deps.mailer as RecordingMailer;
+		expect(mailer.codes.at(-1)).toMatchObject({ to: 'new@example.com', purpose: 'email_change' });
+		// /me still reports the old email plus the pending one.
+		expect((await getMe(owner.token)).json().user).toMatchObject({
+			email: 'owner@example.com',
+			pendingEmail: 'new@example.com',
+		});
+	});
+
+	it('confirms the change with the code, swaps the email, and clears pendingEmail', async () => {
+		const owner = await signupOwner(app, { email: 'owner@example.com' });
+		await updateProfile(owner.token, { email: 'new@example.com' });
+		const response = await verifyEmailChange(owner.token, latestCodeFor(app, 'new@example.com'));
+
+		expect(response.statusCode).toBe(200);
+		const body = response.json();
+		// A fresh session is returned so the token/cookie carry the new email.
+		expect(body.token).toBeTypeOf('string');
+		expect(body.user).toMatchObject({ email: 'new@example.com', pendingEmail: '' });
+		expect(body.role).toBe('owner');
+		expect((await getMe(body.token)).json().user.email).toBe('new@example.com');
+	});
+
+	it('moves the address so the old email no longer resolves and the new one does', async () => {
+		const owner = await signupOwner(app, { email: 'old@example.com' });
+		await updateProfile(owner.token, { email: 'fresh@example.com' });
+		await verifyEmailChange(owner.token, latestCodeFor(app, 'fresh@example.com'));
+
+		expect(await app.deps.users.findByEmail('old@example.com')).toBeNull();
+		expect((await app.deps.users.findByEmail('fresh@example.com'))?.id).toBe(owner.user.id);
+	});
+
+	it('rejects a wrong confirmation code (401) and locks after too many attempts (429)', async () => {
+		const owner = await signupOwner(app, { email: 'owner@example.com' });
+		await updateProfile(owner.token, { email: 'new@example.com' });
+		const code = latestCodeFor(app, 'new@example.com');
+
+		for (let i = 0; i < MAX_VERIFICATION_ATTEMPTS; i++) {
+			expect((await verifyEmailChange(owner.token, wrongCode(code))).statusCode).toBe(401);
+		}
+		// Budget spent: even the correct code is now locked out.
+		expect((await verifyEmailChange(owner.token, code)).statusCode).toBe(429);
+	});
+
+	it('returns 400 when confirming with no pending change', async () => {
+		const owner = await signupOwner(app);
+		expect((await verifyEmailChange(owner.token, '123456')).statusCode).toBe(400);
+	});
+
+	it('rejects confirmation when the code was consumed or never arrived (401)', async () => {
+		const owner = await signupOwner(app, { email: 'owner@example.com' });
+		await updateProfile(owner.token, { email: 'new@example.com' });
+		// Drop the outstanding code, then try to confirm: the pending change remains but
+		// there's no code to match.
+		await app.deps.verificationCodes.delete('new@example.com');
+		expect((await verifyEmailChange(owner.token, '123456')).statusCode).toBe(401);
+	});
+
+	it('refuses to start a change to an email another user already owns (409)', async () => {
+		const owner = await signupOwner(app, { email: 'owner@example.com' });
+		await signupOwner(app, { email: 'taken@example.com' });
+		expect((await updateProfile(owner.token, { email: 'taken@example.com' })).statusCode).toBe(409);
+	});
+
+	it('refuses to move a regular account onto the Rivus staff domain (403, no self-elevation)', async () => {
+		const owner = await signupOwner(app, { email: 'owner@example.com' });
+		const response = await updateProfile(owner.token, { email: 'sneaky@rivus.ai' });
+		expect(response.statusCode).toBe(403);
+		// Nothing was staged and no code was emailed to the staff address.
+		expect((await getMe(owner.token)).json().user.pendingEmail).toBe('');
+		expect(() => latestCodeFor(app, 'sneaky@rivus.ai')).toThrow();
+	});
+
+	it('refuses to change a staff member off the staff domain via the profile (403)', async () => {
+		// A staff account (its email is on the staff domain) can't self-service an email
+		// change here — that would strand a stale staff claim on its other sessions.
+		const staff = await signupOwner(app, { email: 'ops@rivus.ai' });
+		const response = await updateProfile(staff.token, { email: 'ops-personal@example.com' });
+		expect(response.statusCode).toBe(403);
+	});
+
+	it('does not let the public /verify endpoint consume or burn an email-change code', async () => {
+		const owner = await signupOwner(app, { email: 'owner@example.com' });
+		await updateProfile(owner.token, { email: 'new@example.com' });
+		const code = latestCodeFor(app, 'new@example.com');
+
+		// The generic passwordless sign-in must not touch an email-change code, even
+		// with the correct value: it's rejected before the attempt counter or delete.
+		const viaVerify = await app.inject({
+			method: 'POST',
+			url: '/v1/auth/verify',
+			payload: { email: 'new@example.com', code },
+		});
+		expect(viaVerify.statusCode).toBe(401);
+
+		// So the authenticated confirm still succeeds with that same, un-burned code.
+		const confirm = await verifyEmailChange(owner.token, code);
+		expect(confirm.statusCode).toBe(200);
+		expect(confirm.json().user.email).toBe('new@example.com');
+	});
+
+	it('cannot replay a confirmation code after it succeeds', async () => {
+		const owner = await signupOwner(app, { email: 'owner@example.com' });
+		await updateProfile(owner.token, { email: 'new@example.com' });
+		const code = latestCodeFor(app, 'new@example.com');
+		expect((await verifyEmailChange(owner.token, code)).statusCode).toBe(200);
+		// The change is done and pendingEmail cleared, so the same code now 400s.
+		expect((await verifyEmailChange(owner.token, code)).statusCode).toBe(400);
+	});
+});
+
+describe('profile avatar (PATCH /v1/auth/me)', () => {
 	let app: FastifyInstance;
 
 	beforeEach(async () => {
@@ -471,49 +696,14 @@ describe('update profile (PATCH /v1/auth/me)', () => {
 		expect(response.statusCode).toBe(400);
 	});
 
-	it('rejects a missing avatarUrl field (400)', async () => {
-		const { token } = await signupOwner(app);
-
-		const response = await app.inject({
-			method: 'PATCH',
-			url: '/v1/auth/me',
-			headers: authHeader(token),
-			payload: {},
-		});
-
-		expect(response.statusCode).toBe(400);
-	});
-
-	it('rejects an unauthenticated request (401)', async () => {
-		const response = await app.inject({
-			method: 'PATCH',
-			url: '/v1/auth/me',
-			payload: { avatarUrl: 'https://example.com/me.jpg' },
-		});
-
-		expect(response.statusCode).toBe(401);
-	});
-
 	it('lets a non-owner member edit their own avatar (not owner-gated)', async () => {
-		const { token: ownerToken } = await signupOwner(app);
-		const inviteResponse = await app.inject({
-			method: 'POST',
-			url: '/v1/members/invites',
-			headers: authHeader(ownerToken),
-			payload: { email: 'teammate@example.com', name: 'Teammate', role: 'member' },
-		});
-		const inviteToken = inviteResponse.json().token as string;
-		const accepted = await app.inject({
-			method: 'POST',
-			url: '/v1/auth/accept-invite',
-			payload: { token: inviteToken },
-		});
-		const memberToken = accepted.json().token as string;
+		const owner = await signupOwner(app);
+		const member = await addMember(app, owner.token, 'member', 'teammate@example.com');
 
 		const response = await app.inject({
 			method: 'PATCH',
 			url: '/v1/auth/me',
-			headers: authHeader(memberToken),
+			headers: authHeader(member.token),
 			payload: { avatarUrl: 'https://example.com/member.jpg' },
 		});
 

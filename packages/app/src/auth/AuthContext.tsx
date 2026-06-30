@@ -5,6 +5,7 @@ import {
 	type UpdateAccountInput,
 	type UpdateProfileInput,
 	type VerifyCodeInput,
+	type VerifyEmailChangeInput,
 } from '@rivus/core';
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
@@ -47,10 +48,17 @@ export interface AuthContextValue {
 	/** Exchange a one-time code for a session. */
 	verifyCode: (input: VerifyCodeInput) => Promise<void>;
 	acceptInvite: (token: string) => Promise<void>;
-	/** Update the signed-in user's own profile image, keeping the session in sync. */
-	updateProfile: (input: UpdateProfileInput) => Promise<void>;
 	/** Update the account's business settings, keeping the session in sync (owner only). */
 	updateAccount: (input: UpdateAccountInput) => Promise<void>;
+	/**
+	 * Update your own profile (name, phone, email, profile image), keeping the
+	 * session in sync. Changing the email stages it on `session.user.pendingEmail`
+	 * and emails a code; the live email only changes once
+	 * {@link verifyEmailChange} confirms it.
+	 */
+	updateProfile: (input: UpdateProfileInput) => Promise<void>;
+	/** Confirm a pending email change with its code, adopting the re-issued session. */
+	verifyEmailChange: (input: VerifyEmailChangeInput) => Promise<void>;
 	/** Switch the active company and adopt the new session (Rivus staff only). */
 	switchCompany: (accountId: AccountId) => Promise<void>;
 	/** Cancel (soft-delete) the account, then sign out since it's now locked (owner only). */
@@ -138,6 +146,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				}
 				const account = await client.updateAccount(session.token, input);
 				setSession({ ...session, account });
+			},
+			async verifyEmailChange(input) {
+				if (!session) {
+					return;
+				}
+				// The API re-issues the session (new token/cookie carry the new email).
+				setSession(adopt(await client.verifyEmailChange(session.token, input)));
 			},
 			async switchCompany(accountId) {
 				if (!session) {
