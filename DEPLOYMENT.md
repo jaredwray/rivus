@@ -62,6 +62,24 @@ Production emits an explicit allow-all `robots.txt`; development emits
 crawlable UI in any environment (its Swagger UI is off under `NODE_ENV=production`,
 which is how the container always runs), so it does not emit a `robots.txt`.
 
+## Staff account seeder
+
+`RIVUS_ENV` has a second consumer: the staff-only account seeder (`POST
+/v1/admin/seed`, surfaced as "Developer · seed account" in the app's Settings).
+It fills the *current* account with demo data so Rivus staff can populate a fresh
+test account from the UI. Because both deployed containers run
+`NODE_ENV=production`, `RIVUS_ENV` is the only thing that tells the development
+deployment apart from production:
+
+| Side  | How it reads `RIVUS_ENV`                                                   | Result |
+| ----- | ------------------------------------------------------------------------- | ------ |
+| API   | a `vars` entry in `packages/api/wrangler.jsonc` per environment, forwarded into the container by `worker/index.ts` | Registers the route only when `RIVUS_ENV=development` (or a local `NODE_ENV=development`). Production sets `RIVUS_ENV=production`, so the route 404s there. |
+| App   | the deploy workflows bake `EXPO_PUBLIC_RIVUS_ENV` into the Expo bundle     | The Settings card renders only when `EXPO_PUBLIC_RIVUS_ENV=development` (or a local dev build), and only for Rivus-staff (`@rivus.ai`) sessions. |
+
+The gate is an allowlist on both sides — it enables on an explicit
+`development`, so an unset or unexpected value in production fails safe (off).
+The route is always additionally guarded by `requireStaff`.
+
 ## One-time setup
 
 1. **Cloudflare account + zone.** Add the `rivus.ai` zone to the account so the

@@ -227,8 +227,8 @@ describe('resolveSeedCounts', () => {
 	});
 });
 
-describe('POST /v1/admin/seed (development only)', () => {
-	/** A dev-mode app: the only environment where the seed route is registered. */
+describe('POST /v1/admin/seed (dev + deployed development only)', () => {
+	/** A local dev-mode app (NODE_ENV=development), where the seed route is registered. */
 	function buildDevApp(): Promise<FastifyInstance> {
 		return buildTestApp({
 			config: loadConfig({
@@ -345,6 +345,41 @@ describe('POST /v1/admin/seed (development only)', () => {
 			const staff = await signupOwner(app, { email: STAFF_EMAIL, businessName: 'Rivus HQ' });
 			const response = await seed(staff.token, { customers: 10_000 });
 			expect(response.statusCode).toBe(400);
+		});
+	});
+
+	describe('when RIVUS_ENV is development (the deployed dev environment)', () => {
+		let app: FastifyInstance;
+
+		// The deployed dev container runs NODE_ENV=production like prod; RIVUS_ENV is
+		// the only thing that distinguishes it. NODE_ENV=test stands in here for that
+		// "not development" container without tripping the production JWT/CORS/email
+		// boot gates, so it isolates the RIVUS_ENV path.
+		beforeEach(async () => {
+			app = await buildTestApp({
+				config: loadConfig({
+					NODE_ENV: 'test',
+					RIVUS_ENV: 'development',
+					JWT_SECRET: 'test-secret-value-1234',
+					LOG_LEVEL: 'silent',
+				} as NodeJS.ProcessEnv),
+			});
+		});
+
+		afterEach(async () => {
+			await app.close();
+		});
+
+		it('registers the route for staff even though NODE_ENV is not development', async () => {
+			const staff = await signupOwner(app, { email: STAFF_EMAIL, businessName: 'Rivus HQ' });
+			const response = await app.inject({
+				method: 'POST',
+				url: '/v1/admin/seed',
+				headers: authHeader(staff.token),
+				payload: { customers: 2, faqs: 0, appointments: 0, notifications: 0, conversations: 0 },
+			});
+			expect(response.statusCode).toBe(200);
+			expect(response.json().customers).toBe(2);
 		});
 	});
 });
