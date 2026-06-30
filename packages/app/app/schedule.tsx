@@ -124,6 +124,11 @@ export default function ScheduleScreen() {
 	// (and wrap its own children) instead of overflowing off the right edge.
 	const narrow = width < SIDEBAR_BREAKPOINT;
 
+	// Measured (not guessed) layout, used to cap the edit-job form to whatever
+	// vertical space this screen actually has — see `formMaxHeight` below.
+	const [screenHeight, setScreenHeight] = useState(0);
+	const [formTop, setFormTop] = useState(0);
+
 	// Open on the day view on the mobile layout (the week is too cramped on a phone)
 	// and on the week view when the sidebar layout has room. Only a manual choice lives
 	// in state; until then the view derives from the current width, so the static-web
@@ -455,14 +460,25 @@ export default function ScheduleScreen() {
 	];
 
 	const bookedCount = jobs.filter((job) => job.status !== 'canceled').length;
-	// Cap the edit/new-job card well short of the viewport so it always has room to
-	// scroll internally — it sits in normal flow above the grid (not a Modal), and
-	// without a bound its bottom (the Delete button) can run off-screen with no way
-	// to reach it.
-	const formMaxHeight = Math.min(640, height * 0.72);
+	// Cap the edit/new-job card so it always has room to scroll internally — it
+	// sits in normal flow above the grid (not a Modal), and without a bound its
+	// bottom (the Delete button) can run off-screen with no way to reach it.
+	// `screen` already measures only the space this route actually gets (the
+	// layout shell reserves the rest for the sidebar/topbar or, on the narrow
+	// layout, the compact bar and bottom tab bar), so once `onLayout` reports the
+	// real numbers below, derive the cap from those instead of the raw window
+	// height — otherwise the cap can outsize the visible slot on a short/narrow
+	// device and leave Delete behind the tab bar even at max scroll. Until then,
+	// fall back to a window-relative estimate for the first paint, same as the
+	// tab bar's own pre-measure default in `_layout.tsx`.
+	const formMaxHeight =
+		screenHeight > 0 ? Math.max(240, screenHeight - formTop - 24) : Math.min(640, height * 0.72);
 
 	return (
-		<View style={styles.screen}>
+		<View
+			style={styles.screen}
+			onLayout={(event) => setScreenHeight(event.nativeEvent.layout.height)}
+		>
 			<View style={[styles.header, narrow && styles.headerNarrow]}>
 				<View style={styles.headerLeft}>
 					<View style={styles.titleRow}>
@@ -555,8 +571,8 @@ export default function ScheduleScreen() {
 			) : null}
 
 			{formOpen ? (
-				<View style={styles.formWrap}>
-					<ScrollView style={{ maxHeight: formMaxHeight }}>
+				<View style={styles.formWrap} onLayout={(event) => setFormTop(event.nativeEvent.layout.y)}>
+					<ScrollView style={{ maxHeight: formMaxHeight }} keyboardShouldPersistTaps="handled">
 						<Card style={styles.form}>
 							<View style={styles.formHead}>
 								<Txt style={styles.formTitle}>{editing ? 'Edit job' : 'New job'}</Txt>
