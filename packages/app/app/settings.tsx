@@ -7,8 +7,8 @@ import {
 	useWindowDimensions,
 	View,
 } from 'react-native';
-import { ApiError, type Billing } from '@/src/api/client';
-import { getGoogleMapsApiKey } from '@/src/api/config';
+import { ApiError, type Billing, type SeedSummary } from '@/src/api/client';
+import { getGoogleMapsApiKey, isDevelopment } from '@/src/api/config';
 import { deviceTimezone, listTimezones } from '@/src/api/timezones';
 import { useAuth } from '@/src/auth/AuthContext';
 import { AddressAutocomplete } from '@/src/components/AddressAutocomplete';
@@ -33,6 +33,71 @@ function messageFor(error: unknown, fallback: string): string {
 		return error.message;
 	}
 	return fallback;
+}
+
+/**
+ * A development-only, Rivus-staff-only affordance to fill the current account with
+ * demo data (customers, FAQs, appointments, notifications, and inbox
+ * conversations) so there's something to test against. It self-gates on
+ * {@link isDevelopment} plus staff status and renders nothing otherwise — the API
+ * enforces the same rules server-side (the seed route exists only when its
+ * `NODE_ENV` is `development`, and rejects non-staff callers), so this is purely
+ * about not showing a control that wouldn't work.
+ */
+function DevSeedCard() {
+	const { session, client, isStaff } = useAuth();
+	const [seeding, setSeeding] = useState(false);
+	const [summary, setSummary] = useState<SeedSummary | null>(null);
+	const [error, setError] = useState<string | null>(null);
+
+	const visible = Boolean(session) && isStaff && isDevelopment();
+
+	async function onSeed() {
+		if (seeding || !session) {
+			return;
+		}
+		setError(null);
+		setSummary(null);
+		setSeeding(true);
+		try {
+			const result = await client.seedAccount(session.token);
+			setSummary(result);
+		} catch (caught) {
+			setError(messageFor(caught, 'Could not seed the account.'));
+		} finally {
+			setSeeding(false);
+		}
+	}
+
+	if (!visible || !session) {
+		return null;
+	}
+
+	return (
+		<Card style={[styles.card, styles.devCard]}>
+			<SectionLabel style={styles.devLabel}>Developer · seed account</SectionLabel>
+			<Txt style={styles.rowSub}>
+				Fill {session.account.name} with demo customers, FAQs, appointments, notifications, and
+				inbox conversations so you have realistic data to test against. Visible only in development,
+				to Rivus staff.
+			</Txt>
+
+			{error ? <Txt style={styles.errorTxt}>{error}</Txt> : null}
+			{summary ? (
+				<Txt style={styles.savedTxt}>
+					Seeded {summary.customers} customers, {summary.faqs} FAQs, {summary.appointments}{' '}
+					appointments, {summary.notifications} notifications, and {summary.conversations}{' '}
+					conversations.
+				</Txt>
+			) : null}
+
+			<GradientButton
+				label={seeding ? 'Seeding…' : 'Seed this account'}
+				icon="database"
+				onPress={onSeed}
+			/>
+		</Card>
+	);
 }
 
 export default function SettingsScreen() {
@@ -125,6 +190,7 @@ export default function SettingsScreen() {
 						something updated.
 					</Txt>
 				</Card>
+				<DevSeedCard />
 			</ScrollView>
 		);
 	}
@@ -290,6 +356,8 @@ export default function SettingsScreen() {
 					/>
 				)}
 			</Card>
+
+			<DevSeedCard />
 		</ScrollView>
 	);
 }
@@ -375,6 +443,14 @@ const styles = StyleSheet.create({
 	},
 	dangerLabel: {
 		color: colors.redInk,
+	},
+	// A violet-tinted border marks the dev-only seeder as a distinct, internal tool
+	// (mirrors how the danger zone is set apart), without using the signature gradient.
+	devCard: {
+		borderColor: 'rgba(110,30,200,0.30)',
+	},
+	devLabel: {
+		color: colors.brandPurpleInk,
 	},
 	dangerBtn: {
 		borderColor: 'rgba(240,88,75,0.45)',

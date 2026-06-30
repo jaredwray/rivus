@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import type { Account, AccountId, UserId } from '@rivus/core';
+import type { Account, AccountId } from '@rivus/core';
 import { loadConfig } from './config';
 import { connectMongoose, disconnectMongoose } from './db/mongoose';
 import {
@@ -11,45 +11,16 @@ import {
 	MongoMembershipRepository,
 	MongoNotificationRepository,
 } from './repositories/mongo';
-import type {
-	AccountRepository,
-	ConversationRepository,
-	CustomerRepository,
-	FaqRepository,
-	JobRepository,
-	NotificationRepository,
-} from './repositories/types';
-import {
-	type BusinessContext,
-	createSeedGenerator,
-	DeterministicSeedGenerator,
-	type SeedGenerator,
-} from './seed-ai';
-import {
-	type ConversationContact,
-	generateConversations,
-	generateNotifications,
-	parseSeedArgs,
-	SEED_APPOINTMENT_MAX,
-	SEED_APPOINTMENT_MIN,
-	SEED_CONVERSATION_MAX,
-	SEED_CONVERSATION_MIN,
-	SEED_CUSTOMER_MAX,
-	SEED_CUSTOMER_MIN,
-	SEED_FAQ_DEFAULT,
-	SEED_NOTIFICATION_MAX,
-	SEED_NOTIFICATION_MIN,
-	SEED_USAGE,
-	SeedArgError,
-	type SeedOptions,
-	selectNewFaqs,
-} from './seed-data';
+import type { AccountRepository } from './repositories/types';
+import { createSeedGenerator, DeterministicSeedGenerator, type SeedGenerator } from './seed-ai';
+import { parseSeedArgs, SEED_USAGE, SeedArgError, type SeedOptions } from './seed-data';
+import { resolveSeedCounts, type SeedAccountCounts, seedAccountData } from './services/seed';
 
 /**
  * Seed a single account with demo data: CRM customers, a business-FAQ knowledge
- * base, and scheduled appointments (Jobs). It points at an account by slug or id
- * and writes through the same Mongo repositories and Zod schemas the API uses, so
- * seeded rows are identical to ones created over HTTP.
+ * base, scheduled appointments (Jobs), per-member notifications, and inbox
+ * conversations. It points at an account by slug or id and writes through the
+ * Mongo repositories, so seeded rows are identical to ones created over HTTP.
  *
  * Data is generated with AI when a provider key is configured (tailored to the
  * account's business), and falls back to deterministic faker/curated generation
@@ -59,8 +30,9 @@ import {
  *   pnpm --filter @rivus/api seed --account <slug-or-id> [--customers n] [--faqs n] [--appointments n]
  *
  * The pure data generation, CLI parsing, de-duplication, and AI layer live in
- * `seed-data.ts` / `seed-ai.ts` (and are unit-tested); this module is just the
- * database wrapper.
+ * `seed-data.ts` / `seed-ai.ts`, and the repository orchestration lives in
+ * `services/seed.ts` (which the development-only seed route reuses). This module
+ * is just the database wrapper around them.
  */
 
 /** Resolve an account by id first (when the identifier is a valid id), then by slug. */
@@ -77,173 +49,19 @@ async function resolveAccount(
 	return accounts.findBySlug(identifier);
 }
 
-/** Gather every existing FAQ question for an account, paging through the repository. */
-async function collectExistingFaqQuestions(
-	faqs: FaqRepository,
-	accountId: AccountId,
-): Promise<string[]> {
-	const pageSize = 100;
-	const questions: string[] = [];
-	let page = 1;
-	// Page until we've collected `total`; the generous guard stops a runaway loop
-	// if the count and the returned rows ever disagree.
-	for (let guard = 0; guard < 1000; guard += 1) {
-		const { faqs: batch, total } = await faqs.list({ accountId, page, pageSize });
-		for (const faq of batch) {
-			questions.push(faq.question);
-		}
-		if (batch.length === 0 || questions.length >= total) {
-			break;
-		}
-		page += 1;
-	}
-	return questions;
-}
-
 function write(message: string): void {
 	process.stdout.write(`${message}\n`);
 }
 
-/** Create `count` customers via the generator; returns the new customers' ids. */
-async function seedCustomers(
-	customers: CustomerRepository,
-	generator: SeedGenerator,
-	account: Account,
-	context: BusinessContext,
-	count: number,
-): Promise<string[]> {
-	if (count === 0) {
-		write('Customers: skipped (count 0).');
-		return [];
-	}
-	const inputs = await generator.generateCustomers(count, context);
-	const ids: string[] = [];
-	for (const input of inputs) {
-		const created = await customers.create(account.id, input);
-		ids.push(created.id);
-	}
-	write(`Customers: created ${ids.length}.`);
-	return ids;
-}
-
-/** Create up to `count` FAQs, skipping any whose question already exists. */
-async function seedFaqs(
-	faqs: FaqRepository,
-	generator: SeedGenerator,
-	account: Account,
-	context: BusinessContext,
-	count: number,
-): Promise<void> {
-	if (count === 0) {
-		write('FAQs: skipped (count 0).');
-		return;
-	}
-	const candidates = await generator.generateFaqs(count, context);
-	const existing = await collectExistingFaqQuestions(faqs, account.id);
-	const { toCreate, skipped } = selectNewFaqs(candidates, existing);
-	const skipNote = skipped.length > 0 ? ` (${skipped.length} already present, skipped)` : '';
-	for (const input of toCreate) {
-		await faqs.create(account.id, input);
-	}
-	write(`FAQs: created ${toCreate.length}${skipNote}.`);
-}
-
-/** Create `count` appointments (Jobs) linked to the given customers and members. */
-async function seedAppointments(
-	jobs: JobRepository,
-	generator: SeedGenerator,
-	account: Account,
-	context: BusinessContext,
-	count: number,
-	customerIds: string[],
-	memberIds: string[],
-): Promise<void> {
-	if (count === 0) {
-		write('Appointments: skipped (count 0).');
-		return;
-	}
-	const inputs = await generator.generateAppointments(
-		{ count, customerIds, memberIds, referenceDate: new Date() },
-		context,
-	);
-	for (const input of inputs) {
-		await jobs.create(account.id, input);
-	}
-	const linkNote = customerIds.length === 0 ? ' (no customers to link)' : '';
-	write(`Appointments: created ${inputs.length}${linkNote}.`);
-}
-
-/**
- * Create `countPerMember` demo notifications for each of the account's members so
- * their bell looks lived-in, then mark the older half read so the unread badge
- * shows a realistic subset rather than every row glowing.
- */
-async function seedNotifications(
-	notifications: NotificationRepository,
-	account: Account,
-	memberIds: string[],
-	countPerMember: number,
-): Promise<void> {
-	if (countPerMember === 0) {
-		write('Notifications: skipped (count 0).');
-		return;
-	}
-	if (memberIds.length === 0) {
-		write('Notifications: skipped (no members to notify).');
-		return;
-	}
-	let created = 0;
-	for (const memberId of memberIds) {
-		const ids = [];
-		for (const input of generateNotifications(countPerMember)) {
-			const notification = await notifications.create(account.id, memberId as UserId, input);
-			ids.push(notification.id);
-		}
-		// The list is newest-first, so marking the first (oldest) half read leaves the
-		// most recent notifications unread — the natural "haven't seen these yet" state.
-		const readCount = Math.floor(ids.length / 2);
-		for (let i = 0; i < readCount; i += 1) {
-			const id = ids[i];
-			if (id) {
-				await notifications.markRead(account.id, memberId as UserId, id);
-			}
-		}
-		created += ids.length;
-	}
-	write(`Notifications: created ${created} across ${memberIds.length} member(s).`);
-}
-
-/**
- * Create `count` inbox conversations linked to the account's customers, replaying
- * each scripted message through the repository (and setting the review state for
- * the flagged thread) so the seeded inbox is identical to one built over HTTP.
- */
-async function seedConversations(
-	conversations: ConversationRepository,
-	account: Account,
-	contacts: ConversationContact[],
-	count: number,
-): Promise<void> {
-	if (count === 0) {
-		write('Conversations: skipped (count 0).');
-		return;
-	}
-	const seeds = generateConversations(count, contacts);
-	for (const seed of seeds) {
-		const created = await conversations.create(account.id, seed.conversation);
-		for (const message of seed.messages) {
-			await conversations.addMessage(account.id, created.id, message);
-		}
-		if (seed.review) {
-			await conversations.setReviewState(account.id, created.id, {
-				status: 'needs_attention',
-				pendingReply: seed.review.pendingReply,
-				flagReason: seed.review.flagReason,
-			});
-		}
-	}
-	const linkNote = contacts.length === 0 ? ' (no customers to link)' : '';
-	write(`Conversations: created ${seeds.length}${linkNote}.`);
+/** Map the CLI options onto the seeder's per-entity count shape. */
+function countsFrom(options: SeedOptions): SeedAccountCounts {
+	return {
+		customers: options.customers,
+		faqs: options.faqs,
+		appointments: options.appointments,
+		notifications: options.notifications,
+		conversations: options.conversations,
+	};
 }
 
 async function run(options: SeedOptions): Promise<void> {
@@ -256,20 +74,6 @@ async function run(options: SeedOptions): Promise<void> {
 	const generator: SeedGenerator = options.ai
 		? createSeedGenerator(config)
 		: new DeterministicSeedGenerator();
-
-	// Resolve the planned counts up front so a dry run can report them without work.
-	const customerCount =
-		options.customers ?? faker.number.int({ min: SEED_CUSTOMER_MIN, max: SEED_CUSTOMER_MAX });
-	const faqCount = options.faqs ?? SEED_FAQ_DEFAULT;
-	const appointmentCount =
-		options.appointments ??
-		faker.number.int({ min: SEED_APPOINTMENT_MIN, max: SEED_APPOINTMENT_MAX });
-	const notificationCount =
-		options.notifications ??
-		faker.number.int({ min: SEED_NOTIFICATION_MIN, max: SEED_NOTIFICATION_MAX });
-	const conversationCount =
-		options.conversations ??
-		faker.number.int({ min: SEED_CONVERSATION_MIN, max: SEED_CONVERSATION_MAX });
 
 	await connectMongoose(config.MONGODB_URI);
 	try {
@@ -300,73 +104,29 @@ async function run(options: SeedOptions): Promise<void> {
 		}
 
 		if (options.dryRun) {
-			write(`Customers: would create ${customerCount}.`);
-			write(`FAQs: would create up to ${faqCount} (new questions only).`);
-			write(`Appointments: would create ${appointmentCount}.`);
-			write(`Notifications: would create ${notificationCount} per member.`);
-			write(`Conversations: would create ${conversationCount}.`);
+			const planned = resolveSeedCounts(countsFrom(options));
+			write(`Customers: would create ${planned.customers}.`);
+			write(`FAQs: would create up to ${planned.faqs} (new questions only).`);
+			write(`Appointments: would create ${planned.appointments}.`);
+			write(`Notifications: would create ${planned.notifications} per member.`);
+			write(`Conversations: would create ${planned.conversations}.`);
 			write('Dry run complete — no AI calls, nothing written.');
 			return;
 		}
 
-		const context: BusinessContext = {
-			businessName: account.name,
-			website: account.website,
-			address: account.address,
-		};
-		const customers = new MongoCustomerRepository();
-		const memberIds = (await new MongoMembershipRepository().listByAccount(account.id)).map(
-			(membership) => membership.userId,
-		);
-
-		const newCustomerIds = await seedCustomers(
-			customers,
+		await seedAccountData(
+			{
+				customers: new MongoCustomerRepository(),
+				faqs: new MongoFaqRepository(),
+				jobs: new MongoJobRepository(),
+				notifications: new MongoNotificationRepository(),
+				conversations: new MongoConversationRepository(),
+				memberships: new MongoMembershipRepository(),
+			},
 			generator,
 			account,
-			context,
-			customerCount,
-		);
-		await seedFaqs(new MongoFaqRepository(), generator, account, context, faqCount);
-
-		// Link appointments to the customers we just created; if none were (e.g.
-		// `--customers 0`), fall back to the account's existing customers.
-		let customerIds = newCustomerIds;
-		if (customerIds.length === 0 && appointmentCount > 0) {
-			const existing = await customers.list({ accountId: account.id, page: 1, pageSize: 100 });
-			customerIds = existing.customers.map((customer) => customer.id);
-		}
-		await seedAppointments(
-			new MongoJobRepository(),
-			generator,
-			account,
-			context,
-			appointmentCount,
-			customerIds,
-			memberIds,
-		);
-		await seedNotifications(
-			new MongoNotificationRepository(),
-			account,
-			memberIds,
-			notificationCount,
-		);
-
-		// Link conversations to the account's customers (the ones just seeded, or the
-		// existing roster when customers were skipped) so each thread has a real contact.
-		let contacts: ConversationContact[] = [];
-		if (conversationCount > 0) {
-			const roster = await customers.list({ accountId: account.id, page: 1, pageSize: 100 });
-			contacts = roster.customers.map((customer) => ({
-				customerId: customer.id,
-				name: customer.name,
-				phone: customer.phone,
-			}));
-		}
-		await seedConversations(
-			new MongoConversationRepository(),
-			account,
-			contacts,
-			conversationCount,
+			countsFrom(options),
+			{ log: write },
 		);
 
 		write('Seeding complete.');

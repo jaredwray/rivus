@@ -49,6 +49,7 @@ import {
 	roleSchema,
 	type SendMessageInput,
 	searchQuerySchema,
+	seedAccountSchema,
 	sendMessageSchema,
 	signupSchema,
 	type UpdateAccountInput,
@@ -462,6 +463,9 @@ export type CreateConversationBody = z.input<typeof createConversationSchema>;
 /** approveReply accepts the schema's *input* (`body` optional — omit to send the held draft). */
 export type ApproveReplyBody = z.input<typeof approveReplySchema>;
 
+/** seedAccount accepts the schema's *input* — every count, `ai`, and `seed` optional. */
+export type SeedAccountBody = z.input<typeof seedAccountSchema>;
+
 const faqSimilarityResponseSchema = z.object({
 	match: faqResponseSchema.nullable(),
 	reason: z.string(),
@@ -495,6 +499,20 @@ export interface CompanyListResponse {
 
 /** Query for {@link RivusApiClient.listCompanies}: pagination plus a name/slug search. */
 export type CompanyListQuery = Partial<PaginationQuery> & { search?: string };
+
+// Tally returned by the development-only account seeder (mirrors the API's
+// `seedSummaryResponseSchema`).
+const seedSummaryResponseSchema = z.object({
+	customers: z.number().int(),
+	faqs: z.number().int(),
+	faqsSkipped: z.number().int(),
+	appointments: z.number().int(),
+	notifications: z.number().int(),
+	conversations: z.number().int(),
+	members: z.number().int(),
+	generation: z.enum(['ai', 'deterministic']),
+});
+export type SeedSummary = z.infer<typeof seedSummaryResponseSchema>;
 
 const healthResponseSchema = z.object({
 	status: z.literal('ok'),
@@ -642,6 +660,15 @@ export interface RivusApiClient {
 	 * it (Rivus staff only). On web the API also sets the new session cookie.
 	 */
 	switchCompany(token: string, accountId: AccountId): Promise<AuthResponse>;
+	/**
+	 * Seed the current account with demo data (customers, FAQs, appointments,
+	 * notifications, conversations) and return a tally of what was created.
+	 *
+	 * Development + Rivus-staff only: the API registers this route solely when its
+	 * `NODE_ENV` is `development`, so it 404s in any deployed environment and 403s
+	 * for non-staff callers. The app gates the Settings affordance the same way.
+	 */
+	seedAccount(token: string, input?: SeedAccountBody): Promise<SeedSummary>;
 }
 
 /** Strip a single trailing slash so `${base}${path}` never doubles up. */
@@ -1108,6 +1135,11 @@ export function createApiClient(
 				authResponseSchema,
 				{ method: 'POST', headers: authHeaders(token) },
 			);
+		},
+
+		async seedAccount(token: string, input: SeedAccountBody = {}) {
+			const payload = parseInput(seedAccountSchema, input);
+			return request('/v1/admin/seed', seedSummaryResponseSchema, jsonInit('POST', payload, token));
 		},
 	};
 }

@@ -2,6 +2,7 @@ import {
 	type AccountId,
 	buildPaginationMeta,
 	paginationQuerySchema,
+	seedAccountSchema,
 	type UserId,
 } from '@rivus/core';
 import type { FastifyPluginAsync } from 'fastify';
@@ -12,8 +13,11 @@ import {
 	authResponseSchema,
 	errorResponseSchema,
 	idParamsSchema,
+	seedSummaryResponseSchema,
 } from '../http-schemas';
 import { toPublicAccount, toPublicUser } from '../presenters';
+import { createSeedGenerator, DeterministicSeedGenerator } from '../seed-ai';
+import { seedAccountData } from '../services/seed';
 import { issueSession } from '../services/session';
 
 /** List query: standard pagination plus an optional free-text company search. */
@@ -111,4 +115,59 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
 			});
 		},
 	);
+
+	// Development-only account seeder. The deployed dev and prod containers both run
+	// `NODE_ENV=production` (see app.ts), so this route is registered *only* when the
+	// API is running locally in development — it doesn't exist (404) anywhere else,
+	// and even then it's gated to Rivus staff (`@rivus.ai`). It fills the *current*
+	// account with demo customers, FAQs, appointments, notifications, and inbox
+	// conversations so staff can populate a fresh test account from the app's
+	// Settings screen without touching the CLI.
+	if (app.deps.config.NODE_ENV === 'development') {
+		const { customers, faqs, jobs, notifications, conversations } = app.deps;
+		app.post(
+			'/seed',
+			{
+				onRequest: [fastify.authenticate, fastify.requireStaff],
+				schema: {
+					tags: ['admin'],
+					summary: 'Seed the current account with demo data (development only, Rivus staff only)',
+					security: [{ bearerAuth: [] }],
+					body: seedAccountSchema,
+					response: {
+						200: seedSummaryResponseSchema,
+						401: errorResponseSchema,
+						403: errorResponseSchema,
+						404: errorResponseSchema,
+					},
+				},
+			},
+			async (request) => {
+				const account = await accounts.findById(request.user.accountId as AccountId);
+				if (!account) {
+					throw app.httpErrors.notFound('Account not found');
+				}
+				const body = request.body;
+				// `ai` opts into AI-tailored data when a provider key is set (it degrades to
+				// deterministic generation otherwise); without it the seed is fully
+				// deterministic, so a button press never makes a surprise external call.
+				const generator = body.ai
+					? createSeedGenerator(app.deps.config)
+					: new DeterministicSeedGenerator();
+				return seedAccountData(
+					{ customers, faqs, jobs, notifications, conversations, memberships },
+					generator,
+					account,
+					{
+						customers: body.customers,
+						faqs: body.faqs,
+						appointments: body.appointments,
+						notifications: body.notifications,
+						conversations: body.conversations,
+					},
+					{ seed: body.seed, log: (message) => request.log.info(message) },
+				);
+			},
+		);
+	}
 };
