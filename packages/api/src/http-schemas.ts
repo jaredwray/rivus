@@ -355,6 +355,25 @@ export const accountListResponseSchema = z
 	.meta({ id: 'AccountList' });
 
 /**
+ * Tally returned by the development-only account seeder (`POST /v1/admin/seed`):
+ * how many of each entity were written, the FAQs skipped as duplicates, the
+ * member count the notifications were addressed to, and which generator produced
+ * the data.
+ */
+export const seedSummaryResponseSchema = z
+	.object({
+		customers: z.number().int(),
+		faqs: z.number().int(),
+		faqsSkipped: z.number().int(),
+		appointments: z.number().int(),
+		notifications: z.number().int(),
+		conversations: z.number().int(),
+		members: z.number().int(),
+		generation: z.enum(['ai', 'deterministic']),
+	})
+	.meta({ id: 'SeedSummary' });
+
+/**
  * Billing summary for the account (owner-only). Rivus has no payment provider
  * wired up yet, so this is a placeholder: every account is on the free plan and
  * `seats` reflects the current member count.

@@ -1706,4 +1706,68 @@ describe('createApiClient', () => {
 			expect(init.credentials).toBeUndefined();
 		});
 	});
+
+	describe('seedAccount', () => {
+		function makeSummary(overrides: Record<string, unknown> = {}) {
+			return {
+				customers: 25,
+				faqs: 14,
+				faqsSkipped: 0,
+				appointments: 18,
+				notifications: 6,
+				conversations: 6,
+				members: 1,
+				generation: 'deterministic' as const,
+				...overrides,
+			};
+		}
+
+		it('posts the seed options and returns the parsed summary', async () => {
+			const summary = makeSummary();
+			fetchMock.mockResolvedValueOnce(jsonResponse(summary));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.seedAccount('staff-token', { customers: 25, faqs: 14 });
+
+			expect(result).toEqual(summary);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/admin/seed`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer staff-token' });
+			// `ai` carries its schema default; the explicit counts pass through.
+			expect(JSON.parse(init.body as string)).toEqual({ customers: 25, faqs: 14, ai: false });
+		});
+
+		it('defaults to an empty (all-defaults) body', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(makeSummary()));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.seedAccount('staff-token');
+
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(JSON.parse(init.body as string)).toEqual({ ai: false });
+		});
+
+		it('rejects an out-of-range count before any network call', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.seedAccount('staff-token', { customers: 100_000 })).rejects.toThrow(
+				ValidationError,
+			);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it('surfaces a 404 (route absent outside development) as an ApiError', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse(
+					{ error: 'Not Found', message: 'Route POST:/v1/admin/seed not found', statusCode: 404 },
+					{ status: 404 },
+				),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client.seedAccount('staff-token').catch((caught) => caught);
+			expect(error).toBeInstanceOf(ApiError);
+			expect(error).toMatchObject({ status: 404 });
+		});
+	});
 });

@@ -44,6 +44,30 @@ function stripTrailingSlash(value: string): string {
 	return value.replace(/\/+$/, '');
 }
 
+/**
+ * The build-time `NODE_ENV`, guarded like {@link ambientEnv} — in some React
+ * Native / Expo (or edge) JS engines `process` may be undefined or shimmed
+ * without an `env`, which would crash a direct property read.
+ */
+function ambientNodeEnv(): string | undefined {
+	if (typeof process === 'undefined' || typeof process.env === 'undefined') {
+		return undefined;
+	}
+	return process.env.NODE_ENV;
+}
+
+/**
+ * Whether the app is running a development build. The development-only account
+ * seeder in Settings is gated on this (together with Rivus-staff status) so it
+ * never appears in a production build — mirroring the API, which only registers
+ * `POST /v1/admin/seed` when its own `NODE_ENV` is `development`. Expo/Metro
+ * inlines `process.env.NODE_ENV` at build time; the `nodeEnv` parameter keeps
+ * this hermetically testable.
+ */
+export function isDevelopment(nodeEnv: string | undefined = ambientNodeEnv()): boolean {
+	return nodeEnv === 'development';
+}
+
 export function getApiBaseUrl(env: Record<string, string | undefined> = ambientEnv()): string {
 	const fromEnv = env.EXPO_PUBLIC_API_URL?.trim();
 	return fromEnv && fromEnv.length > 0 ? fromEnv : DEFAULT_API_URL;
