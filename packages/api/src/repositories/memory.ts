@@ -73,6 +73,7 @@ import type {
 	StoredUser,
 	StoredVerificationCode,
 	UpdateAccount,
+	UpdateUserProfile,
 	UserRepository,
 	VerificationCodeRepository,
 } from './types';
@@ -163,6 +164,22 @@ export class InMemoryUserRepository implements UserRepository {
 			}
 		}
 		return found;
+	}
+
+	async update(id: UserId, input: UpdateUserProfile): Promise<StoredUser | null> {
+		const user = this.data.users.get(id);
+		if (!user) {
+			return null;
+		}
+		const updated: StoredUser = { ...user, updatedAt: now() };
+		if (input.avatarUrl !== undefined) {
+			const trimmed = input.avatarUrl.trim();
+			// An empty override clears back to the Gravatar default — `undefined`,
+			// not `''`, so the presenter's `||` fallback actually kicks in.
+			updated.avatarUrl = trimmed === '' ? undefined : trimmed;
+		}
+		this.data.users.set(id, updated);
+		return structuredClone(updated);
 	}
 }
 

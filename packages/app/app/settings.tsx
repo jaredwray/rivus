@@ -1,3 +1,4 @@
+import { gravatarUrl } from '@rivus/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
 	ActivityIndicator,
@@ -10,9 +11,10 @@ import {
 import { ApiError, type Billing, type SeedSummary } from '@/src/api/client';
 import { getGoogleMapsApiKey, isDevelopment } from '@/src/api/config';
 import { deviceTimezone, listTimezones } from '@/src/api/timezones';
-import { useAuth } from '@/src/auth/AuthContext';
+import { initialsOf, useAuth } from '@/src/auth/AuthContext';
 import { AddressAutocomplete } from '@/src/components/AddressAutocomplete';
 import {
+	Avatar,
 	Card,
 	GradientButton,
 	OutlineButton,
@@ -33,6 +35,104 @@ function messageFor(error: unknown, fallback: string): string {
 		return error.message;
 	}
 	return fallback;
+}
+
+/**
+ * The signed-in user's own profile photo, with a button to set a custom image
+ * URL. Visible to every role (unlike the business settings below, which are
+ * owner-only) since it edits the user's own profile, not the account. Defaults
+ * to the Gravatar linked to their email — see {@link Avatar} and `gravatarUrl`.
+ */
+function YourProfileCard() {
+	const { session, updateProfile } = useAuth();
+	const [editing, setEditing] = useState(false);
+	const [avatarUrl, setAvatarUrl] = useState('');
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	if (!session) {
+		return null;
+	}
+	// Narrowed once here: `session` stays non-null for the rest of this render, but
+	// TS can't carry that into `startEditing` below since it's a nested function.
+	const { user } = session;
+
+	function startEditing() {
+		// Pre-fill with the existing custom image so re-saving without changes is a
+		// no-op. When the user has no override, `user.avatarUrl` is exactly the
+		// Gravatar `toPublicUser` would've computed (same email, same defaults), so
+		// that exact-match check (rather than just "looks like a Gravatar URL") is
+		// what tells "no custom override" apart from "a custom image that happens to
+		// be hosted on gravatar.com" — leaving the field blank doubles as "use my
+		// Gravatar" either way.
+		const isDefaultGravatar = user.avatarUrl === gravatarUrl(user.email);
+		setAvatarUrl(isDefaultGravatar ? '' : user.avatarUrl);
+		setError(null);
+		setEditing(true);
+	}
+
+	async function onSave() {
+		if (saving) {
+			return;
+		}
+		setError(null);
+		setSaving(true);
+		try {
+			await updateProfile({ avatarUrl: avatarUrl.trim() });
+			setEditing(false);
+		} catch (caught) {
+			setError(messageFor(caught, 'Could not update your profile image.'));
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	return (
+		<Card style={styles.card}>
+			<SectionLabel>Your profile</SectionLabel>
+			<View style={styles.profileRow}>
+				<Avatar initials={initialsOf(user.name)} imageUrl={user.avatarUrl} size={64} />
+				<View style={styles.profileMain}>
+					<Txt style={styles.profileName}>{user.name}</Txt>
+					<Txt style={styles.rowSub}>{user.email}</Txt>
+				</View>
+			</View>
+
+			{editing ? (
+				<View style={styles.form}>
+					<TextField
+						label="Image URL"
+						value={avatarUrl}
+						onChangeText={setAvatarUrl}
+						placeholder="https://example.com/photo.jpg"
+						hint="Leave blank and save to use your Gravatar — the photo linked to your email at gravatar.com."
+						autoCapitalize="none"
+						autoCorrect={false}
+						keyboardType="url"
+					/>
+					{error ? <Txt style={styles.errorTxt}>{error}</Txt> : null}
+					<View style={styles.confirmRow}>
+						<GradientButton
+							label={saving ? 'Saving…' : 'Save image'}
+							icon="check"
+							onPress={onSave}
+							style={styles.confirmBtn}
+						/>
+						<OutlineButton
+							label="Cancel"
+							onPress={() => {
+								setEditing(false);
+								setError(null);
+							}}
+							style={styles.confirmBtn}
+						/>
+					</View>
+				</View>
+			) : (
+				<OutlineButton label="Edit image" onPress={startEditing} />
+			)}
+		</Card>
+	);
 }
 
 /**
@@ -184,6 +284,7 @@ export default function SettingsScreen() {
 		return (
 			<ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 				<Txt style={styles.h1}>Account settings</Txt>
+				<YourProfileCard />
 				<Card style={styles.card}>
 					<Txt style={styles.rowSub}>
 						Only the account Owner can change account settings or billing. Ask an Owner if you need
@@ -241,6 +342,8 @@ export default function SettingsScreen() {
 		>
 			<Txt style={styles.h1}>Account settings</Txt>
 			<Txt style={styles.subtitle}>Business details for {session.account.name}.</Txt>
+
+			<YourProfileCard />
 
 			<Card style={styles.card}>
 				<SectionLabel>Business information</SectionLabel>
@@ -386,6 +489,21 @@ const styles = StyleSheet.create({
 	},
 	form: {
 		gap: 13,
+	},
+	profileRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 14,
+	},
+	profileMain: {
+		flex: 1,
+		minWidth: 0,
+		gap: 2,
+	},
+	profileName: {
+		fontFamily: font.bold,
+		fontSize: 16,
+		color: colors.text,
 	},
 	rowSub: {
 		fontFamily: font.regular,

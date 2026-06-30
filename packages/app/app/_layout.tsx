@@ -285,6 +285,7 @@ function Sidebar() {
 				<Pressable style={styles.userRow} onPress={signOut}>
 					<Avatar
 						initials={userName ? initialsOf(userName) : '–'}
+						imageUrl={session?.user.avatarUrl}
 						size={30}
 						background="#2a2a3a"
 						color="#cfd0dc"
@@ -516,6 +517,7 @@ function MoreSheet({
 				>
 					<Avatar
 						initials={userName ? initialsOf(userName) : '–'}
+						imageUrl={session?.user.avatarUrl}
 						size={32}
 						background={colors.avatarBg}
 						color={colors.avatarText}

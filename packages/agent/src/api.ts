@@ -47,6 +47,7 @@ const userSchema = z.object({
 	id: branded<UserId>(),
 	email: z.string(),
 	name: z.string(),
+	avatarUrl: z.string(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
 }) satisfies z.ZodType<User>;

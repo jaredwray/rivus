@@ -3,6 +3,7 @@ import {
 	isRivusStaffEmail,
 	type LoginInput,
 	type UpdateAccountInput,
+	type UpdateProfileInput,
 	type VerifyCodeInput,
 } from '@rivus/core';
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
@@ -46,6 +47,8 @@ export interface AuthContextValue {
 	/** Exchange a one-time code for a session. */
 	verifyCode: (input: VerifyCodeInput) => Promise<void>;
 	acceptInvite: (token: string) => Promise<void>;
+	/** Update the signed-in user's own profile image, keeping the session in sync. */
+	updateProfile: (input: UpdateProfileInput) => Promise<void>;
 	/** Update the account's business settings, keeping the session in sync (owner only). */
 	updateAccount: (input: UpdateAccountInput) => Promise<void>;
 	/** Switch the active company and adopt the new session (Rivus staff only). */
@@ -121,6 +124,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			},
 			async acceptInvite(token) {
 				setSession(adopt(await client.acceptInvite({ token })));
+			},
+			async updateProfile(input) {
+				if (!session) {
+					return;
+				}
+				const user = await client.updateProfile(session.token, input);
+				setSession({ ...session, user });
 			},
 			async updateAccount(input) {
 				if (!session) {

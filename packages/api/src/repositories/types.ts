@@ -40,13 +40,21 @@ import type {
 
 /**
  * A user as persisted. Auth is passwordless (one-time email codes), so there is
- * no secret stored on the user record — `StoredUser` is just the public `User`.
+ * no secret stored on the user record. `avatarUrl` is only the custom override
+ * (unset unless the user has set one) — unlike the public `User.avatarUrl`,
+ * which is never empty because the presenter falls back to a Gravatar URL.
  */
-export type StoredUser = User;
+export type StoredUser = Omit<User, 'avatarUrl'> & { avatarUrl?: string };
 
 export interface NewUser {
 	email: string;
 	name: string;
+}
+
+/** A partial update to the signed-in user's own profile. */
+export interface UpdateUserProfile {
+	/** Custom avatar override; an empty string clears it back to the Gravatar default. */
+	avatarUrl?: string;
 }
 
 export interface UserRepository {
@@ -55,6 +63,8 @@ export interface UserRepository {
 	findById(id: UserId): Promise<StoredUser | null>;
 	/** Fetch many users in one query (the order of the result is not guaranteed). */
 	findByIds(ids: UserId[]): Promise<StoredUser[]>;
+	/** Apply a partial profile update; returns the updated user or null. */
+	update(id: UserId, input: UpdateUserProfile): Promise<StoredUser | null>;
 }
 
 // --- Passwordless verification codes -----------------------------------------

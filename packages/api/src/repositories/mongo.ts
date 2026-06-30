@@ -92,6 +92,7 @@ import type {
 	StoredUser,
 	StoredVerificationCode,
 	UpdateAccount,
+	UpdateUserProfile,
 	UserRepository,
 	VerificationCodeRepository,
 } from './types';
@@ -108,6 +109,7 @@ function mapUser(doc: HydratedDocument<UserDocument>): StoredUser {
 		id: doc._id.toString() as UserId,
 		email: doc.email,
 		name: doc.name,
+		avatarUrl: doc.avatarUrl,
 		createdAt: doc.createdAt.toISOString(),
 		updatedAt: doc.updatedAt.toISOString(),
 	};
@@ -313,6 +315,28 @@ export class MongoUserRepository implements UserRepository {
 		}
 		const docs = await UserModel.find({ _id: { $in: objectIds } }).exec();
 		return docs.map(mapUser);
+	}
+
+	async update(id: UserId, input: UpdateUserProfile): Promise<StoredUser | null> {
+		if (!Types.ObjectId.isValid(id)) {
+			return null;
+		}
+		// `avatarUrl: undefined` (the field wasn't sent) must leave the existing
+		// override untouched — only a present-but-empty string clears it — so this
+		// can't collapse to a single truthy check the way `trimmed ? set : unset`
+		// would (that treats "omitted" and "explicitly cleared" identically and
+		// diverges from `InMemoryUserRepository.update`, which guards on `!== undefined`).
+		let update: Record<string, unknown> | undefined;
+		if (input.avatarUrl !== undefined) {
+			const trimmed = input.avatarUrl.trim();
+			// An empty override clears the field rather than storing `''`, so `mapUser`
+			// (and the presenter's fallback) see it as unset.
+			update = trimmed ? { $set: { avatarUrl: trimmed } } : { $unset: { avatarUrl: 1 } };
+		}
+		const doc = update
+			? await UserModel.findByIdAndUpdate(id, update, { new: true }).exec()
+			: await UserModel.findById(id).exec();
+		return doc ? mapUser(doc) : null;
 	}
 }
 

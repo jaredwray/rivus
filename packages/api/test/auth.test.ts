@@ -1,4 +1,4 @@
-import type { AccountId, UserId } from '@rivus/core';
+import { type AccountId, gravatarUrl, type UserId } from '@rivus/core';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config';
@@ -368,6 +368,18 @@ describe('me', () => {
 		expect(body.role).toBe('owner');
 	});
 
+	it('defaults the user avatar to their Gravatar when no custom image is set', async () => {
+		const { credentials, token } = await signupOwner(app);
+
+		const response = await app.inject({
+			method: 'GET',
+			url: '/v1/auth/me',
+			headers: authHeader(token),
+		});
+
+		expect(response.json().user.avatarUrl).toBe(gravatarUrl(credentials.email));
+	});
+
 	it('rejects /me without a token (401)', async () => {
 		const response = await app.inject({ method: 'GET', url: '/v1/auth/me' });
 		expect(response.statusCode).toBe(401);
@@ -380,6 +392,133 @@ describe('me', () => {
 			headers: authHeader('garbage.token.value'),
 		});
 		expect(response.statusCode).toBe(401);
+	});
+});
+
+describe('update profile (PATCH /v1/auth/me)', () => {
+	let app: FastifyInstance;
+
+	beforeEach(async () => {
+		app = await buildTestApp();
+	});
+
+	afterEach(async () => {
+		await app.close();
+	});
+
+	it('sets a custom avatar image, overriding the Gravatar default', async () => {
+		const { token } = await signupOwner(app);
+
+		const response = await app.inject({
+			method: 'PATCH',
+			url: '/v1/auth/me',
+			headers: authHeader(token),
+			payload: { avatarUrl: 'https://example.com/me.jpg' },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json().avatarUrl).toBe('https://example.com/me.jpg');
+	});
+
+	it('clears a custom avatar with an empty string, reverting to the Gravatar default', async () => {
+		const { credentials, token } = await signupOwner(app);
+		await app.inject({
+			method: 'PATCH',
+			url: '/v1/auth/me',
+			headers: authHeader(token),
+			payload: { avatarUrl: 'https://example.com/me.jpg' },
+		});
+
+		const cleared = await app.inject({
+			method: 'PATCH',
+			url: '/v1/auth/me',
+			headers: authHeader(token),
+			payload: { avatarUrl: '' },
+		});
+
+		expect(cleared.statusCode).toBe(200);
+		expect(cleared.json().avatarUrl).toBe(gravatarUrl(credentials.email));
+	});
+
+	it('persists the change — a later /me reflects the new avatar', async () => {
+		const { token } = await signupOwner(app);
+		await app.inject({
+			method: 'PATCH',
+			url: '/v1/auth/me',
+			headers: authHeader(token),
+			payload: { avatarUrl: 'https://example.com/me.jpg' },
+		});
+
+		const me = await app.inject({
+			method: 'GET',
+			url: '/v1/auth/me',
+			headers: authHeader(token),
+		});
+
+		expect(me.json().user.avatarUrl).toBe('https://example.com/me.jpg');
+	});
+
+	it('rejects a malformed image URL (400)', async () => {
+		const { token } = await signupOwner(app);
+
+		const response = await app.inject({
+			method: 'PATCH',
+			url: '/v1/auth/me',
+			headers: authHeader(token),
+			payload: { avatarUrl: 'not a url' },
+		});
+
+		expect(response.statusCode).toBe(400);
+	});
+
+	it('rejects a missing avatarUrl field (400)', async () => {
+		const { token } = await signupOwner(app);
+
+		const response = await app.inject({
+			method: 'PATCH',
+			url: '/v1/auth/me',
+			headers: authHeader(token),
+			payload: {},
+		});
+
+		expect(response.statusCode).toBe(400);
+	});
+
+	it('rejects an unauthenticated request (401)', async () => {
+		const response = await app.inject({
+			method: 'PATCH',
+			url: '/v1/auth/me',
+			payload: { avatarUrl: 'https://example.com/me.jpg' },
+		});
+
+		expect(response.statusCode).toBe(401);
+	});
+
+	it('lets a non-owner member edit their own avatar (not owner-gated)', async () => {
+		const { token: ownerToken } = await signupOwner(app);
+		const inviteResponse = await app.inject({
+			method: 'POST',
+			url: '/v1/members/invites',
+			headers: authHeader(ownerToken),
+			payload: { email: 'teammate@example.com', name: 'Teammate', role: 'member' },
+		});
+		const inviteToken = inviteResponse.json().token as string;
+		const accepted = await app.inject({
+			method: 'POST',
+			url: '/v1/auth/accept-invite',
+			payload: { token: inviteToken },
+		});
+		const memberToken = accepted.json().token as string;
+
+		const response = await app.inject({
+			method: 'PATCH',
+			url: '/v1/auth/me',
+			headers: authHeader(memberToken),
+			payload: { avatarUrl: 'https://example.com/member.jpg' },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json().avatarUrl).toBe('https://example.com/member.jpg');
 	});
 });
 

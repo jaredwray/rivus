@@ -2,6 +2,7 @@ import { Feather } from '@expo/vector-icons';
 import { type ComponentProps, type ReactNode, useMemo, useState } from 'react';
 import {
 	FlatList,
+	Image,
 	Modal,
 	Pressable,
 	type StyleProp,
@@ -70,18 +71,36 @@ export function Pill({
 	);
 }
 
-/** Circular initials avatar. */
+/**
+ * Circular avatar. Shows `imageUrl` (e.g. a Gravatar or a custom upload) when
+ * given; falls back to 2-letter initials when there's no image, or the image
+ * fails to load (an unset Gravatar 404s, by design — see `gravatarUrl`).
+ */
 export function Avatar({
 	initials,
+	imageUrl,
 	size = 40,
 	background = colors.avatarBg,
 	color = colors.avatarText,
 }: {
 	initials: string;
+	imageUrl?: string;
 	size?: number;
 	background?: string;
 	color?: string;
 }) {
+	// Reset the "failed to load" flag whenever `imageUrl` itself changes (e.g. the
+	// user saves a new avatar after an old one 404'd) — without this, `imageFailed`
+	// would stick from the previous URL and the new image would never be tried.
+	const [[trackedUrl, imageFailed], setImageState] = useState<[string | undefined, boolean]>([
+		imageUrl,
+		false,
+	]);
+	if (trackedUrl !== imageUrl) {
+		setImageState([imageUrl, false]);
+	}
+	const showImage = Boolean(imageUrl) && !imageFailed;
+
 	return (
 		<View
 			style={[
@@ -89,7 +108,18 @@ export function Avatar({
 				{ width: size, height: size, borderRadius: size / 2, backgroundColor: background },
 			]}
 		>
-			<Txt style={[styles.avatarTxt, { color, fontSize: Math.round(size * 0.32) }]}>{initials}</Txt>
+			{showImage ? (
+				<Image
+					source={{ uri: imageUrl }}
+					style={{ width: size, height: size, borderRadius: size / 2 }}
+					onError={() => setImageState([imageUrl, true])}
+					accessibilityIgnoresInvertColors
+				/>
+			) : (
+				<Txt style={[styles.avatarTxt, { color, fontSize: Math.round(size * 0.32) }]}>
+					{initials}
+				</Txt>
+			)}
 		</View>
 	);
 }
@@ -376,6 +406,7 @@ export const styles = StyleSheet.create({
 	avatar: {
 		alignItems: 'center',
 		justifyContent: 'center',
+		overflow: 'hidden',
 	},
 	avatarTxt: {
 		fontFamily: font.semibold,

@@ -4,6 +4,7 @@ import {
 	loginSchema,
 	signupSchema,
 	type UserId,
+	updateProfileSchema,
 	verifyCodeSchema,
 } from '@rivus/core';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
@@ -14,6 +15,7 @@ import {
 	errorResponseSchema,
 	sessionResponseSchema,
 	signedOutResponseSchema,
+	userResponseSchema,
 } from '../http-schemas';
 import { SESSION_COOKIE, sessionCookieOptions } from '../plugins/auth';
 import { toPublicAccount, toPublicUser } from '../presenters';
@@ -261,6 +263,32 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 				account: toPublicAccount(account),
 				role: request.user.role,
 			};
+		},
+	);
+
+	app.patch(
+		'/me',
+		{
+			onRequest: [fastify.authenticate],
+			schema: {
+				tags: ['auth'],
+				summary: "Update the signed-in user's own profile image",
+				security: [{ bearerAuth: [] }],
+				body: updateProfileSchema,
+				response: {
+					200: userResponseSchema,
+					400: errorResponseSchema,
+					401: errorResponseSchema,
+					404: errorResponseSchema,
+				},
+			},
+		},
+		async (request) => {
+			const updated = await users.update(request.user.sub as UserId, request.body);
+			if (!updated) {
+				throw app.httpErrors.notFound('User not found');
+			}
+			return toPublicUser(updated);
 		},
 	);
 

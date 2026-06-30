@@ -122,7 +122,7 @@ export default function TeamScreen() {
 						const pill = rolePillColors(member.role);
 						return (
 							<View key={member.userId} style={styles.row}>
-								<Avatar initials={initialsOf(member.name)} size={38} />
+								<Avatar initials={initialsOf(member.name)} imageUrl={member.avatarUrl} size={38} />
 								<View style={styles.rowMain}>
 									<Txt style={styles.rowName}>{member.name}</Txt>
 									<Txt style={styles.rowSub}>{member.email}</Txt>

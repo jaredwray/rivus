@@ -43,6 +43,7 @@ const session = {
 		id: 'user_1',
 		email: 'owner@acme.example',
 		name: 'Pat Owner',
+		avatarUrl: 'https://www.gravatar.com/avatar/abc?s=200&d=404',
 		createdAt: '2026-01-01T00:00:00.000Z',
 		updatedAt: '2026-01-01T00:00:00.000Z',
 	},

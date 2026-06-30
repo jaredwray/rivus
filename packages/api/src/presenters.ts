@@ -1,5 +1,10 @@
-import type { Account, Invite, Membership, User } from '@rivus/core';
+import { type Account, gravatarUrl, type Invite, type Membership, type User } from '@rivus/core';
 import type { StoredUser } from './repositories/types';
+
+/** The user's custom avatar override, or their Gravatar if none is set. */
+function resolveAvatarUrl(user: StoredUser): string {
+	return user.avatarUrl?.trim() || gravatarUrl(user.email);
+}
 
 /** Strip the password hash before a user ever leaves the API. */
 export function toPublicUser(user: StoredUser): User {
@@ -7,6 +12,7 @@ export function toPublicUser(user: StoredUser): User {
 		id: user.id,
 		email: user.email,
 		name: user.name,
+		avatarUrl: resolveAvatarUrl(user),
 		createdAt: user.createdAt,
 		updatedAt: user.updatedAt,
 	};
@@ -35,6 +41,7 @@ export function toMember(user: StoredUser, membership: Membership) {
 		userId: user.id,
 		email: user.email,
 		name: user.name,
+		avatarUrl: resolveAvatarUrl(user),
 		role: membership.role,
 		joinedAt: membership.createdAt,
 	};

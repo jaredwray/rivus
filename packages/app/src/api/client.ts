@@ -57,6 +57,7 @@ import {
 	type UpdateCustomerInput,
 	type UpdateFaqInput,
 	type UpdateJobInput,
+	type UpdateProfileInput,
 	type User,
 	type UserId,
 	updateAccountSchema,
@@ -64,6 +65,7 @@ import {
 	updateCustomerSchema,
 	updateFaqSchema,
 	updateJobSchema,
+	updateProfileSchema,
 	type VerifyCodeInput,
 	verifyCodeSchema,
 } from '@rivus/core';
@@ -162,12 +164,13 @@ function parseInput<S extends z.ZodType>(schema: S, input: unknown): z.infer<S> 
 // --- Response schemas (mirror @rivus/api http-schemas; app depends on core only).
 
 const userResponseSchema = z.object({
-	id: z.string(),
+	id: userId(),
 	email: z.string(),
 	name: z.string(),
+	avatarUrl: z.string(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
-});
+}) satisfies z.ZodType<User>;
 
 const accountResponseSchema = z.object({
 	id: accountId(),
@@ -214,6 +217,7 @@ const memberResponseSchema = z.object({
 	userId: userId(),
 	email: z.string(),
 	name: z.string(),
+	avatarUrl: z.string(),
 	role: roleSchema,
 	joinedAt: z.string(),
 });
@@ -550,6 +554,8 @@ export interface RivusApiClient {
 	logout(): Promise<void>;
 	listMembers(token: string): Promise<MemberList>;
 	inviteMember(token: string, input: InviteMemberInput): Promise<Invite>;
+	/** Update the signed-in user's own profile image (any member may edit their own). */
+	updateProfile(token: string, input: UpdateProfileInput): Promise<User>;
 	/** Update the account's business settings (owner only). */
 	updateAccount(token: string, input: UpdateAccountInput): Promise<Account>;
 	/** Cancel (soft-delete) the account (owner only). */
@@ -783,6 +789,11 @@ export function createApiClient(
 		async inviteMember(token: string, input: InviteMemberInput) {
 			const payload = parseInput(inviteMemberSchema, input);
 			return request('/v1/members/invites', inviteResponseSchema, jsonInit('POST', payload, token));
+		},
+
+		async updateProfile(token: string, input: UpdateProfileInput) {
+			const payload = parseInput(updateProfileSchema, input);
+			return request('/v1/auth/me', userResponseSchema, jsonInit('PATCH', payload, token));
 		},
 
 		async updateAccount(token: string, input: UpdateAccountInput) {

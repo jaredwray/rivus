@@ -35,6 +35,7 @@ import {
 	updateItemSchema,
 	updateJobSchema,
 	updateMemberRoleSchema,
+	updateProfileSchema,
 	verifyCodeSchema,
 } from './schemas';
 
@@ -201,6 +202,32 @@ describe('updateAccountSchema', () => {
 
 	it('rejects a malformed website', () => {
 		expect(() => updateAccountSchema.parse({ website: 'not a url' })).toThrow();
+	});
+});
+
+describe('updateProfileSchema', () => {
+	it('accepts a valid image URL', () => {
+		expect(updateProfileSchema.parse({ avatarUrl: 'https://example.com/photo.jpg' })).toEqual({
+			avatarUrl: 'https://example.com/photo.jpg',
+		});
+	});
+
+	it('accepts an empty string (reverts to Gravatar)', () => {
+		expect(updateProfileSchema.parse({ avatarUrl: '' })).toEqual({ avatarUrl: '' });
+	});
+
+	it('trims the URL', () => {
+		expect(
+			updateProfileSchema.parse({ avatarUrl: '  https://example.com/me.png  ' }).avatarUrl,
+		).toBe('https://example.com/me.png');
+	});
+
+	it('rejects a malformed URL', () => {
+		expect(() => updateProfileSchema.parse({ avatarUrl: 'not a url' })).toThrow();
+	});
+
+	it('rejects a missing avatarUrl field', () => {
+		expect(() => updateProfileSchema.parse({})).toThrow();
 	});
 });
 

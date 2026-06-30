@@ -88,6 +88,15 @@ export const websiteSchema = z
 		error: 'Enter a valid website URL, like https://example.com.',
 	});
 
+/** A custom profile-image URL, or an empty string to fall back to the user's Gravatar. */
+export const avatarUrlSchema = z
+	.string()
+	.trim()
+	.max(2048, { error: 'That image URL is too long.' })
+	.refine((value) => value === '' || z.url().safeParse(value).success, {
+		error: 'Enter a valid image URL, like https://example.com/photo.jpg.',
+	});
+
 /** The "standard business information" collected when an account is created. */
 export const accountBusinessSchema = z.object({
 	businessName: businessNameSchema,
@@ -158,6 +167,16 @@ export const updateAccountSchema = z
 		error: 'Provide at least one field to update.',
 	});
 export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;
+
+/**
+ * Update the signed-in user's own profile image. Any member may edit their own
+ * profile (unlike account settings, this isn't owner-gated). An empty string
+ * clears a custom override and reverts to the Gravatar derived from the email.
+ */
+export const updateProfileSchema = z.object({
+	avatarUrl: avatarUrlSchema,
+});
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 
 export const itemStatusSchema = z.enum(['active', 'archived'], {
 	error: 'Status must be either active or archived.',

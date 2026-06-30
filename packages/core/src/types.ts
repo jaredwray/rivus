@@ -23,6 +23,8 @@ export interface User {
 	id: UserId;
 	email: string;
 	name: string;
+	/** Profile image URL — a custom override if one is set, else the Gravatar derived from `email`. */
+	avatarUrl: string;
 	createdAt: IsoDateString;
 	updatedAt: IsoDateString;
 }
