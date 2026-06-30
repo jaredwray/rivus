@@ -9,6 +9,11 @@ export interface Env {
 	RESEND_API_KEY: string;
 	EMAIL_FROM: string;
 	APP_URL: string;
+	// Which deployed Rivus environment this is (`development` | `production`). Set
+	// per environment in wrangler.jsonc `vars`; gates the staff-only account seeder
+	// (the deployed dev API exposes it, production never does). Optional so a local
+	// `wrangler dev` without it still boots.
+	RIVUS_ENV?: string;
 	// Optional: scopes the session cookie to a parent domain (e.g. `.rivus.ai`) so
 	// sibling subdomains (the app and the agent) receive it. Unset → host-only.
 	COOKIE_DOMAIN?: string;
@@ -40,6 +45,7 @@ export class ApiContainer extends Container<Env> {
 	// only when set so an unset secret never reaches the container as "undefined".
 	override envVars = {
 		NODE_ENV: 'production',
+		...(this.env.RIVUS_ENV ? { RIVUS_ENV: this.env.RIVUS_ENV } : {}),
 		...(this.env.MONGODB_URI ? { MONGODB_URI: this.env.MONGODB_URI } : {}),
 		...(this.env.JWT_SECRET ? { JWT_SECRET: this.env.JWT_SECRET } : {}),
 		...(this.env.CORS_ORIGIN ? { CORS_ORIGIN: this.env.CORS_ORIGIN } : {}),

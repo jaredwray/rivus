@@ -6,7 +6,7 @@ import {
 	getApiBaseUrl,
 	getAppBaseUrl,
 	getGoogleMapsApiKey,
-	isDevelopment,
+	isSeedingEnabled,
 } from './config';
 
 /** Temporarily install a fake `window` (the test runner is Node, where it's absent). */
@@ -134,14 +134,33 @@ describe('buildInviteAcceptUrl', () => {
 	});
 });
 
-describe('isDevelopment', () => {
-	it('is true only when NODE_ENV is exactly "development"', () => {
-		expect(isDevelopment('development')).toBe(true);
+describe('isSeedingEnabled', () => {
+	it('is true on the deployed development environment (EXPO_PUBLIC_RIVUS_ENV), even when NODE_ENV is production', () => {
+		// dev-app.rivus.ai: built with `expo export` (NODE_ENV=production) but tagged
+		// as the development deployment.
+		expect(isSeedingEnabled({ EXPO_PUBLIC_RIVUS_ENV: 'development' }, 'production')).toBe(true);
 	});
 
-	it('is false for production, test, or an unset value', () => {
-		expect(isDevelopment('production')).toBe(false);
-		expect(isDevelopment('test')).toBe(false);
-		expect(isDevelopment(undefined)).toBe(false);
+	it('is true on a local dev build (NODE_ENV=development) with no RIVUS_ENV set', () => {
+		expect(isSeedingEnabled({}, 'development')).toBe(true);
+	});
+
+	it('trims surrounding whitespace from EXPO_PUBLIC_RIVUS_ENV', () => {
+		expect(isSeedingEnabled({ EXPO_PUBLIC_RIVUS_ENV: '  development  ' }, 'production')).toBe(true);
+	});
+
+	it('is false in production (RIVUS_ENV=production)', () => {
+		expect(isSeedingEnabled({ EXPO_PUBLIC_RIVUS_ENV: 'production' }, 'production')).toBe(false);
+	});
+
+	it('fails safe (off) when RIVUS_ENV is unset or unexpected and it is not a local dev build', () => {
+		expect(isSeedingEnabled({}, 'production')).toBe(false);
+		expect(isSeedingEnabled({}, 'test')).toBe(false);
+		expect(isSeedingEnabled({}, undefined)).toBe(false);
+		expect(isSeedingEnabled({ EXPO_PUBLIC_RIVUS_ENV: 'staging' }, 'production')).toBe(false);
+	});
+
+	it('reads from the ambient env by default without throwing', () => {
+		expect(typeof isSeedingEnabled()).toBe('boolean');
 	});
 });

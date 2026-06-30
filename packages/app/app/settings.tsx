@@ -8,7 +8,7 @@ import {
 	View,
 } from 'react-native';
 import { ApiError, type Billing, type SeedSummary } from '@/src/api/client';
-import { getGoogleMapsApiKey, isDevelopment } from '@/src/api/config';
+import { getGoogleMapsApiKey, isSeedingEnabled } from '@/src/api/config';
 import { deviceTimezone, listTimezones } from '@/src/api/timezones';
 import { useAuth } from '@/src/auth/AuthContext';
 import { AddressAutocomplete } from '@/src/components/AddressAutocomplete';
@@ -39,10 +39,10 @@ function messageFor(error: unknown, fallback: string): string {
  * A development-only, Rivus-staff-only affordance to fill the current account with
  * demo data (customers, FAQs, appointments, notifications, and inbox
  * conversations) so there's something to test against. It self-gates on
- * {@link isDevelopment} plus staff status and renders nothing otherwise — the API
- * enforces the same rules server-side (the seed route exists only when its
- * `NODE_ENV` is `development`, and rejects non-staff callers), so this is purely
- * about not showing a control that wouldn't work.
+ * {@link isSeedingEnabled} plus staff status and renders nothing otherwise — the
+ * API enforces the same rules server-side (the seed route exists only on a dev
+ * build or the deployed `development` environment, and rejects non-staff
+ * callers), so this is purely about not showing a control that wouldn't work.
  */
 function DevSeedCard() {
 	const { session, client, isStaff } = useAuth();
@@ -50,7 +50,7 @@ function DevSeedCard() {
 	const [summary, setSummary] = useState<SeedSummary | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
-	const visible = Boolean(session) && isStaff && isDevelopment();
+	const visible = Boolean(session) && isStaff && isSeedingEnabled();
 
 	async function onSeed() {
 		if (seeding || !session) {
