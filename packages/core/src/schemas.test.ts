@@ -223,6 +223,26 @@ describe('updateProfileSchema', () => {
 		expect(updateProfileSchema.parse({ phone: '' })).toEqual({ phone: '' });
 	});
 
+	it('accepts a valid image URL', () => {
+		expect(updateProfileSchema.parse({ avatarUrl: 'https://example.com/photo.jpg' })).toEqual({
+			avatarUrl: 'https://example.com/photo.jpg',
+		});
+	});
+
+	it('accepts an empty avatarUrl (reverts to Gravatar)', () => {
+		expect(updateProfileSchema.parse({ avatarUrl: '' })).toEqual({ avatarUrl: '' });
+	});
+
+	it('trims the avatar URL', () => {
+		expect(
+			updateProfileSchema.parse({ avatarUrl: '  https://example.com/me.png  ' }).avatarUrl,
+		).toBe('https://example.com/me.png');
+	});
+
+	it('rejects a malformed avatar URL', () => {
+		expect(() => updateProfileSchema.parse({ avatarUrl: 'not a url' })).toThrow();
+	});
+
 	it('rejects an empty update', () => {
 		expect(() => updateProfileSchema.parse({})).toThrow();
 	});

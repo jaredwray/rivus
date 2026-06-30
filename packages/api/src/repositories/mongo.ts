@@ -112,6 +112,7 @@ function mapUser(doc: HydratedDocument<UserDocument>): StoredUser {
 		// `?? ''` keeps users created before these fields existed mapping cleanly.
 		phone: doc.phone ?? '',
 		pendingEmail: doc.pendingEmail ?? '',
+		avatarUrl: doc.avatarUrl ?? '',
 		createdAt: doc.createdAt.toISOString(),
 		updatedAt: doc.updatedAt.toISOString(),
 	};
@@ -337,6 +338,9 @@ export class MongoUserRepository implements UserRepository {
 		}
 		if (input.pendingEmail !== undefined) {
 			set.pendingEmail = input.pendingEmail.trim().toLowerCase();
+		}
+		if (input.avatarUrl !== undefined) {
+			set.avatarUrl = input.avatarUrl.trim();
 		}
 		try {
 			const doc = await UserModel.findByIdAndUpdate(id, { $set: set }, { new: true }).exec();

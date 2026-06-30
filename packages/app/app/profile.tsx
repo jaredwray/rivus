@@ -1,9 +1,10 @@
-import type { UpdateProfileInput } from '@rivus/core';
+import { gravatarUrl, type UpdateProfileInput } from '@rivus/core';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { ApiError } from '@/src/api/client';
-import { roleLabel, useAuth } from '@/src/auth/AuthContext';
+import { initialsOf, roleLabel, useAuth } from '@/src/auth/AuthContext';
 import {
+	Avatar,
 	Card,
 	GradientButton,
 	OutlineButton,
@@ -37,6 +38,7 @@ export default function ProfileScreen() {
 	const [name, setName] = useState(user?.name ?? '');
 	const [phone, setPhone] = useState(user?.phone ?? '');
 	const [email, setEmail] = useState(user?.email ?? '');
+	const [avatarUrl, setAvatarUrl] = useState('');
 
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
@@ -60,7 +62,14 @@ export default function ProfileScreen() {
 		setName(user.name);
 		setPhone(user.phone);
 		setEmail(user.email);
-	}, [user?.name, user?.phone, user?.email, user?.pendingEmail]);
+		// `user.avatarUrl` is always a usable URL — a custom override, or the Gravatar
+		// `toPublicUser` computed from the email when there's no override. The field
+		// only edits the override, so an exact match against that computed default
+		// (rather than just "looks like a Gravatar URL") is what tells "no override"
+		// apart from "a custom image that happens to be hosted on gravatar.com" —
+		// leaving the field blank doubles as "use my Gravatar" either way.
+		setAvatarUrl(user.avatarUrl === gravatarUrl(user.email) ? '' : user.avatarUrl);
+	}, [user?.name, user?.phone, user?.email, user?.pendingEmail, user?.avatarUrl]);
 
 	if (!session || !user) {
 		return null;
@@ -81,6 +90,7 @@ export default function ProfileScreen() {
 		const nextName = name.trim();
 		const nextPhone = phone.trim();
 		const nextEmail = email.trim().toLowerCase();
+		const nextAvatarUrl = avatarUrl.trim();
 		if (nextName !== user.name) {
 			patch.name = nextName;
 		}
@@ -89,6 +99,13 @@ export default function ProfileScreen() {
 		}
 		if (nextEmail !== user.email) {
 			patch.email = nextEmail;
+		}
+		// Compare against the same computed default the field was pre-filled with (see
+		// the sync effect above), not the raw `user.avatarUrl`, so an unchanged "blank"
+		// field isn't mistaken for "clear my custom override".
+		const currentAvatarUrl = user.avatarUrl === gravatarUrl(user.email) ? '' : user.avatarUrl;
+		if (nextAvatarUrl !== currentAvatarUrl) {
+			patch.avatarUrl = nextAvatarUrl;
 		}
 		if (Object.keys(patch).length === 0) {
 			return;
@@ -156,6 +173,13 @@ export default function ProfileScreen() {
 						background="rgba(110,30,200,0.08)"
 					/>
 				</View>
+				<View style={styles.avatarRow}>
+					<Avatar initials={initialsOf(user.name)} imageUrl={user.avatarUrl} size={56} />
+					<Txt style={[styles.rowSub, styles.avatarHint]}>
+						Defaults to your Gravatar — the photo linked to your email at gravatar.com. Set an
+						"Image URL" below to use something else.
+					</Txt>
+				</View>
 				<View style={styles.form}>
 					<TextField
 						label="Name"
@@ -189,6 +213,19 @@ export default function ProfileScreen() {
 						autoComplete="email"
 						keyboardType="email-address"
 						hint="Changing your email sends a verification code to the new address — it stays the same until you confirm."
+					/>
+					<TextField
+						label="Image URL"
+						value={avatarUrl}
+						onChangeText={(next) => {
+							setAvatarUrl(next);
+							setSaved(false);
+						}}
+						placeholder="https://example.com/photo.jpg"
+						hint="Leave blank to use your Gravatar."
+						autoCapitalize="none"
+						autoCorrect={false}
+						keyboardType="url"
 					/>
 
 					{error ? <Txt style={styles.errorTxt}>{error}</Txt> : null}
@@ -270,6 +307,14 @@ const styles = StyleSheet.create({
 		flexShrink: 1,
 		flexWrap: 'wrap',
 		gap: 8,
+	},
+	avatarRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 14,
+	},
+	avatarHint: {
+		flex: 1,
 	},
 	form: {
 		gap: 13,

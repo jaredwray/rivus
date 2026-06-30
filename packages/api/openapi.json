@@ -362,7 +362,7 @@
         }
       },
       "patch": {
-        "summary": "Update your profile (name, phone, email). Changing email re-verifies it",
+        "summary": "Update your profile (name, phone, email, profile image). Changing email re-verifies it",
         "tags": [
           "auth"
         ],
@@ -384,6 +384,10 @@
                   "phone": {
                     "type": "string",
                     "maxLength": 40
+                  },
+                  "avatarUrl": {
+                    "type": "string",
+                    "maxLength": 2048
                   }
                 }
               }

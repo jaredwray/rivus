@@ -51,9 +51,10 @@ export interface AuthContextValue {
 	/** Update the account's business settings, keeping the session in sync (owner only). */
 	updateAccount: (input: UpdateAccountInput) => Promise<void>;
 	/**
-	 * Update your own profile (name, phone, email), keeping the session in sync.
-	 * Changing the email stages it on `session.user.pendingEmail` and emails a code;
-	 * the live email only changes once {@link verifyEmailChange} confirms it.
+	 * Update your own profile (name, phone, email, profile image), keeping the
+	 * session in sync. Changing the email stages it on `session.user.pendingEmail`
+	 * and emails a code; the live email only changes once
+	 * {@link verifyEmailChange} confirms it.
 	 */
 	updateProfile: (input: UpdateProfileInput) => Promise<void>;
 	/** Confirm a pending email change with its code, adopting the re-issued session. */
@@ -132,19 +133,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			async acceptInvite(token) {
 				setSession(adopt(await client.acceptInvite({ token })));
 			},
-			async updateAccount(input) {
-				if (!session) {
-					return;
-				}
-				const account = await client.updateAccount(session.token, input);
-				setSession({ ...session, account });
-			},
 			async updateProfile(input) {
 				if (!session) {
 					return;
 				}
 				const user = await client.updateProfile(session.token, input);
 				setSession({ ...session, user });
+			},
+			async updateAccount(input) {
+				if (!session) {
+					return;
+				}
+				const account = await client.updateAccount(session.token, input);
+				setSession({ ...session, account });
 			},
 			async verifyEmailChange(input) {
 				if (!session) {

@@ -32,6 +32,8 @@ export interface User {
 	 * holds the address being moved to.
 	 */
 	pendingEmail: string;
+	/** Profile image URL — a custom override if one is set, else the Gravatar derived from `email`. */
+	avatarUrl: string;
 	createdAt: IsoDateString;
 	updatedAt: IsoDateString;
 }

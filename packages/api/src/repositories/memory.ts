@@ -135,6 +135,7 @@ export class InMemoryUserRepository implements UserRepository {
 			name: input.name,
 			phone: '',
 			pendingEmail: '',
+			avatarUrl: '',
 			createdAt: timestamp,
 			updatedAt: timestamp,
 		};
@@ -193,6 +194,9 @@ export class InMemoryUserRepository implements UserRepository {
 		}
 		if (input.pendingEmail !== undefined) {
 			patch.pendingEmail = input.pendingEmail.trim().toLowerCase();
+		}
+		if (input.avatarUrl !== undefined) {
+			patch.avatarUrl = input.avatarUrl.trim();
 		}
 		const updated: StoredUser = { ...user, ...patch, updatedAt: now() };
 		this.data.users.set(id, updated);

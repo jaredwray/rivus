@@ -166,14 +166,15 @@ function parseInput<S extends z.ZodType>(schema: S, input: unknown): z.infer<S> 
 // --- Response schemas (mirror @rivus/api http-schemas; app depends on core only).
 
 const userResponseSchema = z.object({
-	id: z.string(),
+	id: userId(),
 	email: z.string(),
 	name: z.string(),
 	phone: z.string(),
 	pendingEmail: z.string(),
+	avatarUrl: z.string(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
-});
+}) satisfies z.ZodType<User>;
 /** The signed-in user as returned by the API (id is a plain string on the wire). */
 export type ProfileUser = z.infer<typeof userResponseSchema>;
 
@@ -222,6 +223,7 @@ const memberResponseSchema = z.object({
 	userId: userId(),
 	email: z.string(),
 	name: z.string(),
+	avatarUrl: z.string(),
 	role: roleSchema,
 	joinedAt: z.string(),
 });

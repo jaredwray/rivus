@@ -232,6 +232,7 @@ describe('handleChat', () => {
 							name: 'Pat',
 							phone: '',
 							pendingEmail: '',
+							avatarUrl: 'https://www.gravatar.com/avatar/abc?s=200&d=404',
 							createdAt: account.createdAt,
 							updatedAt: account.updatedAt,
 						},

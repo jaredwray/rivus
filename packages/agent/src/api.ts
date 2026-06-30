@@ -49,6 +49,7 @@ const userSchema = z.object({
 	name: z.string(),
 	phone: z.string(),
 	pendingEmail: z.string(),
+	avatarUrl: z.string(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
 }) satisfies z.ZodType<User>;

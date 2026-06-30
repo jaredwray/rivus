@@ -88,6 +88,15 @@ export const websiteSchema = z
 		error: 'Enter a valid website URL, like https://example.com.',
 	});
 
+/** A custom profile-image URL, or an empty string to fall back to the user's Gravatar. */
+export const avatarUrlSchema = z
+	.string()
+	.trim()
+	.max(2048, { error: 'That image URL is too long.' })
+	.refine((value) => value === '' || z.url().safeParse(value).success, {
+		error: 'Enter a valid image URL, like https://example.com/photo.jpg.',
+	});
+
 /** The "standard business information" collected when an account is created. */
 export const accountBusinessSchema = z.object({
 	businessName: businessNameSchema,
@@ -162,17 +171,21 @@ export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;
 // --- Profile (the signed-in user's own account) -------------------------------
 
 /**
- * Update your own profile: name, sign-in email, and contact phone. Every field is
- * optional — like {@link updateAccountSchema}, a partial update only touches what
- * the caller sends — but at least one must be present. Changing `email` doesn't
- * apply immediately: the server emails a one-time code to the new address and the
- * change lands only once {@link verifyEmailChangeSchema} confirms it.
+ * Update your own profile: name, sign-in email, contact phone, and profile
+ * image. Every field is optional — like {@link updateAccountSchema}, a partial
+ * update only touches what the caller sends — but at least one must be present.
+ * Changing `email` doesn't apply immediately: the server emails a one-time code
+ * to the new address and the change lands only once
+ * {@link verifyEmailChangeSchema} confirms it. `avatarUrl` applies immediately;
+ * an empty string clears a custom override and reverts to the Gravatar derived
+ * from the email.
  */
 export const updateProfileSchema = z
 	.object({
 		name: nameSchema.optional(),
 		email: emailSchema.optional(),
 		phone: phoneSchema.optional(),
+		avatarUrl: avatarUrlSchema.optional(),
 	})
 	.refine((value) => Object.values(value).some((field) => field !== undefined), {
 		error: 'Provide at least one field to update.',
@@ -187,7 +200,6 @@ export const verifyEmailChangeSchema = z.object({
 	code: verificationCodeSchema,
 });
 export type VerifyEmailChangeInput = z.infer<typeof verifyEmailChangeSchema>;
-
 export const itemStatusSchema = z.enum(['active', 'archived'], {
 	error: 'Status must be either active or archived.',
 });

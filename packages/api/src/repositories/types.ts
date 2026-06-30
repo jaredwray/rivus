@@ -53,13 +53,15 @@ export interface NewUser {
  * Editable profile fields for the signed-in user. Every field is optional so a
  * partial update only touches what the caller sent. `email` is the live sign-in
  * address (only set once a change is verified); `pendingEmail` holds an address
- * awaiting confirmation (set to `''` to clear it).
+ * awaiting confirmation (set to `''` to clear it). `avatarUrl` is the custom
+ * image override; set to `''` to clear it back to the Gravatar default.
  */
 export interface UpdateUser {
 	name?: string;
 	email?: string;
 	phone?: string;
 	pendingEmail?: string;
+	avatarUrl?: string;
 }
 
 export interface UserRepository {

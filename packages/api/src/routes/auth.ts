@@ -296,7 +296,8 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 			onRequest: [fastify.authenticate],
 			schema: {
 				tags: ['auth'],
-				summary: 'Update your profile (name, phone, email). Changing email re-verifies it',
+				summary:
+					'Update your profile (name, phone, email, profile image). Changing email re-verifies it',
 				security: [{ bearerAuth: [] }],
 				body: updateProfileSchema,
 				response: {
@@ -315,13 +316,16 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 				throw app.httpErrors.unauthorized('Account no longer exists');
 			}
 
-			const { name, email, phone } = request.body;
+			const { name, email, phone, avatarUrl } = request.body;
 			const patch: UpdateUser = {};
 			if (name !== undefined) {
 				patch.name = name;
 			}
 			if (phone !== undefined) {
 				patch.phone = phone;
+			}
+			if (avatarUrl !== undefined) {
+				patch.avatarUrl = avatarUrl;
 			}
 
 			// A new email isn't applied here — it's staged on `pendingEmail` and becomes
