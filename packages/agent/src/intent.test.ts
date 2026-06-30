@@ -65,6 +65,15 @@ describe('parseIntent — company info', () => {
 		expect(parseIntent('tell me about my business')).toEqual({ kind: 'company_info', fields: [] });
 		expect(parseIntent('show my company info')).toEqual({ kind: 'company_info', fields: [] });
 	});
+
+	it('does not treat "business"/"company"/"account" as generic when it names a different topic', () => {
+		// Regression: "business hours" was matching the generic company-record ask via
+		// the bare word "business", so it returned the whole settings record instead of
+		// falling through to `unknown` — where the assistant searches the knowledge base,
+		// which is where an answer like this actually lives.
+		expect(parseIntent('what are our business hours?')).toEqual({ kind: 'unknown' });
+		expect(parseIntent('do we have a business license')).toEqual({ kind: 'unknown' });
+	});
 });
 
 describe('parseIntent — knowledge base', () => {

@@ -84,9 +84,17 @@ const COMPANY_FIELD_PATTERNS: ReadonlyArray<readonly [CompanyField, RegExp]> = [
 	['status', /\b(account status|subscription|plan)\b/],
 ];
 
-/** Generic references to "the company" that mean "tell me everything". */
+/**
+ * Generic references to "the company" that mean "tell me everything" — e.g. "show my
+ * company info" or "tell me about my business". Requires a co-occurring noun
+ * ("info"/"details"/"profile") or an explicit "about my/our/the …" framing, rather than
+ * matching the bare word "company"/"business"/"account" anywhere in the message — those
+ * words also show up in asks that are NOT about the company record (e.g. "business
+ * hours", "business license"), which belong in the knowledge base instead, and a bare
+ * match here would steal them before they ever reach it.
+ */
 const COMPANY_GENERIC =
-	/\b(company|business|account|my (info|information|details)|our (info|information|details)|about (my|our|the) (company|business)|profile)\b/;
+	/\b(?:(?:company|business|account)\s+(?:info|information|details|profile)|my\s+(?:info|information|details)|our\s+(?:info|information|details)|about\s+(?:my|our|the)\s+(?:company|business|account)|profile)\b/;
 
 const UPDATE_VERB = /\b(update|change|edit|revise|modify|fix)\b/;
 const CREATE_VERB = /\b(add|create|new|make|insert)\b/;
