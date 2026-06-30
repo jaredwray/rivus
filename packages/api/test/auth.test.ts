@@ -578,6 +578,26 @@ describe('profile (update + email re-verify)', () => {
 		expect(response.statusCode).toBe(403);
 	});
 
+	it('does not let the public /verify endpoint consume or burn an email-change code', async () => {
+		const owner = await signupOwner(app, { email: 'owner@example.com' });
+		await updateProfile(owner.token, { email: 'new@example.com' });
+		const code = latestCodeFor(app, 'new@example.com');
+
+		// The generic passwordless sign-in must not touch an email-change code, even
+		// with the correct value: it's rejected before the attempt counter or delete.
+		const viaVerify = await app.inject({
+			method: 'POST',
+			url: '/v1/auth/verify',
+			payload: { email: 'new@example.com', code },
+		});
+		expect(viaVerify.statusCode).toBe(401);
+
+		// So the authenticated confirm still succeeds with that same, un-burned code.
+		const confirm = await verifyEmailChange(owner.token, code);
+		expect(confirm.statusCode).toBe(200);
+		expect(confirm.json().user.email).toBe('new@example.com');
+	});
+
 	it('cannot replay a confirmation code after it succeeds', async () => {
 		const owner = await signupOwner(app, { email: 'owner@example.com' });
 		await updateProfile(owner.token, { email: 'new@example.com' });

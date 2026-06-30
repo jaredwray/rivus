@@ -264,6 +264,12 @@ const styles = StyleSheet.create({
 		flexDirection: 'row',
 		alignItems: 'center',
 		justifyContent: 'space-between',
+		// Let the label/role pill wrap instead of overflowing when the row is too
+		// narrow (small screens, large text scaling); React Native defaults
+		// flexShrink to 0, so set it explicitly. `gap` spaces them once wrapped.
+		flexShrink: 1,
+		flexWrap: 'wrap',
+		gap: 8,
 	},
 	form: {
 		gap: 13,

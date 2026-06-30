@@ -189,6 +189,15 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!record || new Date(record.expiresAt).getTime() < Date.now()) {
 				throw app.httpErrors.unauthorized('Invalid or expired code');
 			}
+			// This public endpoint only consumes login and signup codes. An `email_change`
+			// code lives in the same email-keyed store but is confirmed via the
+			// authenticated `POST /me/email/verify`; reject it here *before* the attempt
+			// counter is bumped or the code is deleted, so a sign-in attempt at the pending
+			// address (a stranger guessing, or the owner entering the code on the wrong
+			// screen) can't burn the budget or consume the pending change.
+			if (record.purpose !== 'login' && record.purpose !== 'signup') {
+				throw app.httpErrors.unauthorized('Invalid or expired code');
+			}
 			// Fast path: a code whose budget is already spent is locked until it expires.
 			if (record.attempts >= MAX_VERIFICATION_ATTEMPTS) {
 				throw app.httpErrors.tooManyRequests('Too many incorrect attempts — request a new code');
