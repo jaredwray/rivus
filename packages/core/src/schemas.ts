@@ -543,3 +543,46 @@ export const conversationListQuerySchema = paginationQuerySchema.extend({
 	status: conversationStatusSchema.optional(),
 });
 export type ConversationListQuery = z.infer<typeof conversationListQuerySchema>;
+
+// --- Account seeding (development only) ---------------------------------------
+
+/**
+ * Upper bound on any single seed count. The seeder is a development convenience
+ * (see `POST /v1/admin/seed`), so a generous cap keeps a stray request from
+ * ballooning the store while still allowing a healthy demo dataset.
+ */
+export const SEED_COUNT_MAX = 200;
+
+/** One optional, bounded entity count for the seeder (omit ⇒ a sensible default). */
+function seedCountSchema(label: string) {
+	return z.coerce
+		.number({ error: `${label} must be a number.` })
+		.int({ error: `${label} must be a whole number.` })
+		.min(0, { error: `${label} must be 0 or greater.` })
+		.max(SEED_COUNT_MAX, { error: `${label} must be ${SEED_COUNT_MAX} or fewer.` })
+		.optional();
+}
+
+/**
+ * Request body for the development-only account seeder (`POST /v1/admin/seed`).
+ *
+ * Every count is optional — omit it to let the seeder pick a sensible default (a
+ * curated set, or a random count in a small range). Passing `0` explicitly skips
+ * that entity. `ai` opts into AI-tailored data when a provider key is configured
+ * (it degrades to the built-in faker/curated generators otherwise); `seed` fixes
+ * the random generator so a batch is reproducible.
+ */
+export const seedAccountSchema = z.object({
+	customers: seedCountSchema('Customers'),
+	faqs: seedCountSchema('FAQs'),
+	appointments: seedCountSchema('Appointments'),
+	notifications: seedCountSchema('Notifications'),
+	conversations: seedCountSchema('Conversations'),
+	ai: z.boolean({ error: 'AI must be true or false.' }).default(false),
+	seed: z.coerce
+		.number({ error: 'Seed must be a number.' })
+		.int({ error: 'Seed must be a whole number.' })
+		.min(0, { error: 'Seed must be 0 or greater.' })
+		.optional(),
+});
+export type SeedAccountInput = z.infer<typeof seedAccountSchema>;

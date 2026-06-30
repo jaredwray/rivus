@@ -6,6 +6,7 @@ import {
 	getApiBaseUrl,
 	getAppBaseUrl,
 	getGoogleMapsApiKey,
+	isDevelopment,
 } from './config';
 
 /** Temporarily install a fake `window` (the test runner is Node, where it's absent). */
@@ -130,5 +131,17 @@ describe('buildInviteAcceptUrl', () => {
 		// No base argument → resolves via getAppBaseUrl(); the path/token are stable
 		// regardless of which base wins, so assert on the suffix.
 		expect(buildInviteAcceptUrl('abc').endsWith('/accept-invite?token=abc')).toBe(true);
+	});
+});
+
+describe('isDevelopment', () => {
+	it('is true only when NODE_ENV is exactly "development"', () => {
+		expect(isDevelopment('development')).toBe(true);
+	});
+
+	it('is false for production, test, or an unset value', () => {
+		expect(isDevelopment('production')).toBe(false);
+		expect(isDevelopment('test')).toBe(false);
+		expect(isDevelopment(undefined)).toBe(false);
 	});
 });

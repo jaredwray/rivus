@@ -24,6 +24,8 @@ import {
 	notificationReadStateSchema,
 	notificationTypeSchema,
 	paginationQuerySchema,
+	SEED_COUNT_MAX,
+	seedAccountSchema,
 	sendMessageSchema,
 	signupSchema,
 	updateAccountSchema,
@@ -747,5 +749,50 @@ describe('conversationListQuerySchema', () => {
 
 	it('rejects an invalid status filter', () => {
 		expect(conversationListQuerySchema.safeParse({ status: 'spam' }).success).toBe(false);
+	});
+});
+
+describe('seedAccountSchema', () => {
+	it('defaults ai to false and leaves every count absent', () => {
+		expect(seedAccountSchema.parse({})).toEqual({ ai: false });
+	});
+
+	it('keeps explicit counts (including 0) and coerces numeric strings', () => {
+		expect(
+			seedAccountSchema.parse({
+				customers: 0,
+				faqs: '12',
+				appointments: 5,
+				notifications: 3,
+				conversations: 4,
+				ai: true,
+				seed: '42',
+			}),
+		).toEqual({
+			customers: 0,
+			faqs: 12,
+			appointments: 5,
+			notifications: 3,
+			conversations: 4,
+			ai: true,
+			seed: 42,
+		});
+	});
+
+	it('rejects a negative count', () => {
+		expect(seedAccountSchema.safeParse({ customers: -1 }).success).toBe(false);
+	});
+
+	it('rejects a non-integer count', () => {
+		expect(seedAccountSchema.safeParse({ faqs: 2.5 }).success).toBe(false);
+	});
+
+	it(`rejects a count above the ${SEED_COUNT_MAX} cap`, () => {
+		expect(seedAccountSchema.safeParse({ customers: SEED_COUNT_MAX + 1 }).success).toBe(false);
+		expect(seedAccountSchema.safeParse({ customers: SEED_COUNT_MAX }).success).toBe(true);
+	});
+
+	it('rejects a non-boolean ai flag', () => {
+		expect(seedAccountSchema.safeParse({ ai: 'yes' }).success).toBe(false);
 	});
 });
