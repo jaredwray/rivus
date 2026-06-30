@@ -1655,6 +1655,21 @@ describe('createApiClient', () => {
 			expect(error.details).toBe(cause);
 		});
 
+		it('wraps a body-read failure (connection drops mid-response) in a NetworkError', async () => {
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				text: async () => {
+					throw new TypeError('Load failed');
+				},
+			} as unknown as Response);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client.health().catch((e) => e);
+			expect(error).toBeInstanceOf(NetworkError);
+			expect(error.status).toBe(0);
+		});
+
 		it('propagates an AbortError instead of masking it as a NetworkError', async () => {
 			const aborted = new DOMException('The operation was aborted.', 'AbortError');
 			fetchMock.mockRejectedValueOnce(aborted);

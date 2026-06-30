@@ -79,22 +79,44 @@ export const businessNameSchema = requiredText('Business name', 160);
 export const phoneSchema = optionalText('Phone number', 40);
 export const addressSchema = optionalText('Address', 300);
 export const timezoneSchema = optionalText('Time zone', 64);
+// `http://` / `https://` specifically, vs. *any* `scheme://`. A value that
+// already carries a non-http scheme (e.g. `ftp://`) must not be silently
+// rewritten into `https://ftp://…`, so we detect schemes before normalizing.
+const HTTP_SCHEME = /^https?:\/\//i;
+const ANY_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+// A dotted, multi-label host (so a bare word like `acme` is rejected even
+// though URL parsing would accept `https://acme`), allowing an optional
+// port/path/query/fragment after it.
+const DOMAINISH = /^([a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}([:/?#].*)?$/i;
+
 /**
  * A website URL, or an empty string when none is provided.
  *
  * The scheme is optional: a bare domain like `example.com` is accepted and
  * normalized to `https://example.com`, so people don't have to type the
- * protocol. An explicit `http://`/`https://` is kept as-is. The normalized
- * value is what's validated and stored.
+ * protocol. An explicit `http://`/`https://` is kept as-is; any other scheme,
+ * or a bare value that isn't a real domain (`acme`, `not a url`), is rejected
+ * rather than silently rewritten into something that points elsewhere. The
+ * normalized value is what's validated and stored.
  */
 export const websiteSchema = z
 	.string()
 	.trim()
 	.max(2048, { error: 'That website URL is too long.' })
-	.transform((value) => (value === '' || /^https?:\/\//i.test(value) ? value : `https://${value}`))
-	.refine((value) => value === '' || z.url().safeParse(value).success, {
-		error: 'Enter a valid website, like example.com.',
-	});
+	.transform((value) => {
+		// Only assume `https://` for a scheme-less value that already looks like a
+		// domain. Anything else is passed through untouched for the refine to judge.
+		if (value === '' || ANY_SCHEME.test(value)) return value;
+		return DOMAINISH.test(value) ? `https://${value}` : value;
+	})
+	.refine(
+		(value) =>
+			value === '' ||
+			(HTTP_SCHEME.test(value) &&
+				z.url().safeParse(value).success &&
+				DOMAINISH.test(value.replace(HTTP_SCHEME, ''))),
+		{ error: 'Enter a valid website, like example.com.' },
+	);
 
 /** The "standard business information" collected when an account is created. */
 export const accountBusinessSchema = z.object({

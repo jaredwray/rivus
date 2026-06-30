@@ -123,6 +123,23 @@ describe('accountBusinessSchema', () => {
 		).toThrow();
 	});
 
+	it('rejects a bare value that is not a real domain', () => {
+		for (const website of ['acme', 'not-a-url', 'https://acme', 'https://not-a-url']) {
+			expect(() => accountBusinessSchema.parse({ businessName: 'Acme', website })).toThrow();
+		}
+	});
+
+	it('rejects a non-http(s) scheme instead of silently rewriting it', () => {
+		// `ftp://acme.example` must not become `https://ftp://acme.example`.
+		expect(() =>
+			accountBusinessSchema.parse({ businessName: 'Acme', website: 'ftp://acme.example' }),
+		).toThrow();
+		// A mistyped scheme (single slash) is rejected, not normalized.
+		expect(() =>
+			accountBusinessSchema.parse({ businessName: 'Acme', website: 'https:/acme.example' }),
+		).toThrow();
+	});
+
 	it('gives a friendly, actionable message for a bad website URL', () => {
 		const result = accountBusinessSchema.safeParse({ businessName: 'Acme', website: 'not a url' });
 		expect(result.success).toBe(false);

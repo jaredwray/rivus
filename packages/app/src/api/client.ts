@@ -692,6 +692,18 @@ function normalizeBaseUrl(baseUrl: string): string {
 	return baseUrl.replace(/\/+$/, '');
 }
 
+/**
+ * Re-throw a transport-layer failure as a friendly {@link NetworkError}, except
+ * for an `AbortError` — a deliberate client-side cancellation, which is
+ * propagated unchanged so callers can tell a cancel from an unreachable server.
+ */
+function asTransportError(cause: unknown): never {
+	if (cause instanceof Error && cause.name === 'AbortError') {
+		throw cause;
+	}
+	throw new NetworkError(cause);
+}
+
 /** Optional knobs for {@link createApiClient}. */
 export interface ApiClientOptions {
 	/**
@@ -719,19 +731,20 @@ export function createApiClient(
 		try {
 			response = await fetchImpl(`${root}${path}`, credentials ? { ...init, credentials } : init);
 		} catch (cause) {
-			// An aborted request (via an AbortController signal) is a deliberate
-			// client-side cancellation, not a connectivity failure — propagate it
-			// unchanged so callers can tell the two apart.
-			if (cause instanceof Error && cause.name === 'AbortError') {
-				throw cause;
-			}
 			// `fetch` rejects (typically with a TypeError) only when the request
 			// never got a response — offline, DNS/connection failure, CORS. Turn
 			// that into one clear, actionable message; HTTP error *responses* are
 			// handled below via `response.ok`.
-			throw new NetworkError(cause);
+			asTransportError(cause);
 		}
-		const raw = await response.text();
+		// The body read can also fail mid-stream (e.g. a mobile connection drops
+		// after headers arrive), so it gets the same treatment as the fetch above.
+		let raw: string;
+		try {
+			raw = await response.text();
+		} catch (cause) {
+			asTransportError(cause);
+		}
 		const body = raw.length > 0 ? safeJsonParse(raw) : undefined;
 
 		if (!response.ok) {
