@@ -7,6 +7,8 @@ export function toPublicUser(user: StoredUser): User {
 		id: user.id,
 		email: user.email,
 		name: user.name,
+		phone: user.phone,
+		pendingEmail: user.pendingEmail,
 		createdAt: user.createdAt,
 		updatedAt: user.updatedAt,
 	};

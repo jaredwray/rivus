@@ -22,8 +22,11 @@ export interface VerificationEmail {
 	to: string;
 	/** The 6-digit code (plaintext — this email is the only place it appears). */
 	code: string;
-	/** Whether the code finishes a new signup or signs in an existing user. */
-	purpose: 'login' | 'signup';
+	/**
+	 * What the code does: finish a new signup, sign in an existing user, or confirm
+	 * a change to the recipient's account email.
+	 */
+	purpose: 'login' | 'signup' | 'email_change';
 }
 
 /** A fully rendered email body — what a transport actually sends. */
@@ -108,7 +111,9 @@ export function renderVerificationEmail(email: VerificationEmail): RenderedEmail
 	const lead =
 		email.purpose === 'signup'
 			? 'Use this code to finish creating your Rivus account:'
-			: 'Use this code to sign in to Rivus:';
+			: email.purpose === 'email_change'
+				? 'Use this code to confirm your new Rivus email address:'
+				: 'Use this code to sign in to Rivus:';
 	const subject = `Your Rivus verification code is ${email.code}`;
 
 	const text = [
