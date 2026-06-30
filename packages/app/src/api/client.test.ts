@@ -1655,6 +1655,16 @@ describe('createApiClient', () => {
 			expect(error.details).toBe(cause);
 		});
 
+		it('propagates an AbortError instead of masking it as a NetworkError', async () => {
+			const aborted = new DOMException('The operation was aborted.', 'AbortError');
+			fetchMock.mockRejectedValueOnce(aborted);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client.health().catch((e) => e);
+			expect(error).toBe(aborted);
+			expect(error).not.toBeInstanceOf(NetworkError);
+		});
+
 		it('throws when a successful response body is not valid JSON', async () => {
 			fetchMock.mockResolvedValueOnce({
 				ok: true,

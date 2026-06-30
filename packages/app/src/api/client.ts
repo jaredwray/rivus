@@ -719,6 +719,12 @@ export function createApiClient(
 		try {
 			response = await fetchImpl(`${root}${path}`, credentials ? { ...init, credentials } : init);
 		} catch (cause) {
+			// An aborted request (via an AbortController signal) is a deliberate
+			// client-side cancellation, not a connectivity failure — propagate it
+			// unchanged so callers can tell the two apart.
+			if (cause instanceof Error && cause.name === 'AbortError') {
+				throw cause;
+			}
 			// `fetch` rejects (typically with a TypeError) only when the request
 			// never got a response — offline, DNS/connection failure, CORS. Turn
 			// that into one clear, actionable message; HTTP error *responses* are
