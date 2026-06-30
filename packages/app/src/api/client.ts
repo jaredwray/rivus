@@ -132,6 +132,22 @@ export class ApiError extends Error {
 }
 
 /**
+ * Thrown when a request never reaches the server — the device is offline, DNS
+ * fails, the connection is refused, or CORS blocks it. The platform's raw
+ * message for these is opaque ("Load failed" on WebKit, "Failed to fetch" on
+ * Chromium, "Network request failed" on React Native); this carries one clear,
+ * actionable line instead, and a `status` of 0 so callers can tell it apart
+ * from an HTTP error response. Extends {@link ApiError} so existing handlers
+ * that surface `error.message` keep working.
+ */
+export class NetworkError extends ApiError {
+	constructor(cause?: unknown) {
+		super("Couldn't reach Rivus. Check your internet connection and try again.", 0, cause);
+		this.name = 'NetworkError';
+	}
+}
+
+/**
  * Thrown when a request body fails client-side validation before any network
  * call. Its `message` is a single, human-readable line (the first issue), so UI
  * that surfaces `error.message` shows friendly text — not the raw JSON array
@@ -697,6 +713,18 @@ function normalizeBaseUrl(baseUrl: string): string {
 	return baseUrl.replace(/\/+$/, '');
 }
 
+/**
+ * Re-throw a transport-layer failure as a friendly {@link NetworkError}, except
+ * for an `AbortError` — a deliberate client-side cancellation, which is
+ * propagated unchanged so callers can tell a cancel from an unreachable server.
+ */
+function asTransportError(cause: unknown): never {
+	if (cause instanceof Error && cause.name === 'AbortError') {
+		throw cause;
+	}
+	throw new NetworkError(cause);
+}
+
 /** Optional knobs for {@link createApiClient}. */
 export interface ApiClientOptions {
 	/**
@@ -720,11 +748,24 @@ export function createApiClient(
 
 	/** Perform a request, parse JSON, and turn non-2xx into a typed ApiError. */
 	async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
-		const response = await fetchImpl(
-			`${root}${path}`,
-			credentials ? { ...init, credentials } : init,
-		);
-		const raw = await response.text();
+		let response: Response;
+		try {
+			response = await fetchImpl(`${root}${path}`, credentials ? { ...init, credentials } : init);
+		} catch (cause) {
+			// `fetch` rejects (typically with a TypeError) only when the request
+			// never got a response — offline, DNS/connection failure, CORS. Turn
+			// that into one clear, actionable message; HTTP error *responses* are
+			// handled below via `response.ok`.
+			asTransportError(cause);
+		}
+		// The body read can also fail mid-stream (e.g. a mobile connection drops
+		// after headers arrive), so it gets the same treatment as the fetch above.
+		let raw: string;
+		try {
+			raw = await response.text();
+		} catch (cause) {
+			asTransportError(cause);
+		}
 		const body = raw.length > 0 ? safeJsonParse(raw) : undefined;
 
 		if (!response.ok) {

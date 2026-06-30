@@ -8,7 +8,7 @@ import type {
 	NotificationId,
 } from '@rivus/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, createApiClient, ValidationError } from './client';
+import { ApiError, createApiClient, NetworkError, ValidationError } from './client';
 
 /** Build a `Response`-like object the client's `text()`/`ok` logic understands. */
 function jsonResponse(body: unknown, init: { status?: number } = {}): Response {
@@ -179,6 +179,19 @@ describe('createApiClient', () => {
 			expect(error).toBeInstanceOf(ApiError);
 			expect(error).toMatchObject({ status: 503, message: 'down for maintenance' });
 		});
+
+		it('turns a failed fetch into a friendly NetworkError, not the raw "Load failed"', async () => {
+			fetchMock.mockRejectedValueOnce(new TypeError('Load failed'));
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client.health().catch((e) => e);
+			expect(error).toBeInstanceOf(NetworkError);
+			expect(error).toBeInstanceOf(ApiError);
+			expect(error.status).toBe(0);
+			expect(error.message).toBe(
+				"Couldn't reach Rivus. Check your internet connection and try again.",
+			);
+		});
 	});
 
 	describe('signup', () => {
@@ -225,7 +238,7 @@ describe('createApiClient', () => {
 				.catch((caught) => caught);
 
 			expect(error).toBeInstanceOf(ValidationError);
-			expect(error.message).toBe('Enter a valid website URL, like https://example.com.');
+			expect(error.message).toBe('Enter a valid website, like example.com.');
 			// Regression: the old path let `ZodError.message` — a pretty-printed JSON
 			// array — land in the UI verbatim. A friendly message is a single line.
 			expect(error.message).not.toContain('[');
@@ -1742,11 +1755,44 @@ describe('createApiClient', () => {
 	});
 
 	describe('network failures', () => {
-		it('propagates a rejected fetch (e.g. connection refused)', async () => {
-			fetchMock.mockRejectedValueOnce(new TypeError('Network request failed'));
+		it('wraps a rejected fetch (e.g. connection refused) in a friendly NetworkError', async () => {
+			const cause = new TypeError('Network request failed');
+			fetchMock.mockRejectedValueOnce(cause);
 
 			const client = createApiClient(BASE, fetchMock);
-			await expect(client.health()).rejects.toThrow('Network request failed');
+			const error = await client.health().catch((e) => e);
+			expect(error).toBeInstanceOf(NetworkError);
+			expect(error.status).toBe(0);
+			expect(error.message).toBe(
+				"Couldn't reach Rivus. Check your internet connection and try again.",
+			);
+			// The original platform error is preserved for diagnostics.
+			expect(error.details).toBe(cause);
+		});
+
+		it('wraps a body-read failure (connection drops mid-response) in a NetworkError', async () => {
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				text: async () => {
+					throw new TypeError('Load failed');
+				},
+			} as unknown as Response);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client.health().catch((e) => e);
+			expect(error).toBeInstanceOf(NetworkError);
+			expect(error.status).toBe(0);
+		});
+
+		it('propagates an AbortError instead of masking it as a NetworkError', async () => {
+			const aborted = new DOMException('The operation was aborted.', 'AbortError');
+			fetchMock.mockRejectedValueOnce(aborted);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client.health().catch((e) => e);
+			expect(error).toBe(aborted);
+			expect(error).not.toBeInstanceOf(NetworkError);
 		});
 
 		it('throws when a successful response body is not valid JSON', async () => {
