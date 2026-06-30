@@ -227,6 +227,28 @@ describe('respond — knowledge base answering', () => {
 		expect(reply).toContain('How much does your service cost?');
 	});
 
+	it('searches the knowledge base for "business hours" instead of dumping company settings', async () => {
+		// Regression test for the reported bug: the bare word "business" in "business
+		// hours" was matching the generic company-info ask, so the agent replied with the
+		// whole settings record instead of searching the FAQ where the answer actually
+		// lived. It must route through the knowledge base first, same as any other question.
+		const reply = await ask('what are our business hours?', {
+			token: TOKEN,
+			fetchImpl: router([
+				{
+					when: onAnswerFaq,
+					body: {
+						answered: true,
+						answer: 'We’re open Monday–Friday, 9am–5pm.',
+						sources: [{ id: 'faq_1', question: 'What are your business hours?' }],
+					},
+				},
+			]),
+		});
+		expect(reply).toContain('9am–5pm');
+		expect(reply).not.toContain('Here’s what I have for');
+	});
+
 	it('returns just the answer when no source FAQ is given', async () => {
 		const reply = await ask('do you charge for travel?', {
 			token: TOKEN,
