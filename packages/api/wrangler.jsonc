@@ -36,6 +36,10 @@
 			"name": "rivus-api-dev",
 			"routes": [{ "pattern": "dev-api.rivus.ai", "custom_domain": true }],
 			"vars": {
+				// Marks this as the deployed development environment. Both containers run
+				// NODE_ENV=production, so this is what enables the staff-only account
+				// seeder (POST /v1/admin/seed) here while keeping it off in production.
+				"RIVUS_ENV": "development",
 				// The container runs NODE_ENV=production, where credentialed CORS forbids
 				// a `*` wildcard. List the exact dev origins that call the API from a
 				// browser (the app and the marketing site) rather than a `*.rivus.ai`
@@ -70,6 +74,9 @@
 			// session cookie, any subdomain it allowed could read cookie-authenticated
 			// responses. Only the app origin (APP_URL) is granted credentialed CORS.
 			"vars": {
+				// Marks this as production, where the staff-only account seeder is never
+				// registered — the explicit value is the fail-safe that keeps it off.
+				"RIVUS_ENV": "production",
 				"CORS_ORIGIN": "https://app.rivus.ai,https://rivus.ai,https://www.rivus.ai",
 				// Scope the session cookie to the shared parent domain so it reaches the
 				// app and the agent (app/agent.rivus.ai), enabling web chat with an
