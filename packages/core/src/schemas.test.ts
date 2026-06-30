@@ -101,6 +101,22 @@ describe('accountBusinessSchema', () => {
 		).toBe('https://acme.example');
 	});
 
+	it('normalizes a bare domain by assuming https', () => {
+		expect(
+			accountBusinessSchema.parse({ businessName: 'Acme', website: 'acme.example' }).website,
+		).toBe('https://acme.example');
+		expect(
+			accountBusinessSchema.parse({ businessName: 'Acme', website: 'www.acme.example/path' })
+				.website,
+		).toBe('https://www.acme.example/path');
+	});
+
+	it('keeps an explicit http scheme as-is', () => {
+		expect(
+			accountBusinessSchema.parse({ businessName: 'Acme', website: 'http://acme.example' }).website,
+		).toBe('http://acme.example');
+	});
+
 	it('rejects a malformed website URL', () => {
 		expect(() =>
 			accountBusinessSchema.parse({ businessName: 'Acme', website: 'not a url' }),
@@ -110,9 +126,7 @@ describe('accountBusinessSchema', () => {
 	it('gives a friendly, actionable message for a bad website URL', () => {
 		const result = accountBusinessSchema.safeParse({ businessName: 'Acme', website: 'not a url' });
 		expect(result.success).toBe(false);
-		expect(result.error?.issues[0]?.message).toBe(
-			'Enter a valid website URL, like https://example.com.',
-		);
+		expect(result.error?.issues[0]?.message).toBe('Enter a valid website, like example.com.');
 	});
 
 	it('prompts for the business name when it is blank', () => {

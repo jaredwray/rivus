@@ -128,6 +128,22 @@ export class ApiError extends Error {
 }
 
 /**
+ * Thrown when a request never reaches the server — the device is offline, DNS
+ * fails, the connection is refused, or CORS blocks it. The platform's raw
+ * message for these is opaque ("Load failed" on WebKit, "Failed to fetch" on
+ * Chromium, "Network request failed" on React Native); this carries one clear,
+ * actionable line instead, and a `status` of 0 so callers can tell it apart
+ * from an HTTP error response. Extends {@link ApiError} so existing handlers
+ * that surface `error.message` keep working.
+ */
+export class NetworkError extends ApiError {
+	constructor(cause?: unknown) {
+		super("Couldn't reach Rivus. Check your internet connection and try again.", 0, cause);
+		this.name = 'NetworkError';
+	}
+}
+
+/**
  * Thrown when a request body fails client-side validation before any network
  * call. Its `message` is a single, human-readable line (the first issue), so UI
  * that surfaces `error.message` shows friendly text — not the raw JSON array
@@ -699,10 +715,16 @@ export function createApiClient(
 
 	/** Perform a request, parse JSON, and turn non-2xx into a typed ApiError. */
 	async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
-		const response = await fetchImpl(
-			`${root}${path}`,
-			credentials ? { ...init, credentials } : init,
-		);
+		let response: Response;
+		try {
+			response = await fetchImpl(`${root}${path}`, credentials ? { ...init, credentials } : init);
+		} catch (cause) {
+			// `fetch` rejects (typically with a TypeError) only when the request
+			// never got a response — offline, DNS/connection failure, CORS. Turn
+			// that into one clear, actionable message; HTTP error *responses* are
+			// handled below via `response.ok`.
+			throw new NetworkError(cause);
+		}
 		const raw = await response.text();
 		const body = raw.length > 0 ? safeJsonParse(raw) : undefined;
 

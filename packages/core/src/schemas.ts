@@ -79,13 +79,21 @@ export const businessNameSchema = requiredText('Business name', 160);
 export const phoneSchema = optionalText('Phone number', 40);
 export const addressSchema = optionalText('Address', 300);
 export const timezoneSchema = optionalText('Time zone', 64);
-/** A website URL, or an empty string when none is provided. */
+/**
+ * A website URL, or an empty string when none is provided.
+ *
+ * The scheme is optional: a bare domain like `example.com` is accepted and
+ * normalized to `https://example.com`, so people don't have to type the
+ * protocol. An explicit `http://`/`https://` is kept as-is. The normalized
+ * value is what's validated and stored.
+ */
 export const websiteSchema = z
 	.string()
 	.trim()
 	.max(2048, { error: 'That website URL is too long.' })
+	.transform((value) => (value === '' || /^https?:\/\//i.test(value) ? value : `https://${value}`))
 	.refine((value) => value === '' || z.url().safeParse(value).success, {
-		error: 'Enter a valid website URL, like https://example.com.',
+		error: 'Enter a valid website, like example.com.',
 	});
 
 /** The "standard business information" collected when an account is created. */

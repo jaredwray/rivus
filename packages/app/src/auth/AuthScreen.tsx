@@ -265,7 +265,7 @@ export function AuthScreen({
 											label="Website"
 											value={website}
 											onChangeText={setWebsite}
-											placeholder="https://yourbusiness.com"
+											placeholder="yourbusiness.com"
 											autoCapitalize="none"
 											keyboardType="url"
 										/>
