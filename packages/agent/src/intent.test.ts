@@ -64,15 +64,19 @@ describe('parseIntent — company info', () => {
 	it('treats a generic company ask as "everything" (empty fields)', () => {
 		expect(parseIntent('tell me about my business')).toEqual({ kind: 'company_info', fields: [] });
 		expect(parseIntent('show my company info')).toEqual({ kind: 'company_info', fields: [] });
+		expect(parseIntent('show my profile')).toEqual({ kind: 'company_info', fields: [] });
 	});
 
-	it('does not treat "business"/"company"/"account" as generic when it names a different topic', () => {
+	it('does not treat "business"/"company"/"account"/"profile" as generic when it names a different topic', () => {
 		// Regression: "business hours" was matching the generic company-record ask via
 		// the bare word "business", so it returned the whole settings record instead of
 		// falling through to `unknown` — where the assistant searches the knowledge base,
 		// which is where an answer like this actually lives.
 		expect(parseIntent('what are our business hours?')).toEqual({ kind: 'unknown' });
 		expect(parseIntent('do we have a business license')).toEqual({ kind: 'unknown' });
+		// "profile" modifying a different noun ("profile picture") must not match either —
+		// only a bare "my/our profile" (the company's own profile) should.
+		expect(parseIntent('how do I change my profile picture?')).toEqual({ kind: 'unknown' });
 	});
 });
 
