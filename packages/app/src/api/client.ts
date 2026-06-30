@@ -57,6 +57,7 @@ import {
 	type UpdateCustomerInput,
 	type UpdateFaqInput,
 	type UpdateJobInput,
+	type UpdateProfileInput,
 	type User,
 	type UserId,
 	updateAccountSchema,
@@ -64,8 +65,11 @@ import {
 	updateCustomerSchema,
 	updateFaqSchema,
 	updateJobSchema,
+	updateProfileSchema,
 	type VerifyCodeInput,
+	type VerifyEmailChangeInput,
 	verifyCodeSchema,
+	verifyEmailChangeSchema,
 } from '@rivus/core';
 import { z } from 'zod';
 
@@ -178,12 +182,17 @@ function parseInput<S extends z.ZodType>(schema: S, input: unknown): z.infer<S> 
 // --- Response schemas (mirror @rivus/api http-schemas; app depends on core only).
 
 const userResponseSchema = z.object({
-	id: z.string(),
+	id: userId(),
 	email: z.string(),
 	name: z.string(),
+	phone: z.string(),
+	pendingEmail: z.string(),
+	avatarUrl: z.string(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
-});
+}) satisfies z.ZodType<User>;
+/** The signed-in user as returned by the API (id is a plain string on the wire). */
+export type ProfileUser = z.infer<typeof userResponseSchema>;
 
 const accountResponseSchema = z.object({
 	id: accountId(),
@@ -230,6 +239,7 @@ const memberResponseSchema = z.object({
 	userId: userId(),
 	email: z.string(),
 	name: z.string(),
+	avatarUrl: z.string(),
 	role: roleSchema,
 	joinedAt: z.string(),
 });
@@ -564,6 +574,17 @@ export interface RivusApiClient {
 	me(token?: string): Promise<Session>;
 	/** Clear the server-side session cookie (web sign-out). */
 	logout(): Promise<void>;
+	/**
+	 * Update your own profile (name, phone, email). Changing the email doesn't take
+	 * effect immediately: the API stages it on `pendingEmail` and emails a one-time
+	 * code, which {@link RivusApiClient.verifyEmailChange} confirms.
+	 */
+	updateProfile(token: string, input: UpdateProfileInput): Promise<ProfileUser>;
+	/**
+	 * Confirm a pending email change with the code sent to the new address. Returns
+	 * a fresh session (the new token/cookie carry the updated email).
+	 */
+	verifyEmailChange(token: string, input: VerifyEmailChangeInput): Promise<AuthResponse>;
 	listMembers(token: string): Promise<MemberList>;
 	inviteMember(token: string, input: InviteMemberInput): Promise<Invite>;
 	/** Update the account's business settings (owner only). */
@@ -812,6 +833,20 @@ export function createApiClient(
 
 		async logout() {
 			await request('/v1/auth/logout', signedOutResponseSchema, { method: 'POST' });
+		},
+
+		async updateProfile(token: string, input: UpdateProfileInput) {
+			const payload = parseInput(updateProfileSchema, input);
+			return request('/v1/auth/me', userResponseSchema, jsonInit('PATCH', payload, token));
+		},
+
+		async verifyEmailChange(token: string, input: VerifyEmailChangeInput) {
+			const payload = parseInput(verifyEmailChangeSchema, input);
+			return request(
+				'/v1/auth/me/email/verify',
+				authResponseSchema,
+				jsonInit('POST', payload, token),
+			);
 		},
 
 		listMembers(token: string) {

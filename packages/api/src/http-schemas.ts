@@ -18,6 +18,10 @@ export const userResponseSchema = z
 		id: z.string(),
 		email: z.string(),
 		name: z.string(),
+		phone: z.string(),
+		/** A new email awaiting verification, or `''` when no change is pending. */
+		pendingEmail: z.string(),
+		avatarUrl: z.string(),
 		createdAt: z.string(),
 		updatedAt: z.string(),
 	})
@@ -83,6 +87,7 @@ export const memberResponseSchema = z
 		userId: z.string(),
 		email: z.string(),
 		name: z.string(),
+		avatarUrl: z.string(),
 		role: roleSchema,
 		joinedAt: z.string(),
 	})

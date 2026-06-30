@@ -129,6 +129,13 @@ The deterministic generation, CLI parsing, and de-duplication live in
 `src/seed-data.ts`, and the AI layer in `src/seed-ai.ts` (both unit-tested);
 `src/seed.ts` is the thin database wrapper.
 
+The same seeder is also exposed over HTTP as `POST /v1/admin/seed` and surfaced
+in the app's Settings as "Developer · seed account". That route is registered
+only on a local dev API (`NODE_ENV=development`) or the deployed **development**
+environment (`RIVUS_ENV=development`) — never in production — and is gated to
+Rivus staff (`@rivus.ai`). See `isSeedingEnabled` in `src/config.ts` and the
+deployment note in [DEPLOYMENT.md](../../DEPLOYMENT.md#staff-account-seeder).
+
 ### Migrations
 
 The third role was renamed from `team_member` to `member`. Existing databases

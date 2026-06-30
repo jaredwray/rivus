@@ -60,6 +60,7 @@ const NAV: NavItem[] = [
 	{ href: '/marketing', label: 'Marketing', icon: 'trending-up' },
 	{ href: '/knowledge', label: 'Knowledge', icon: 'book' },
 	{ href: '/team', label: 'Team', icon: 'user-check' },
+	{ href: '/profile', label: 'Profile', icon: 'user' },
 	{ href: '/settings', label: 'Settings', icon: 'settings', ownerOnly: true },
 ];
 
@@ -282,19 +283,34 @@ function Sidebar() {
 			</View>
 
 			<View style={styles.sidebarFooter}>
-				<Pressable style={styles.userRow} onPress={signOut}>
-					<Avatar
-						initials={userName ? initialsOf(userName) : '–'}
-						size={30}
-						background="#2a2a3a"
-						color="#cfd0dc"
-					/>
-					<View style={{ flex: 1 }}>
-						<Txt style={styles.userName}>{userName}</Txt>
-						<Txt style={styles.userRole}>{role}</Txt>
-					</View>
-					<Feather name="log-out" size={15} color={colors.sidebarDim} />
-				</Pressable>
+				<View style={styles.userRow}>
+					<Pressable
+						style={styles.userIdentity}
+						onPress={() => router.push('/profile')}
+						accessibilityRole="link"
+						accessibilityLabel="Your profile"
+					>
+						<Avatar
+							initials={userName ? initialsOf(userName) : '–'}
+							imageUrl={session?.user.avatarUrl}
+							size={30}
+							background="#2a2a3a"
+							color="#cfd0dc"
+						/>
+						<View style={{ flex: 1 }}>
+							<Txt style={styles.userName}>{userName}</Txt>
+							<Txt style={styles.userRole}>{role}</Txt>
+						</View>
+					</Pressable>
+					<Pressable
+						onPress={signOut}
+						accessibilityRole="button"
+						accessibilityLabel="Sign out"
+						hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+					>
+						<Feather name="log-out" size={15} color={colors.sidebarDim} />
+					</Pressable>
+				</View>
 			</View>
 		</View>
 	);
@@ -516,6 +532,7 @@ function MoreSheet({
 				>
 					<Avatar
 						initials={userName ? initialsOf(userName) : '–'}
+						imageUrl={session?.user.avatarUrl}
 						size={32}
 						background={colors.avatarBg}
 						color={colors.avatarText}
@@ -625,6 +642,12 @@ const styles = StyleSheet.create({
 		paddingVertical: 8,
 		paddingHorizontal: 8,
 		borderRadius: radii.md,
+	},
+	userIdentity: {
+		flex: 1,
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 12,
 	},
 	userName: {
 		fontFamily: font.semibold,

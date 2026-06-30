@@ -49,22 +49,48 @@ export interface NewUser {
 	name: string;
 }
 
+/**
+ * Editable profile fields for the signed-in user. Every field is optional so a
+ * partial update only touches what the caller sent. `email` is the live sign-in
+ * address (only set once a change is verified); `pendingEmail` holds an address
+ * awaiting confirmation (set to `''` to clear it). `avatarUrl` is the custom
+ * image override; set to `''` to clear it back to the Gravatar default.
+ */
+export interface UpdateUser {
+	name?: string;
+	email?: string;
+	phone?: string;
+	pendingEmail?: string;
+	avatarUrl?: string;
+}
+
 export interface UserRepository {
 	create(input: NewUser): Promise<StoredUser>;
 	findByEmail(email: string): Promise<StoredUser | null>;
 	findById(id: UserId): Promise<StoredUser | null>;
 	/** Fetch many users in one query (the order of the result is not guaranteed). */
 	findByIds(ids: UserId[]): Promise<StoredUser[]>;
+	/**
+	 * Apply a partial profile update; returns the updated user or null when the id
+	 * is unknown. Throws {@link ConflictError} on `email` if another user already
+	 * owns the address being moved to.
+	 */
+	update(id: UserId, input: UpdateUser): Promise<StoredUser | null>;
 }
 
 // --- Passwordless verification codes -----------------------------------------
 
-export type VerificationPurpose = 'login' | 'signup';
+export type VerificationPurpose = 'login' | 'signup' | 'email_change';
 
 /** Account details captured at signup, stashed on the code until it's verified. */
 export interface PendingSignup {
 	name: string;
 	business: AccountBusinessInput;
+}
+
+/** Who an `email_change` code belongs to, so only that user can redeem it. */
+export interface PendingEmailChange {
+	userId: UserId;
 }
 
 export interface NewVerificationCode {
@@ -76,6 +102,8 @@ export interface NewVerificationCode {
 	expiresAt: string;
 	/** Present for `signup` codes; carries the account to create on verification. */
 	signup?: PendingSignup;
+	/** Present for `email_change` codes; identifies the user moving addresses. */
+	emailChange?: PendingEmailChange;
 }
 
 export interface StoredVerificationCode extends NewVerificationCode {

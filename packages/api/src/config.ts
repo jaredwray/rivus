@@ -5,6 +5,17 @@ const DEV_JWT_SECRET = 'dev-secret-change-me';
 const envSchema = z
 	.object({
 		NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+		// Which deployed Rivus environment this container is — `development`
+		// (dev-api.rivus.ai) or `production` (api.rivus.ai). It's distinct from
+		// NODE_ENV on purpose: both deployed containers run NODE_ENV=production, so
+		// this is the only signal that tells the dev deployment apart from prod. It
+		// gates the staff-only account seeder (`POST /v1/admin/seed`), which must
+		// exist on the dev deployment but never in production. Forwarded from the
+		// front-door Worker's `vars` (see worker/index.ts + wrangler.jsonc); unset in
+		// local development, where NODE_ENV=development already enables the seeder.
+		// Kept a free string (not an enum) so an unexpected value never blocks boot —
+		// the seeder gate matches `development` exactly, so anything else fails safe.
+		RIVUS_ENV: z.string().optional(),
 		API_HOST: z.string().default('0.0.0.0'),
 		API_PORT: z.coerce.number().int().positive().max(65535).default(4000),
 		MONGODB_URI: z
@@ -87,6 +98,21 @@ export type Config = z.infer<typeof envSchema>;
 /** Parse and validate process environment into a typed config object. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 	return envSchema.parse(env);
+}
+
+/**
+ * Whether the development-only account seeder route (`POST /v1/admin/seed`)
+ * should be registered. The route is always additionally gated to Rivus staff.
+ *
+ * It must exist on a local dev API (`NODE_ENV=development`) and on the deployed
+ * Rivus *development* environment — where the container runs NODE_ENV=production
+ * just like prod, so `RIVUS_ENV=development` is what distinguishes it. Enabled
+ * when either signal says development; deliberately off in production, including
+ * the fail-safe case where `RIVUS_ENV` is unset or unexpected (then only a local
+ * `NODE_ENV=development` can turn it on, never a production container).
+ */
+export function isSeedingEnabled(config: Pick<Config, 'NODE_ENV' | 'RIVUS_ENV'>): boolean {
+	return config.RIVUS_ENV === 'development' || config.NODE_ENV === 'development';
 }
 
 /** What `@fastify/cors` accepts for its `origin` option. */

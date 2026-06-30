@@ -1,4 +1,4 @@
-import type { Role } from '@rivus/core';
+import { gravatarUrl, type Role } from '@rivus/core';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { authHeader, buildTestApp, RecordingMailer, signupOwner } from './helpers';
@@ -53,6 +53,39 @@ describe('members', () => {
 		expect(body.members).toHaveLength(1);
 		expect(body.members[0]).toMatchObject({ userId: owner.user.id, role: 'owner' });
 		expect(body.invites).toEqual([]);
+	});
+
+	it("defaults a member's roster avatar to their Gravatar", async () => {
+		const owner = await signupOwner(app);
+		const response = await app.inject({
+			method: 'GET',
+			url: '/v1/members',
+			headers: authHeader(owner.token),
+		});
+
+		expect(response.json().members[0].avatarUrl).toBe(gravatarUrl(owner.credentials.email));
+	});
+
+	it("reflects a member's custom avatar in the roster", async () => {
+		const owner = await signupOwner(app);
+		const teammate = await addMember(owner.token, 'member', 'teammate@example.com');
+		await app.inject({
+			method: 'PATCH',
+			url: '/v1/auth/me',
+			headers: authHeader(teammate.token),
+			payload: { avatarUrl: 'https://example.com/teammate.jpg' },
+		});
+
+		const response = await app.inject({
+			method: 'GET',
+			url: '/v1/members',
+			headers: authHeader(owner.token),
+		});
+
+		const member = response
+			.json()
+			.members.find((m: { userId: string }) => m.userId === teammate.userId);
+		expect(member.avatarUrl).toBe('https://example.com/teammate.jpg');
 	});
 
 	it('lets an owner invite a manager and shows the pending invite', async () => {

@@ -171,8 +171,10 @@ A single dashboard metric.
 
 ### Avatar
 
-- **Props:** `initials` · `size`
-- Circular (`999px`), shows 2-letter initials (e.g. "MT", "PA").
+- **Props:** `initials` · `imageUrl` (optional) · `size`
+- Circular (`999px`). Shows `imageUrl` when given (e.g. a user's Gravatar);
+  falls back to 2-letter initials (e.g. "MT", "PA") when there's no image, or
+  it fails to load.
 
 ### Buttons
 

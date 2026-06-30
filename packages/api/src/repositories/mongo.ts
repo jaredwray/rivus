@@ -92,6 +92,7 @@ import type {
 	StoredUser,
 	StoredVerificationCode,
 	UpdateAccount,
+	UpdateUser,
 	UserRepository,
 	VerificationCodeRepository,
 } from './types';
@@ -108,6 +109,10 @@ function mapUser(doc: HydratedDocument<UserDocument>): StoredUser {
 		id: doc._id.toString() as UserId,
 		email: doc.email,
 		name: doc.name,
+		// `?? ''` keeps users created before these fields existed mapping cleanly.
+		phone: doc.phone ?? '',
+		pendingEmail: doc.pendingEmail ?? '',
+		avatarUrl: doc.avatarUrl ?? '',
 		createdAt: doc.createdAt.toISOString(),
 		updatedAt: doc.updatedAt.toISOString(),
 	};
@@ -124,6 +129,7 @@ function mapVerificationCode(
 		expiresAt: doc.expiresAt.toISOString(),
 		attempts: doc.attempts,
 		signup: doc.signup,
+		emailChange: doc.emailChange,
 		createdAt: doc.createdAt.toISOString(),
 	};
 }
@@ -313,6 +319,40 @@ export class MongoUserRepository implements UserRepository {
 		}
 		const docs = await UserModel.find({ _id: { $in: objectIds } }).exec();
 		return docs.map(mapUser);
+	}
+
+	async update(id: UserId, input: UpdateUser): Promise<StoredUser | null> {
+		if (!Types.ObjectId.isValid(id)) {
+			return null;
+		}
+		// `$set` only the provided keys, so a partial update never blanks a field.
+		const set: Record<string, string> = {};
+		if (input.name !== undefined) {
+			set.name = input.name;
+		}
+		if (input.email !== undefined) {
+			set.email = input.email.trim().toLowerCase();
+		}
+		if (input.phone !== undefined) {
+			set.phone = input.phone;
+		}
+		if (input.pendingEmail !== undefined) {
+			set.pendingEmail = input.pendingEmail.trim().toLowerCase();
+		}
+		if (input.avatarUrl !== undefined) {
+			set.avatarUrl = input.avatarUrl.trim();
+		}
+		try {
+			const doc = await UserModel.findByIdAndUpdate(id, { $set: set }, { new: true }).exec();
+			return doc ? mapUser(doc) : null;
+		} catch (error) {
+			// The unique index on `email` rejects a change that collides with another
+			// user, mirroring `create`.
+			if (isDuplicateKeyError(error)) {
+				throw new ConflictError('email', 'An account with this email already exists');
+			}
+			throw error;
+		}
 	}
 }
 
@@ -605,15 +645,26 @@ export class MongoVerificationCodeRepository implements VerificationCodeReposito
 		// A single atomic upsert (not delete-then-create) so two overlapping code
 		// requests for the same email can't both delete then collide on the unique
 		// index. Resets the attempt counter; clears any stale signup payload.
-		const set = {
+		const set: Record<string, unknown> = {
 			purpose: input.purpose,
 			codeHash: input.codeHash,
 			expiresAt: new Date(input.expiresAt),
 			attempts: 0,
 		};
-		const update = input.signup
-			? { $set: { ...set, signup: input.signup } }
-			: { $set: set, $unset: { signup: '' } };
+		// Each optional payload is either set or cleared, so a reused row never carries
+		// a stale signup/email-change from a previous request for the same address.
+		const unset: Record<string, ''> = {};
+		if (input.signup) {
+			set.signup = input.signup;
+		} else {
+			unset.signup = '';
+		}
+		if (input.emailChange) {
+			set.emailChange = input.emailChange;
+		} else {
+			unset.emailChange = '';
+		}
+		const update = Object.keys(unset).length > 0 ? { $set: set, $unset: unset } : { $set: set };
 		const doc = await VerificationCodeModel.findOneAndUpdate({ email }, update, {
 			upsert: true,
 			new: true,

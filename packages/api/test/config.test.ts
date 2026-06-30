@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadConfig, parseCorsOrigin } from '../src/config';
+import { isSeedingEnabled, loadConfig, parseCorsOrigin } from '../src/config';
 
 describe('loadConfig', () => {
 	it('applies development defaults', () => {
@@ -43,6 +43,29 @@ describe('loadConfig', () => {
 		} as NodeJS.ProcessEnv);
 		expect(config.NODE_ENV).toBe('production');
 		expect(config.RESEND_API_KEY).toBe('re_live_xxx');
+	});
+});
+
+describe('isSeedingEnabled', () => {
+	it('is enabled on a local dev API (NODE_ENV=development), RIVUS_ENV unset', () => {
+		expect(isSeedingEnabled({ NODE_ENV: 'development' })).toBe(true);
+	});
+
+	it('is enabled on the deployed development environment (RIVUS_ENV) despite NODE_ENV=production', () => {
+		expect(isSeedingEnabled({ NODE_ENV: 'production', RIVUS_ENV: 'development' })).toBe(true);
+	});
+
+	it('is disabled in production (RIVUS_ENV=production)', () => {
+		expect(isSeedingEnabled({ NODE_ENV: 'production', RIVUS_ENV: 'production' })).toBe(false);
+	});
+
+	it('fails safe (off) for a production container with RIVUS_ENV unset or unexpected', () => {
+		expect(isSeedingEnabled({ NODE_ENV: 'production', RIVUS_ENV: undefined })).toBe(false);
+		expect(isSeedingEnabled({ NODE_ENV: 'production', RIVUS_ENV: 'staging' })).toBe(false);
+	});
+
+	it('is disabled under NODE_ENV=test with no RIVUS_ENV (the default test app)', () => {
+		expect(isSeedingEnabled({ NODE_ENV: 'test', RIVUS_ENV: undefined })).toBe(false);
 	});
 });
 

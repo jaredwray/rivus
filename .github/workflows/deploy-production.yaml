@@ -82,6 +82,9 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       # Crawlable: emits an allow-all robots.txt for the production app.
       RIVUS_ENV: production
+      # Inlined into the Expo web bundle; the explicit `production` value keeps the
+      # staff-only account seeder out of the production app (it never renders).
+      EXPO_PUBLIC_RIVUS_ENV: production
       # Baked into the Expo web bundle at export time.
       EXPO_PUBLIC_API_URL: https://api.rivus.ai
       # The deployed app talks to the deployed agent.

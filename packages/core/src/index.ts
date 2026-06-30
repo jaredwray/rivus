@@ -1,3 +1,4 @@
+export * from './gravatar';
 export * from './pagination';
 export * from './regex';
 export * from './schemas';
