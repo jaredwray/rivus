@@ -88,6 +88,11 @@ describe('renderVerificationEmail', () => {
 		const { text } = renderVerificationEmail({ ...code, purpose: 'signup' });
 		expect(text).toContain('finish creating your Rivus account');
 	});
+
+	it('uses email-change wording for an email_change code', () => {
+		const { text } = renderVerificationEmail({ ...code, purpose: 'email_change' });
+		expect(text).toContain('confirm your new Rivus email address');
+	});
 });
 
 describe('NoopMailer', () => {

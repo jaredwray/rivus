@@ -230,6 +230,8 @@ describe('handleChat', () => {
 							id: 'user_1',
 							email: 'owner@acme.example',
 							name: 'Pat',
+							phone: '',
+							pendingEmail: '',
 							createdAt: account.createdAt,
 							updatedAt: account.updatedAt,
 						},

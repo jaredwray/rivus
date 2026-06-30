@@ -23,6 +23,15 @@ export interface User {
 	id: UserId;
 	email: string;
 	name: string;
+	/** Personal contact phone; empty string when not provided. */
+	phone: string;
+	/**
+	 * A new email address awaiting confirmation, or `''` when none is pending.
+	 * Changing your email doesn't take effect until you verify a one-time code
+	 * sent to the new address — until then the live `email` is unchanged and this
+	 * holds the address being moved to.
+	 */
+	pendingEmail: string;
 	createdAt: IsoDateString;
 	updatedAt: IsoDateString;
 }
