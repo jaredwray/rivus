@@ -16,8 +16,6 @@ import {
 	seedSummaryResponseSchema,
 } from '../http-schemas';
 import { toPublicAccount, toPublicUser } from '../presenters';
-import { createSeedGenerator, DeterministicSeedGenerator } from '../seed-ai';
-import { seedAccountData } from '../services/seed';
 import { issueSession } from '../services/session';
 
 /** List query: standard pagination plus an optional free-text company search. */
@@ -124,6 +122,13 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
 	// conversations so staff can populate a fresh test account from the app's
 	// Settings screen without touching the CLI.
 	if (app.deps.config.NODE_ENV === 'development') {
+		// Lazy-load the seeder so its dev-only `@faker-js/faker` dependency (and the AI
+		// generation machinery) is split into a chunk loaded only here, in development —
+		// never pulled into the production startup bundle, where faker isn't a runtime
+		// dependency. `adminRoutes` is async, so awaiting an import during registration
+		// is fine.
+		const [{ createSeedGenerator, DeterministicSeedGenerator }, { seedAccountData }] =
+			await Promise.all([import('../seed-ai'), import('../services/seed')]);
 		const { customers, faqs, jobs, notifications, conversations } = app.deps;
 		app.post(
 			'/seed',
