@@ -67,6 +67,8 @@ function sessionBody(account = makeAccount()) {
 			id: 'user_1',
 			email: 'owner@acme.example',
 			name: 'Pat Owner',
+			phone: '',
+			pendingEmail: '',
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-01T00:00:00.000Z',
 		},

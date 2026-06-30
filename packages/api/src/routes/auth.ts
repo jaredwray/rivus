@@ -1,10 +1,13 @@
 import {
 	type AccountId,
 	acceptInviteSchema,
+	isRivusStaffEmail,
 	loginSchema,
 	signupSchema,
 	type UserId,
+	updateProfileSchema,
 	verifyCodeSchema,
+	verifyEmailChangeSchema,
 } from '@rivus/core';
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
@@ -14,11 +17,18 @@ import {
 	errorResponseSchema,
 	sessionResponseSchema,
 	signedOutResponseSchema,
+	userResponseSchema,
 } from '../http-schemas';
 import { SESSION_COOKIE, sessionCookieOptions } from '../plugins/auth';
 import { toPublicAccount, toPublicUser } from '../presenters';
 import { ConflictError } from '../repositories/errors';
-import type { PendingSignup, SignupResult, VerificationPurpose } from '../repositories/types';
+import type {
+	PendingEmailChange,
+	PendingSignup,
+	SignupResult,
+	UpdateUser,
+	VerificationPurpose,
+} from '../repositories/types';
 import { generateUniqueSlug } from '../services/accounts';
 import { hashSecret, verifySecret } from '../services/hash';
 import { issueSession } from '../services/session';
@@ -57,11 +67,18 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 		request: FastifyRequest,
 		email: string,
 		purpose: VerificationPurpose,
-		signup?: PendingSignup,
+		payload: { signup?: PendingSignup; emailChange?: PendingEmailChange } = {},
 	): Promise<void> {
 		const code = generateVerificationCode();
 		const codeHash = await hashSecret(code);
-		await verificationCodes.upsert({ email, purpose, codeHash, expiresAt: codeExpiry(), signup });
+		await verificationCodes.upsert({
+			email,
+			purpose,
+			codeHash,
+			expiresAt: codeExpiry(),
+			signup: payload.signup,
+			emailChange: payload.emailChange,
+		});
 		deliverCode(request, email, code, purpose);
 	}
 
@@ -120,7 +137,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 			if (await users.findByEmail(email)) {
 				throw app.httpErrors.conflict('A user with this email already exists');
 			}
-			await issueCode(request, email, 'signup', { name, business });
+			await issueCode(request, email, 'signup', { signup: { name, business } });
 			return reply.code(202).send({ status: 'code_sent', email });
 		},
 	);
@@ -170,6 +187,15 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 			const { email, code } = request.body;
 			const record = await verificationCodes.findByEmail(email);
 			if (!record || new Date(record.expiresAt).getTime() < Date.now()) {
+				throw app.httpErrors.unauthorized('Invalid or expired code');
+			}
+			// This public endpoint only consumes login and signup codes. An `email_change`
+			// code lives in the same email-keyed store but is confirmed via the
+			// authenticated `POST /me/email/verify`; reject it here *before* the attempt
+			// counter is bumped or the code is deleted, so a sign-in attempt at the pending
+			// address (a stranger guessing, or the owner entering the code on the wrong
+			// screen) can't burn the budget or consume the pending change.
+			if (record.purpose !== 'login' && record.purpose !== 'signup') {
 				throw app.httpErrors.unauthorized('Invalid or expired code');
 			}
 			// Fast path: a code whose budget is already spent is locked until it expires.
@@ -261,6 +287,176 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 				account: toPublicAccount(account),
 				role: request.user.role,
 			};
+		},
+	);
+
+	app.patch(
+		'/me',
+		{
+			onRequest: [fastify.authenticate],
+			schema: {
+				tags: ['auth'],
+				summary: 'Update your profile (name, phone, email). Changing email re-verifies it',
+				security: [{ bearerAuth: [] }],
+				body: updateProfileSchema,
+				response: {
+					200: userResponseSchema,
+					400: errorResponseSchema,
+					401: errorResponseSchema,
+					403: errorResponseSchema,
+					409: errorResponseSchema,
+				},
+			},
+		},
+		async (request) => {
+			const userId = request.user.sub as UserId;
+			const current = await users.findById(userId);
+			if (!current) {
+				throw app.httpErrors.unauthorized('Account no longer exists');
+			}
+
+			const { name, email, phone } = request.body;
+			const patch: UpdateUser = {};
+			if (name !== undefined) {
+				patch.name = name;
+			}
+			if (phone !== undefined) {
+				patch.phone = phone;
+			}
+
+			// A new email isn't applied here — it's staged on `pendingEmail` and becomes
+			// the live address only once the code we email confirms it (see
+			// `POST /me/email/verify`). Comparing against the live email (both normalized)
+			// means re-submitting the same pending address just resends the code, and
+			// submitting your current email is a no-op.
+			let pendingChange: string | null = null;
+			if (email !== undefined && email !== current.email) {
+				// Staff status is derived solely from the email domain (`isRivusStaffEmail`),
+				// so a self-service email change must never cross the staff boundary: moving
+				// *to* the staff domain would self-elevate a regular user, and moving a staff
+				// member *off* it would leave their other still-valid sessions carrying a
+				// stale staff email claim until those tokens expire. Either direction is
+				// refused here — staff email changes go through an administrator instead.
+				if (isRivusStaffEmail(email) || isRivusStaffEmail(current.email)) {
+					throw app.httpErrors.forbidden(
+						'Rivus staff email addresses must be changed by an administrator.',
+					);
+				}
+				const existing = await users.findByEmail(email);
+				if (existing && existing.id !== userId) {
+					throw app.httpErrors.conflict('A user with this email already exists');
+				}
+				patch.pendingEmail = email;
+				pendingChange = email;
+			}
+
+			const updated = Object.keys(patch).length > 0 ? await users.update(userId, patch) : current;
+			if (!updated) {
+				throw app.httpErrors.unauthorized('Account no longer exists');
+			}
+
+			// Deliver the confirmation code only after the pending address is persisted,
+			// so a live code never points at a change we failed to save.
+			if (pendingChange) {
+				await issueCode(request, pendingChange, 'email_change', {
+					emailChange: { userId },
+				});
+			}
+			return toPublicUser(updated);
+		},
+	);
+
+	app.post(
+		'/me/email/verify',
+		{
+			onRequest: [fastify.authenticate],
+			schema: {
+				tags: ['auth'],
+				summary: 'Confirm a pending email change with its one-time code',
+				security: [{ bearerAuth: [] }],
+				body: verifyEmailChangeSchema,
+				response: {
+					200: authResponseSchema,
+					400: errorResponseSchema,
+					401: errorResponseSchema,
+					409: errorResponseSchema,
+					429: errorResponseSchema,
+				},
+			},
+		},
+		async (request, reply) => {
+			const userId = request.user.sub as UserId;
+			const user = await users.findById(userId);
+			if (!user) {
+				throw app.httpErrors.unauthorized('Account no longer exists');
+			}
+			if (!user.pendingEmail) {
+				throw app.httpErrors.badRequest('No email change is pending');
+			}
+
+			const { code } = request.body;
+			const newEmail = user.pendingEmail;
+			const record = await verificationCodes.findByEmail(newEmail);
+			// The code must exist, be an email-change code minted for *this* user, and be
+			// unexpired — otherwise it's treated exactly like a bad code.
+			if (
+				record?.purpose !== 'email_change' ||
+				record.emailChange?.userId !== userId ||
+				new Date(record.expiresAt).getTime() < Date.now()
+			) {
+				throw app.httpErrors.unauthorized('Invalid or expired code');
+			}
+			// Same attempt budget as `/verify`: a spent code is locked until it expires,
+			// and the attempt is reserved with an atomic increment *before* the slow
+			// scrypt compare so concurrent requests can't brute-force the 6-digit code.
+			if (record.attempts >= MAX_VERIFICATION_ATTEMPTS) {
+				throw app.httpErrors.tooManyRequests('Too many incorrect attempts — request a new code');
+			}
+			if ((await verificationCodes.incrementAttempts(newEmail)) > MAX_VERIFICATION_ATTEMPTS) {
+				throw app.httpErrors.tooManyRequests('Too many incorrect attempts — request a new code');
+			}
+			if (!(await verifySecret(code, record.codeHash))) {
+				throw app.httpErrors.unauthorized('Invalid or expired code');
+			}
+			// Claim the code atomically so it can't be redeemed twice.
+			if (!(await verificationCodes.delete(newEmail))) {
+				throw app.httpErrors.unauthorized('Invalid or expired code');
+			}
+
+			// Apply the change. Uniqueness is re-checked here because the address could
+			// have been claimed in the window since the change was requested.
+			let updated: Awaited<ReturnType<typeof users.update>>;
+			try {
+				updated = await users.update(userId, { email: newEmail, pendingEmail: '' });
+			} catch (error) {
+				if (error instanceof ConflictError) {
+					throw app.httpErrors.conflict('A user with this email already exists');
+				}
+				throw error;
+			}
+			if (!updated) {
+				throw app.httpErrors.unauthorized('Account no longer exists');
+			}
+
+			// Re-issue the session so the JWT (and the web cookie) carry the new email —
+			// the previous token still embeds the old address. Mirrors the login path.
+			const membership = await memberships.findByUserId(userId);
+			const account = membership ? await accounts.findById(membership.accountId) : null;
+			if (!membership || !account) {
+				throw app.httpErrors.unauthorized('Account no longer exists');
+			}
+			const token = await issueSession(app, reply, {
+				sub: updated.id,
+				email: updated.email,
+				accountId: account.id,
+				role: membership.role,
+			});
+			return reply.send({
+				token,
+				user: toPublicUser(updated),
+				account: toPublicAccount(account),
+				role: membership.role,
+			});
 		},
 	);
 
