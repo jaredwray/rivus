@@ -386,7 +386,7 @@
                   },
                   "avatarUrl": {
                     "type": "string",
-                    "maxLength": 2000000
+                    "maxLength": 900000
                   }
                 }
               }

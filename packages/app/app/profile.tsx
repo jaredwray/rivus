@@ -1,5 +1,4 @@
 import { gravatarUrl, type UpdateProfileInput } from '@rivus/core';
-import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
@@ -17,9 +16,6 @@ import {
 	Txt,
 } from '@/src/components/ui';
 import { colors, font } from '@/src/theme/tokens';
-
-/** The longest edge an uploaded photo is resized to before it's saved. */
-const AVATAR_EDGE = 512;
 
 function messageFor(error: unknown, fallback: string): string {
 	if (error instanceof ApiError || error instanceof Error) {
@@ -149,9 +145,12 @@ export default function ProfileScreen() {
 	}
 
 	/**
-	 * Pick a photo from the device, resize it to a small square, and save it as
-	 * the profile's custom avatar (replacing the "no Gravatar" state immediately,
-	 * rather than waiting for the "Save changes" button below).
+	 * Pick a photo from the device and save it as the profile's custom avatar
+	 * (replacing the "no Gravatar" state immediately, rather than waiting for the
+	 * "Save changes" button below). Cropping (square) and compression happen in
+	 * the picker itself — `expo-image-manipulator`'s `ImageManipulator.manipulate`
+	 * crashes on iOS with the SDK versions this app is on
+	 * (https://github.com/expo/expo/issues/47327), so this deliberately avoids it.
 	 */
 	async function pickAndUploadPhoto() {
 		if (uploadingPhoto) {
@@ -168,30 +167,18 @@ export default function ProfileScreen() {
 				mediaTypes: ['images'],
 				allowsEditing: true,
 				aspect: [1, 1],
-				quality: 0.8,
+				quality: 0.5,
+				base64: true,
 			});
 			if (picked.canceled) {
 				return;
 			}
 			const asset = picked.assets[0];
-			if (!asset) {
+			if (!asset?.base64) {
 				return;
 			}
 			setUploadingPhoto(true);
-			// Bound whichever dimension is larger so a non-square pick (the web picker
-			// has no crop step) can't leave the other dimension unbounded.
-			const resizeTo =
-				asset.width >= asset.height ? { width: AVATAR_EDGE } : { height: AVATAR_EDGE };
-			const rendered = await ImageManipulator.manipulate(asset.uri).resize(resizeTo).renderAsync();
-			const saved = await rendered.saveAsync({
-				compress: 0.7,
-				format: SaveFormat.JPEG,
-				base64: true,
-			});
-			if (!saved.base64) {
-				throw new Error('Could not process that photo.');
-			}
-			await updateProfile({ avatarUrl: `data:image/jpeg;base64,${saved.base64}` });
+			await updateProfile({ avatarUrl: `data:image/jpeg;base64,${asset.base64}` });
 		} catch (caught) {
 			setAvatarError(messageFor(caught, 'Could not upload that photo.'));
 		} finally {

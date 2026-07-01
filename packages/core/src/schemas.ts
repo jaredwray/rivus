@@ -124,10 +124,11 @@ export const websiteSchema = z
 // or a `data:` URI of any other MIME type, so the scheme is checked explicitly.
 const AVATAR_HTTP_URL = /^https?:\/\//i;
 const AVATAR_DATA_URL = /^data:image\/(png|jpe?g|webp);base64,[a-z0-9+/]+=*$/i;
-// The app resizes and compresses an uploaded photo to a small square before this
-// is ever hit, so ~1.5MB decoded (comfortably more than that needs) still bounds
-// the field rather than leaving it unlimited.
-const MAX_AVATAR_LENGTH = 2_000_000;
+// Comfortably covers a compressed square avatar photo as base64 (~675KB decoded)
+// while staying under Fastify's default 1MiB (1,048,576-byte) request body limit
+// — a value any closer to that limit risks the request being rejected at the
+// body-parsing layer (a raw 413) before this schema ever gets to say why.
+const MAX_AVATAR_LENGTH = 900_000;
 
 /**
  * A custom profile-image URL — a hosted `https://…` link, or a photo uploaded

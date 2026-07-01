@@ -22,7 +22,9 @@
 			[
 				"expo-image-picker",
 				{
-					"photosPermission": "Allow Rivus to access your photos so you can upload a profile picture."
+					"photosPermission": "Allow Rivus to access your photos so you can upload a profile picture.",
+					"cameraPermission": false,
+					"microphonePermission": false
 				}
 			]
 		],

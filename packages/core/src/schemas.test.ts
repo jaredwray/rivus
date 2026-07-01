@@ -300,7 +300,7 @@ describe('updateProfileSchema', () => {
 	});
 
 	it('rejects an avatar payload over the size cap', () => {
-		const huge = `data:image/jpeg;base64,${'A'.repeat(2_000_001)}`;
+		const huge = `data:image/jpeg;base64,${'A'.repeat(900_001)}`;
 		expect(() => updateProfileSchema.parse({ avatarUrl: huge })).toThrow();
 	});
 
