@@ -60,7 +60,7 @@ const NAV: NavItem[] = [
 	{ href: '/marketing', label: 'Marketing', icon: 'trending-up' },
 	{ href: '/knowledge', label: 'Knowledge', icon: 'book' },
 	{ href: '/team', label: 'Team', icon: 'user-check' },
-	{ href: '/profile', label: 'Profile', icon: 'user' },
+	{ href: '/profile', label: 'My Profile', icon: 'user' },
 	{ href: '/settings', label: 'Settings', icon: 'settings', ownerOnly: true },
 ];
 
