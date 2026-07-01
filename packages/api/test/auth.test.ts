@@ -696,6 +696,34 @@ describe('profile avatar (PATCH /v1/auth/me)', () => {
 		expect(response.statusCode).toBe(400);
 	});
 
+	it('accepts a photo uploaded from the app, encoded as a data: URI', async () => {
+		const { token } = await signupOwner(app);
+		const dataUrl = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wA=';
+
+		const response = await app.inject({
+			method: 'PATCH',
+			url: '/v1/auth/me',
+			headers: authHeader(token),
+			payload: { avatarUrl: dataUrl },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json().avatarUrl).toBe(dataUrl);
+	});
+
+	it('rejects a non-http(s) scheme even though it looks URL-shaped (400)', async () => {
+		const { token } = await signupOwner(app);
+
+		const response = await app.inject({
+			method: 'PATCH',
+			url: '/v1/auth/me',
+			headers: authHeader(token),
+			payload: { avatarUrl: 'javascript:alert(1)' },
+		});
+
+		expect(response.statusCode).toBe(400);
+	});
+
 	it('lets a non-owner member edit their own avatar (not owner-gated)', async () => {
 		const owner = await signupOwner(app);
 		const member = await addMember(app, owner.token, 'member', 'teammate@example.com');
