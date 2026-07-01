@@ -14,6 +14,7 @@ import {
 	Txt,
 } from '@/src/components/ui';
 import { colors, font } from '@/src/theme/tokens';
+import { useDocumentTitle } from '@/src/theme/useDocumentTitle';
 
 function messageFor(error: unknown, fallback: string): string {
 	if (error instanceof ApiError || error instanceof Error) {
@@ -32,6 +33,7 @@ function messageFor(error: unknown, fallback: string): string {
  * pending, a second card collects the code (with a resend).
  */
 export default function ProfileScreen() {
+	useDocumentTitle('Profile');
 	const { session, updateProfile, verifyEmailChange } = useAuth();
 	const user = session?.user;
 

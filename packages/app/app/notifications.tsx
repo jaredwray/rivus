@@ -4,8 +4,10 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { Card, Txt } from '@/src/components/ui';
 import { NotificationsView } from '@/src/notifications/NotificationsView';
 import { colors, font } from '@/src/theme/tokens';
+import { useDocumentTitle } from '@/src/theme/useDocumentTitle';
 
 export default function NotificationsScreen() {
+	useDocumentTitle('Notifications');
 	const router = useRouter();
 	const { session } = useAuth();
 

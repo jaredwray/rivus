@@ -23,6 +23,7 @@ import {
 	Txt,
 } from '@/src/components/ui';
 import { colors, font } from '@/src/theme/tokens';
+import { useDocumentTitle } from '@/src/theme/useDocumentTitle';
 
 const PLAN_LABELS: Record<Billing['plan'], string> = {
 	free: 'Free',
@@ -101,6 +102,7 @@ function DevSeedCard() {
 }
 
 export default function SettingsScreen() {
+	useDocumentTitle('Settings');
 	const { session, client, updateAccount, cancelAccount } = useAuth();
 	const account = session?.account;
 	const isOwner = session?.role === 'owner';

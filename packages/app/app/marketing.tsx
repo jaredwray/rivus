@@ -2,6 +2,7 @@ import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 're
 import { BrandGradient } from '@/src/components/Gradient';
 import { Card, Icon, RivusStatusChip, Txt } from '@/src/components/ui';
 import { colors, font, radii, SIDEBAR_BREAKPOINT } from '@/src/theme/tokens';
+import { useDocumentTitle } from '@/src/theme/useDocumentTitle';
 
 // Height of the mini bar charts. Bars use absolute px (not %) so they render
 // reliably on native, matching the pattern on the Home screen.
@@ -48,6 +49,7 @@ const ads: Ad[] = [
 ];
 
 export default function MarketingScreen() {
+	useDocumentTitle('Marketing');
 	// Below the sidebar breakpoint the cards stack full-width so their minWidths
 	// can't force the page past a phone viewport.
 	const { width } = useWindowDimensions();

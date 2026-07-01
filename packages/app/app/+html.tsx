@@ -22,6 +22,10 @@ export default function Root({ children }: PropsWithChildren) {
 					content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover"
 				/>
 
+				{/* Default tab title — overridden per screen by useDocumentTitle once it
+				    mounts, but this covers the initial paint and any screen that doesn't. */}
+				<title>Rivus</title>
+
 				{/* Browser tab + address-bar theming. */}
 				<meta name="theme-color" content="#6e1ec8" />
 				<meta name="application-name" content="Rivus" />
