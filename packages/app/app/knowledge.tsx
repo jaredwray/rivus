@@ -17,6 +17,7 @@ import {
 	Txt,
 } from '@/src/components/ui';
 import { colors, font, radii } from '@/src/theme/tokens';
+import { useDocumentTitle } from '@/src/theme/useDocumentTitle';
 
 const STATUS_OPTIONS: { label: string; value: FaqStatus }[] = [
 	{ label: 'Published', value: 'published' },
@@ -24,6 +25,7 @@ const STATUS_OPTIONS: { label: string; value: FaqStatus }[] = [
 ];
 
 export default function KnowledgeScreen() {
+	useDocumentTitle('Knowledge');
 	const { session, client } = useAuth();
 
 	const [list, setList] = useState<Faq[]>([]);

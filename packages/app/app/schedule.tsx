@@ -54,6 +54,7 @@ import {
 } from '@/src/schedule/datetime';
 import { defaultScheduleView, type ScheduleView } from '@/src/schedule/view';
 import { colors, font, radii, SIDEBAR_BREAKPOINT, SIDEBAR_WIDTH } from '@/src/theme/tokens';
+import { useDocumentTitle } from '@/src/theme/useDocumentTitle';
 
 const GUTTER = 58;
 const MIN_DAY_WIDTH = 132;
@@ -116,6 +117,7 @@ function centsToInput(cents: number): string {
 }
 
 export default function ScheduleScreen() {
+	useDocumentTitle('Schedule');
 	const { session, client } = useAuth();
 	const { width, height } = useWindowDimensions();
 	const sidebar = width >= SIDEBAR_BREAKPOINT ? SIDEBAR_WIDTH : 0;

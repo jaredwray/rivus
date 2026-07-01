@@ -30,6 +30,7 @@ import {
 } from '@/src/components/ui';
 import { useInbox } from '@/src/inbox/InboxContext';
 import { colors, font, radii } from '@/src/theme/tokens';
+import { useDocumentTitle } from '@/src/theme/useDocumentTitle';
 
 type ConversationChannel = Conversation['channel'];
 
@@ -102,6 +103,7 @@ function byActivity(a: Conversation, b: Conversation): number {
 }
 
 export default function InboxScreen() {
+	useDocumentTitle('Inbox');
 	const { session, client } = useAuth();
 	const inbox = useInbox();
 	const { width } = useWindowDimensions();
