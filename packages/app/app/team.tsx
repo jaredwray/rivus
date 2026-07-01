@@ -20,6 +20,7 @@ import {
 	Txt,
 } from '@/src/components/ui';
 import { colors, font } from '@/src/theme/tokens';
+import { useDocumentTitle } from '@/src/theme/useDocumentTitle';
 
 function rolePillColors(role: Role): { color: string; background: string } {
 	if (role === 'owner') {
@@ -32,6 +33,7 @@ function rolePillColors(role: Role): { color: string; background: string } {
 }
 
 export default function TeamScreen() {
+	useDocumentTitle('Team');
 	const { session, client } = useAuth();
 	const canInvite = session?.role === 'owner' || session?.role === 'manager';
 	// Owners may grant any role; managers may only add Members.

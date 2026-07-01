@@ -7,26 +7,30 @@ import { deviceTimezone, listTimezones } from '@/src/api/timezones';
 import { AddressAutocomplete } from '@/src/components/AddressAutocomplete';
 import { GradientButton, RivusBadge, Select, TextField, Txt } from '@/src/components/ui';
 import { colors, font, radii } from '@/src/theme/tokens';
+import { useDocumentTitle } from '@/src/theme/useDocumentTitle';
 import { useAuth } from './AuthContext';
 
 type Mode = 'signup' | 'signin' | 'invite';
 type Step = 'form' | 'code';
 
-const COPY: Record<Mode, { title: string; subtitle: string; submit: string }> = {
+const COPY: Record<Mode, { title: string; subtitle: string; submit: string; tabTitle: string }> = {
 	signup: {
 		title: 'Create your business account',
 		subtitle: 'Set up Rivus for your business in under a minute.',
 		submit: 'Create account',
+		tabTitle: 'Sign up',
 	},
 	signin: {
 		title: 'Welcome back',
 		subtitle: 'Enter your email and we’ll send you a sign-in code.',
 		submit: 'Send code',
+		tabTitle: 'Sign in',
 	},
 	invite: {
 		title: 'Join your team',
 		subtitle: 'Use the invite code you were sent to join your team.',
 		submit: 'Join the team',
+		tabTitle: 'Join your team',
 	},
 };
 
@@ -148,6 +152,7 @@ export function AuthScreen({
 	}
 
 	const copy = COPY[mode];
+	useDocumentTitle(copy.tabTitle);
 
 	return (
 		<View style={styles.screen}>
