@@ -24,6 +24,7 @@ import {
 	Txt,
 } from '@/src/components/ui';
 import { colors, font, radii, SIDEBAR_BREAKPOINT, SIDEBAR_WIDTH } from '@/src/theme/tokens';
+import { useDocumentTitle } from '@/src/theme/useDocumentTitle';
 
 const COLS = {
 	customer: 2.2,
@@ -65,6 +66,7 @@ function centsToInput(cents: number): string {
 }
 
 export default function CustomersScreen() {
+	useDocumentTitle('Customers');
 	const { session, client } = useAuth();
 	const { width } = useWindowDimensions();
 	const sidebar = width >= SIDEBAR_BREAKPOINT ? SIDEBAR_WIDTH : 0;

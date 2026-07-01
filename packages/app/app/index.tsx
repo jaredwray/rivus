@@ -23,6 +23,7 @@ import {
 } from '@/src/components/ui';
 import { dayRange, formatClock, formatDayLabel } from '@/src/schedule/datetime';
 import { colors, font, radii, SIDEBAR_BREAKPOINT } from '@/src/theme/tokens';
+import { useDocumentTitle } from '@/src/theme/useDocumentTitle';
 
 // Categorical dot colors per assignee (cycled by member order).
 const TECH_DOTS = ['#1ebefa', '#6e1ec8', '#1fb573', '#f0a020', '#f0584b', '#3b6ef0'] as const;
@@ -51,6 +52,7 @@ const bars = [
 ];
 
 export default function HomeScreen() {
+	useDocumentTitle('Home');
 	const router = useRouter();
 	const { session, client } = useAuth();
 	// Below the sidebar breakpoint the dashboard renders on a phone-width column,
