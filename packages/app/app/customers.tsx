@@ -372,7 +372,6 @@ export default function CustomersScreen() {
 								<Txt style={[styles.th, { flex: COLS.address }]}>Address</Txt>
 								<Txt style={[styles.th, styles.right, { flex: COLS.lifetime }]}>Lifetime</Txt>
 								<Txt style={[styles.th, styles.right, { flex: COLS.balance }]}>Balance</Txt>
-								<View style={styles.editCol} />
 							</View>
 							{list.map((customer, index) => {
 								const isSelected = customer.id === selected?.id;
@@ -401,13 +400,6 @@ export default function CustomersScreen() {
 										<Txt style={[styles.td, styles.right, styles.tdBold, { flex: COLS.balance }]}>
 											{formatMoney(customer.balance)}
 										</Txt>
-										<Pressable
-											style={styles.editCol}
-											onPress={() => openEdit(customer)}
-											accessibilityRole="button"
-										>
-											<Icon name="edit-3" size={16} color={colors.textFaint} />
-										</Pressable>
 									</Pressable>
 								);
 							})}
@@ -566,7 +558,6 @@ const styles = StyleSheet.create({
 	td: { fontFamily: font.regular, fontSize: 13, color: colors.textSub },
 	tdMed: { fontFamily: font.medium, color: colors.text },
 	tdBold: { fontFamily: font.semibold, color: colors.text },
-	editCol: { width: 30, alignItems: 'flex-end' },
 
 	// Panel
 	panel: {
