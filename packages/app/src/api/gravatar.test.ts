@@ -3,10 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { type GravatarFetch, hasGravatar } from './gravatar';
 
 describe('hasGravatar', () => {
-	it('requests the exact URL the Avatar component would render', async () => {
+	it('requests the exact URL the Avatar component would render, via HEAD', async () => {
 		const fetchImpl = vi.fn<GravatarFetch>().mockResolvedValue({ ok: true });
 		await hasGravatar('jane@example.com', { fetchImpl });
-		expect(fetchImpl).toHaveBeenCalledWith(gravatarUrl('jane@example.com'));
+		expect(fetchImpl).toHaveBeenCalledWith(gravatarUrl('jane@example.com'), { method: 'HEAD' });
 	});
 
 	it('returns true when Gravatar resolves the image', async () => {

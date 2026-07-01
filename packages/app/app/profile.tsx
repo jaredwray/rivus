@@ -1,7 +1,7 @@
 import { gravatarUrl, type UpdateProfileInput } from '@rivus/core';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { ApiError } from '@/src/api/client';
 import { hasGravatar } from '@/src/api/gravatar';
@@ -75,6 +75,17 @@ export default function ProfileScreen() {
 		setEmail(user.email);
 	}, [user?.name, user?.phone, user?.email, user?.pendingEmail]);
 
+	// `isActive` drops a result that resolves after the email/avatar changed again
+	// or the screen unmounted, matching the codebase's other loaders (e.g. the
+	// home screen's `load`).
+	const checkGravatar = useCallback((email: string, isActive: () => boolean) => {
+		hasGravatar(email).then((exists) => {
+			if (isActive()) {
+				setGravatarExists(exists);
+			}
+		});
+	}, []);
+
 	// `user.avatarUrl` is always a usable URL — a custom upload, or the Gravatar
 	// `toPublicUser` computes from the email when there's none. An exact match
 	// against that computed default (rather than just "looks like a Gravatar URL")
@@ -88,15 +99,11 @@ export default function ProfileScreen() {
 			return;
 		}
 		let active = true;
-		hasGravatar(user.email).then((exists) => {
-			if (active) {
-				setGravatarExists(exists);
-			}
-		});
+		checkGravatar(user.email, () => active);
 		return () => {
 			active = false;
 		};
-	}, [user?.email, user?.avatarUrl]);
+	}, [user?.email, user?.avatarUrl, checkGravatar]);
 
 	if (!session || !user) {
 		return null;
