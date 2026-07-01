@@ -138,7 +138,6 @@
                         "maxLength": 300
                       },
                       "website": {
-                        "default": "",
                         "type": "string",
                         "maxLength": 2048
                       },
@@ -387,7 +386,7 @@
                   },
                   "avatarUrl": {
                     "type": "string",
-                    "maxLength": 2048
+                    "maxLength": 2000000
                   }
                 }
               }

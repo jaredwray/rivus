@@ -274,6 +274,36 @@ describe('updateProfileSchema', () => {
 		expect(() => updateProfileSchema.parse({ avatarUrl: 'not a url' })).toThrow();
 	});
 
+	it('rejects a non-http(s) URL scheme, even one z.url() alone would accept', () => {
+		expect(() => updateProfileSchema.parse({ avatarUrl: 'javascript:alert(1)' })).toThrow();
+		expect(() => updateProfileSchema.parse({ avatarUrl: 'ftp://example.com/photo.jpg' })).toThrow();
+	});
+
+	it('accepts an uploaded photo encoded as a data: URI', () => {
+		const dataUrl = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wA=';
+		expect(updateProfileSchema.parse({ avatarUrl: dataUrl })).toEqual({ avatarUrl: dataUrl });
+	});
+
+	it('accepts data: URIs for the other supported image formats', () => {
+		expect(
+			updateProfileSchema.parse({ avatarUrl: 'data:image/png;base64,aGVsbG8=' }).avatarUrl,
+		).toBe('data:image/png;base64,aGVsbG8=');
+		expect(
+			updateProfileSchema.parse({ avatarUrl: 'data:image/webp;base64,aGVsbG8=' }).avatarUrl,
+		).toBe('data:image/webp;base64,aGVsbG8=');
+	});
+
+	it('rejects a data: URI that is not an image', () => {
+		expect(() =>
+			updateProfileSchema.parse({ avatarUrl: 'data:text/html;base64,aGVsbG8=' }),
+		).toThrow();
+	});
+
+	it('rejects an avatar payload over the size cap', () => {
+		const huge = `data:image/jpeg;base64,${'A'.repeat(2_000_001)}`;
+		expect(() => updateProfileSchema.parse({ avatarUrl: huge })).toThrow();
+	});
+
 	it('rejects an empty update', () => {
 		expect(() => updateProfileSchema.parse({})).toThrow();
 	});

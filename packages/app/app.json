@@ -17,7 +17,15 @@
 			"bundler": "metro",
 			"output": "static"
 		},
-		"plugins": ["expo-router"],
+		"plugins": [
+			"expo-router",
+			[
+				"expo-image-picker",
+				{
+					"photosPermission": "Allow Rivus to access your photos so you can upload a profile picture."
+				}
+			]
+		],
 		"experiments": {
 			"typedRoutes": true
 		}

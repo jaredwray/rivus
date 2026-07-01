@@ -118,14 +118,33 @@ export const websiteSchema = z
 		{ error: 'Enter a valid website, like example.com.' },
 	);
 
-/** A custom profile-image URL, or an empty string to fall back to the user's Gravatar. */
+// `http(s)://` for a hosted image, or a `data:image/...;base64,` URI for a photo
+// uploaded from the profile screen (which re-encodes the picked image to one of
+// these before saving). `z.url()` alone would also accept `javascript:`, `ftp:`,
+// or a `data:` URI of any other MIME type, so the scheme is checked explicitly.
+const AVATAR_HTTP_URL = /^https?:\/\//i;
+const AVATAR_DATA_URL = /^data:image\/(png|jpe?g|webp);base64,[a-z0-9+/]+=*$/i;
+// The app resizes and compresses an uploaded photo to a small square before this
+// is ever hit, so ~1.5MB decoded (comfortably more than that needs) still bounds
+// the field rather than leaving it unlimited.
+const MAX_AVATAR_LENGTH = 2_000_000;
+
+/**
+ * A custom profile-image URL — a hosted `https://…` link, or a photo uploaded
+ * from the app encoded as a `data:image/...;base64,` URI — or an empty string to
+ * fall back to the user's Gravatar.
+ */
 export const avatarUrlSchema = z
 	.string()
 	.trim()
-	.max(2048, { error: 'That image URL is too long.' })
-	.refine((value) => value === '' || z.url().safeParse(value).success, {
-		error: 'Enter a valid image URL, like https://example.com/photo.jpg.',
-	});
+	.max(MAX_AVATAR_LENGTH, { error: 'That image is too large.' })
+	.refine(
+		(value) =>
+			value === '' ||
+			(AVATAR_HTTP_URL.test(value) && z.url().safeParse(value).success) ||
+			AVATAR_DATA_URL.test(value),
+		{ error: 'Enter a valid image URL, like https://example.com/photo.jpg.' },
+	);
 
 /** The "standard business information" collected when an account is created. */
 export const accountBusinessSchema = z.object({

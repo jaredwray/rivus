@@ -1,7 +1,10 @@
 import { gravatarUrl, type UpdateProfileInput } from '@rivus/core';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { ApiError } from '@/src/api/client';
+import { hasGravatar } from '@/src/api/gravatar';
 import { initialsOf, roleLabel, useAuth } from '@/src/auth/AuthContext';
 import {
 	Avatar,
@@ -14,6 +17,9 @@ import {
 	Txt,
 } from '@/src/components/ui';
 import { colors, font } from '@/src/theme/tokens';
+
+/** The longest edge an uploaded photo is resized to before it's saved. */
+const AVATAR_EDGE = 512;
 
 function messageFor(error: unknown, fallback: string): string {
 	if (error instanceof ApiError || error instanceof Error) {
@@ -38,7 +44,6 @@ export default function ProfileScreen() {
 	const [name, setName] = useState(user?.name ?? '');
 	const [phone, setPhone] = useState(user?.phone ?? '');
 	const [email, setEmail] = useState(user?.email ?? '');
-	const [avatarUrl, setAvatarUrl] = useState('');
 
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
@@ -48,6 +53,12 @@ export default function ProfileScreen() {
 	const [verifying, setVerifying] = useState(false);
 	const [verifyError, setVerifyError] = useState<string | null>(null);
 	const [resent, setResent] = useState(false);
+
+	// `null` while unknown, or while a custom avatar makes the question moot (see
+	// the effect below) — only `false` (confirmed no Gravatar) offers the upload button.
+	const [gravatarExists, setGravatarExists] = useState<boolean | null>(null);
+	const [uploadingPhoto, setUploadingPhoto] = useState(false);
+	const [avatarError, setAvatarError] = useState<string | null>(null);
 
 	// Re-sync the editable fields whenever the *server* values change (after a save,
 	// or after a verified email change resets the live email and clears the pending
@@ -62,14 +73,30 @@ export default function ProfileScreen() {
 		setName(user.name);
 		setPhone(user.phone);
 		setEmail(user.email);
-		// `user.avatarUrl` is always a usable URL — a custom override, or the Gravatar
-		// `toPublicUser` computed from the email when there's no override. The field
-		// only edits the override, so an exact match against that computed default
-		// (rather than just "looks like a Gravatar URL") is what tells "no override"
-		// apart from "a custom image that happens to be hosted on gravatar.com" —
-		// leaving the field blank doubles as "use my Gravatar" either way.
-		setAvatarUrl(user.avatarUrl === gravatarUrl(user.email) ? '' : user.avatarUrl);
-	}, [user?.name, user?.phone, user?.email, user?.pendingEmail, user?.avatarUrl]);
+	}, [user?.name, user?.phone, user?.email, user?.pendingEmail]);
+
+	// `user.avatarUrl` is always a usable URL — a custom upload, or the Gravatar
+	// `toPublicUser` computes from the email when there's none. An exact match
+	// against that computed default (rather than just "looks like a Gravatar URL")
+	// is what tells "no custom upload" apart from "a custom image that happens to be
+	// hosted on gravatar.com". Only when there's no custom upload do we need to know
+	// whether a *real* Gravatar exists, to decide whether to offer the upload button.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed on server values only, by design
+	useEffect(() => {
+		if (!user || user.avatarUrl !== gravatarUrl(user.email)) {
+			setGravatarExists(null);
+			return;
+		}
+		let active = true;
+		hasGravatar(user.email).then((exists) => {
+			if (active) {
+				setGravatarExists(exists);
+			}
+		});
+		return () => {
+			active = false;
+		};
+	}, [user?.email, user?.avatarUrl]);
 
 	if (!session || !user) {
 		return null;
@@ -77,6 +104,7 @@ export default function ProfileScreen() {
 
 	const pendingEmail = user.pendingEmail;
 	const liveEmail = user.email;
+	const hasCustomAvatar = user.avatarUrl !== gravatarUrl(user.email);
 
 	async function onSave() {
 		if (saving || !user) {
@@ -90,7 +118,6 @@ export default function ProfileScreen() {
 		const nextName = name.trim();
 		const nextPhone = phone.trim();
 		const nextEmail = email.trim().toLowerCase();
-		const nextAvatarUrl = avatarUrl.trim();
 		if (nextName !== user.name) {
 			patch.name = nextName;
 		}
@@ -99,13 +126,6 @@ export default function ProfileScreen() {
 		}
 		if (nextEmail !== user.email) {
 			patch.email = nextEmail;
-		}
-		// Compare against the same computed default the field was pre-filled with (see
-		// the sync effect above), not the raw `user.avatarUrl`, so an unchanged "blank"
-		// field isn't mistaken for "clear my custom override".
-		const currentAvatarUrl = user.avatarUrl === gravatarUrl(user.email) ? '' : user.avatarUrl;
-		if (nextAvatarUrl !== currentAvatarUrl) {
-			patch.avatarUrl = nextAvatarUrl;
 		}
 		if (Object.keys(patch).length === 0) {
 			return;
@@ -118,6 +138,73 @@ export default function ProfileScreen() {
 			setError(messageFor(caught, 'Could not save your changes.'));
 		} finally {
 			setSaving(false);
+		}
+	}
+
+	/**
+	 * Pick a photo from the device, resize it to a small square, and save it as
+	 * the profile's custom avatar (replacing the "no Gravatar" state immediately,
+	 * rather than waiting for the "Save changes" button below).
+	 */
+	async function pickAndUploadPhoto() {
+		if (uploadingPhoto) {
+			return;
+		}
+		setAvatarError(null);
+		try {
+			const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+			if (!permission.granted) {
+				setAvatarError('Allow photo access to upload a picture.');
+				return;
+			}
+			const picked = await ImagePicker.launchImageLibraryAsync({
+				mediaTypes: ['images'],
+				allowsEditing: true,
+				aspect: [1, 1],
+				quality: 0.8,
+			});
+			if (picked.canceled) {
+				return;
+			}
+			const asset = picked.assets[0];
+			if (!asset) {
+				return;
+			}
+			setUploadingPhoto(true);
+			// Bound whichever dimension is larger so a non-square pick (the web picker
+			// has no crop step) can't leave the other dimension unbounded.
+			const resizeTo =
+				asset.width >= asset.height ? { width: AVATAR_EDGE } : { height: AVATAR_EDGE };
+			const rendered = await ImageManipulator.manipulate(asset.uri).resize(resizeTo).renderAsync();
+			const saved = await rendered.saveAsync({
+				compress: 0.7,
+				format: SaveFormat.JPEG,
+				base64: true,
+			});
+			if (!saved.base64) {
+				throw new Error('Could not process that photo.');
+			}
+			await updateProfile({ avatarUrl: `data:image/jpeg;base64,${saved.base64}` });
+		} catch (caught) {
+			setAvatarError(messageFor(caught, 'Could not upload that photo.'));
+		} finally {
+			setUploadingPhoto(false);
+		}
+	}
+
+	/** Clear the custom avatar, reverting to the Gravatar (or initials) fallback. */
+	async function removePhoto() {
+		if (uploadingPhoto) {
+			return;
+		}
+		setAvatarError(null);
+		setUploadingPhoto(true);
+		try {
+			await updateProfile({ avatarUrl: '' });
+		} catch (caught) {
+			setAvatarError(messageFor(caught, 'Could not remove your photo.'));
+		} finally {
+			setUploadingPhoto(false);
 		}
 	}
 
@@ -173,12 +260,31 @@ export default function ProfileScreen() {
 						background="rgba(110,30,200,0.08)"
 					/>
 				</View>
-				<View style={styles.avatarRow}>
-					<Avatar initials={initialsOf(user.name)} imageUrl={user.avatarUrl} size={56} />
-					<Txt style={[styles.rowSub, styles.avatarHint]}>
-						Defaults to your Gravatar — the photo linked to your email at gravatar.com. Set an
-						"Image URL" below to use something else.
-					</Txt>
+				<View style={styles.avatarSection}>
+					<View style={styles.avatarRow}>
+						<Avatar initials={initialsOf(user.name)} imageUrl={user.avatarUrl} size={56} />
+						<Txt style={[styles.rowSub, styles.avatarHint]}>
+							{hasCustomAvatar
+								? 'Your uploaded photo. Remove it to use your Gravatar (or initials) instead.'
+								: gravatarExists === false
+									? 'No Gravatar found for this email — upload a photo, or set one up at gravatar.com.'
+									: 'Defaults to your Gravatar — the photo linked to your email at gravatar.com.'}
+						</Txt>
+					</View>
+					{hasCustomAvatar || gravatarExists === false ? (
+						<View style={styles.avatarActions}>
+							<OutlineButton
+								label={
+									uploadingPhoto ? 'Uploading…' : hasCustomAvatar ? 'Change photo' : 'Upload photo'
+								}
+								onPress={pickAndUploadPhoto}
+							/>
+							{hasCustomAvatar ? (
+								<OutlineButton label="Remove photo" onPress={removePhoto} />
+							) : null}
+						</View>
+					) : null}
+					{avatarError ? <Txt style={styles.errorTxt}>{avatarError}</Txt> : null}
 				</View>
 				<View style={styles.form}>
 					<TextField
@@ -214,20 +320,6 @@ export default function ProfileScreen() {
 						keyboardType="email-address"
 						hint="Changing your email sends a verification code to the new address — it stays the same until you confirm."
 					/>
-					<TextField
-						label="Image URL"
-						value={avatarUrl}
-						onChangeText={(next) => {
-							setAvatarUrl(next);
-							setSaved(false);
-						}}
-						placeholder="https://example.com/photo.jpg"
-						hint="Leave blank to use your Gravatar."
-						autoCapitalize="none"
-						autoCorrect={false}
-						keyboardType="url"
-					/>
-
 					{error ? <Txt style={styles.errorTxt}>{error}</Txt> : null}
 					{saved ? <Txt style={styles.savedTxt}>Saved.</Txt> : null}
 
@@ -308,6 +400,9 @@ const styles = StyleSheet.create({
 		flexWrap: 'wrap',
 		gap: 8,
 	},
+	avatarSection: {
+		gap: 10,
+	},
 	avatarRow: {
 		flexDirection: 'row',
 		alignItems: 'center',
@@ -315,6 +410,10 @@ const styles = StyleSheet.create({
 	},
 	avatarHint: {
 		flex: 1,
+	},
+	avatarActions: {
+		flexDirection: 'row',
+		gap: 8,
 	},
 	form: {
 		gap: 13,
