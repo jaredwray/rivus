@@ -13,6 +13,10 @@ export function useDocumentTitle(title: string): void {
 		if (Platform.OS !== 'web' || typeof document === 'undefined') {
 			return;
 		}
+		const previousTitle = document.title;
 		document.title = `${BRAND} · ${title}`;
+		return () => {
+			document.title = previousTitle;
+		};
 	}, [title]);
 }
