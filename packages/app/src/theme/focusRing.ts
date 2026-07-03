@@ -20,6 +20,14 @@ const STYLE_ID = 'rivus-focus-ring';
 // every other Pressable carries a tabindex.
 const SELECTOR = ':where(button,a,input,select,textarea,[tabindex])';
 
+// The brand ring is only for controls without their own visible frame — buttons,
+// links, and other focusable Pressables. Text inputs already sit inside a bordered
+// field, so a ring there just draws a second box around the box; browsers also treat
+// text inputs as `:focus-visible` whenever focused, so it would show even on a click.
+// The purple highlight is therefore removed from every textbox view (input/textarea).
+const RING_TARGETS = ':where(button,a,select,[tabindex])';
+const TEXT_FIELDS = ':where(input,textarea)';
+
 export function installFocusRing(): void {
 	if (Platform.OS !== 'web' || typeof document === 'undefined') {
 		return;
@@ -30,15 +38,15 @@ export function installFocusRing(): void {
 	const style = document.createElement('style');
 	style.id = STYLE_ID;
 	style.textContent =
-		// Pointer focus (mouse/touch): no outline.
+		// Pointer focus (mouse/touch): no outline anywhere.
 		`${SELECTOR}:focus:not(:focus-visible){outline:none;}` +
-		// Keyboard focus: a 2px brand ring sitting just outside the control.
-		`${SELECTOR}:focus-visible{outline:2px solid ${colors.brandPurple};outline-offset:2px;}` +
-		// Opt-out: controls carrying data-no-focus-ring never get the ring. Browsers
-		// treat text inputs as `:focus-visible` whenever focused, so a field that
-		// already lives inside a bordered container (e.g. the global search box)
-		// would otherwise draw a second purple box around itself. Appended last so it
-		// wins over the ring rule above at equal specificity.
+		// Keyboard focus: a 2px brand ring sitting just outside non-text controls.
+		`${RING_TARGETS}:focus-visible{outline:2px solid ${colors.brandPurple};outline-offset:2px;}` +
+		// Text inputs never get the ring. Appended after the ring rule so it wins at
+		// equal specificity for any input that also happens to carry a tabindex.
+		`${TEXT_FIELDS}:focus,${TEXT_FIELDS}:focus-visible{outline:none;}` +
+		// Opt-out: any other control carrying data-no-focus-ring never gets the ring.
+		// Appended last so it wins over the ring rule above at equal specificity.
 		`:where([data-no-focus-ring]):focus,:where([data-no-focus-ring]):focus-visible{outline:none;}`;
 	document.head.appendChild(style);
 }
