@@ -161,8 +161,11 @@ export function extractReplyText(text: string): string {
 export function htmlToText(html: string): string {
 	return (
 		html
-			// `\s*>` also matches sloppy closers like `</script >`.
-			.replace(/<(?:style|script)[\s\S]*?<\/(?:style|script)\s*>/gi, ' ')
+			// Drop <script>/<style> blocks. `[^>]*>` on both the opening and closing
+			// tag tolerates attributes and the lenient end tags the HTML tokenizer
+			// accepts — whitespace, newlines, or junk before `>` (`</script\t\n x>`) —
+			// so no script body survives into the plain-text output.
+			.replace(/<(?:style|script)\b[^>]*>[\s\S]*?<\/(?:style|script)\b[^>]*>/gi, ' ')
 			.replace(/<br\s*\/?>/gi, '\n')
 			.replace(/<\/(?:p|div|li|tr|h[1-6])>/gi, '\n')
 			.replace(/<[^>]+>/g, ' ')

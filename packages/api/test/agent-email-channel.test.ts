@@ -222,8 +222,10 @@ describe('htmlToText', () => {
 		expect(htmlToText('<style>p{color:red}</style><p>hello</p><script>x()</script>')).toBe('hello');
 	});
 
-	it('drops script bodies with sloppy end tags too', () => {
+	it('drops script bodies with lenient end tags (whitespace, newlines, junk before >)', () => {
 		expect(htmlToText('<p>hello</p><script>x()</script >world')).toBe('hello\nworld');
+		expect(htmlToText('<p>hi</p><script>evil()</script\t\n bar>there')).toBe('hi\nthere');
+		expect(htmlToText('<script src="x">evil()</script>after')).toBe('after');
 	});
 
 	it('never double-unescapes entities', () => {
