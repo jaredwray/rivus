@@ -218,6 +218,45 @@ export const updateAccountSchema = z
 	});
 export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;
 
+// --- Provisioned messaging channels -------------------------------------------
+
+// `ProvisionedChannel` is the source-of-truth union in `types.ts`; here we add
+// the runtime schema. Email is excluded on purpose — its address is derived, not
+// provisioned — so this is a narrower set than `conversationChannelSchema`.
+/** A channel an account can provision an identifier for (see {@link ProvisionedChannel}). */
+export const provisionedChannelSchema = z.enum(['whatsapp', 'sms', 'voice'], {
+	error: 'Choose a valid channel.',
+});
+
+/**
+ * One provisioned channel's stored configuration. Not part of any client-writable
+ * update shape: a channel is turned on or off through the provisioning endpoint
+ * (which assigns the identifier), never by a direct settings PATCH.
+ */
+export const accountChannelConfigSchema = z.object({
+	enabled: z.boolean().default(false),
+	/** The provisioned E.164 identifier; `''` until assigned. */
+	address: optionalText('Channel address', 40).default(''),
+	/** The provider's opaque handle for the provisioned resource; `''` when none. */
+	providerRef: optionalText('Provider reference', 200).default(''),
+});
+export type AccountChannelConfigInput = z.infer<typeof accountChannelConfigSchema>;
+
+const emptyChannelConfig = { enabled: false, address: '', providerRef: '' } as const;
+
+/** Every provisioned channel's config; each key defaults to off/empty. */
+export const accountChannelsSchema = z.object({
+	whatsapp: accountChannelConfigSchema.default(emptyChannelConfig),
+	sms: accountChannelConfigSchema.default(emptyChannelConfig),
+	voice: accountChannelConfigSchema.default(emptyChannelConfig),
+});
+export type AccountChannelsInput = z.infer<typeof accountChannelsSchema>;
+
+/** A fresh all-off channel map — every provisioned channel disabled with no identifier. */
+export function emptyAccountChannels(): AccountChannelsInput {
+	return accountChannelsSchema.parse({});
+}
+
 // --- Profile (the signed-in user's own account) -------------------------------
 
 /**

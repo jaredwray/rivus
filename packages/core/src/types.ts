@@ -55,6 +55,35 @@ export type Role = 'owner' | 'manager' | 'member';
  */
 export type AccountStatus = 'active' | 'canceled';
 
+/**
+ * A messaging channel an account can provision a customer-facing identifier for.
+ * Email is deliberately excluded — its address is derived from the account
+ * (`agentEmailLocalPart(slug, id)`), needs no provisioning, and is always on —
+ * so `channels` only tracks the ones with an externally-assigned identifier.
+ */
+export type ProvisionedChannel = 'whatsapp' | 'sms' | 'voice';
+
+/** One provisioned channel's per-account configuration. */
+export interface AccountChannelConfig {
+	/** Whether the channel is turned on — inbound is handled and the identifier is shown. */
+	enabled: boolean;
+	/**
+	 * The provisioned, customer-facing identifier (an E.164 phone number for
+	 * whatsapp/sms/voice); `''` until provisioned. Retained when the channel is
+	 * disabled so re-enabling restores the same number.
+	 */
+	address: string;
+	/** The provider's opaque reference for the provisioned resource; `''` when none. */
+	providerRef: string;
+}
+
+/**
+ * Every provisioned channel's config, one key per {@link ProvisionedChannel}.
+ * All keys are always present (defaulting to off/empty) so a channel's config is
+ * a plain read, never an existence check.
+ */
+export type AccountChannels = Record<ProvisionedChannel, AccountChannelConfig>;
+
 /** A business account — the tenant that owns all of its members' data. */
 export interface Account {
 	id: AccountId;
@@ -67,6 +96,11 @@ export interface Account {
 	website: string;
 	/** IANA time zone, e.g. `America/Los_Angeles`. */
 	timezone: string;
+	/**
+	 * Provisioned messaging channels (WhatsApp today; SMS and voice reserved).
+	 * Email is derived from `slug`+`id`, always on, and never stored here.
+	 */
+	channels: AccountChannels;
 	/** Lifecycle state; `canceled` accounts are soft-deleted and locked out. */
 	status: AccountStatus;
 	/** When the account was canceled, or `null` while it is active. */

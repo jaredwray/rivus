@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	acceptInviteSchema,
 	accountBusinessSchema,
+	accountChannelsSchema,
 	accountStatusSchema,
 	agentSlotSchema,
 	agentThreadStateSchema,
@@ -26,6 +27,7 @@ import {
 	notificationReadStateSchema,
 	notificationTypeSchema,
 	paginationQuerySchema,
+	provisionedChannelSchema,
 	publicCustomerSignupSchema,
 	SEED_COUNT_MAX,
 	seedAccountSchema,
@@ -237,6 +239,38 @@ describe('updateAccountSchema', () => {
 
 	it('rejects a malformed website', () => {
 		expect(() => updateAccountSchema.parse({ website: 'not a url' })).toThrow();
+	});
+});
+
+describe('provisionedChannelSchema', () => {
+	it('accepts the provisioned channels and rejects email (derived, not provisioned)', () => {
+		for (const channel of ['whatsapp', 'sms', 'voice'] as const) {
+			expect(provisionedChannelSchema.parse(channel)).toBe(channel);
+		}
+		expect(provisionedChannelSchema.safeParse('email').success).toBe(false);
+		expect(provisionedChannelSchema.safeParse('telegram').success).toBe(false);
+	});
+});
+
+describe('accountChannelsSchema', () => {
+	it('defaults every channel to off/empty', () => {
+		expect(accountChannelsSchema.parse({})).toEqual({
+			whatsapp: { enabled: false, address: '', providerRef: '' },
+			sms: { enabled: false, address: '', providerRef: '' },
+			voice: { enabled: false, address: '', providerRef: '' },
+		});
+	});
+
+	it('keeps a provisioned channel config and defaults the rest', () => {
+		const parsed = accountChannelsSchema.parse({
+			whatsapp: { enabled: true, address: '+15551234567', providerRef: 'zwa_1' },
+		});
+		expect(parsed.whatsapp).toEqual({
+			enabled: true,
+			address: '+15551234567',
+			providerRef: 'zwa_1',
+		});
+		expect(parsed.sms.enabled).toBe(false);
 	});
 });
 

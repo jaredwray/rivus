@@ -1,5 +1,7 @@
 import {
 	type Account,
+	type AccountChannelConfig,
+	type AccountChannels,
 	type AccountId,
 	type AgentThread,
 	type AgentThreadId,
@@ -32,6 +34,8 @@ import {
 	type Notification,
 	type NotificationId,
 	normalizePagination,
+	normalizePhone,
+	type ProvisionedChannel,
 	pageToSkip,
 	type Role,
 	type UpdateConversationInput,
@@ -42,7 +46,11 @@ import {
 	type UserId,
 } from '@rivus/core';
 import mongoose, { type ClientSession, type HydratedDocument, Types } from 'mongoose';
-import { type AccountDocument, AccountModel } from '../db/models/account.model';
+import {
+	type AccountChannelConfigSubdocument,
+	type AccountDocument,
+	AccountModel,
+} from '../db/models/account.model';
 import { type AgentThreadDocument, AgentThreadModel } from '../db/models/agent-thread.model';
 import {
 	type ConversationDocument,
@@ -141,6 +149,24 @@ function mapVerificationCode(
 	};
 }
 
+/** One channel subdoc → the public config shape, defaulting a missing legacy field. */
+function mapChannelConfig(config?: AccountChannelConfigSubdocument): AccountChannelConfig {
+	return {
+		enabled: config?.enabled ?? false,
+		address: config?.address ?? '',
+		providerRef: config?.providerRef ?? '',
+	};
+}
+
+/** The account's channel map, defaulting the whole subtree for pre-`channels` documents. */
+function mapAccountChannels(channels: AccountDocument['channels'] | undefined): AccountChannels {
+	return {
+		whatsapp: mapChannelConfig(channels?.whatsapp),
+		sms: mapChannelConfig(channels?.sms),
+		voice: mapChannelConfig(channels?.voice),
+	};
+}
+
 function mapAccount(doc: HydratedDocument<AccountDocument>): Account {
 	return {
 		id: doc._id.toString() as AccountId,
@@ -150,6 +176,7 @@ function mapAccount(doc: HydratedDocument<AccountDocument>): Account {
 		address: doc.address,
 		website: doc.website,
 		timezone: doc.timezone,
+		channels: mapAccountChannels(doc.channels),
 		status: doc.status,
 		canceledAt: doc.canceledAt ? doc.canceledAt.toISOString() : null,
 		createdAt: doc.createdAt.toISOString(),
@@ -452,6 +479,42 @@ export class MongoAccountRepository implements AccountRepository {
 		}
 		const doc = await AccountModel.findByIdAndUpdate(id, { $set: set }, { new: true }).exec();
 		return doc ? mapAccount(doc) : null;
+	}
+
+	async findByChannelAddress(
+		channel: ProvisionedChannel,
+		address: string,
+	): Promise<Account | null> {
+		if (address === '') {
+			return null;
+		}
+		const doc = await AccountModel.findOne({ [`channels.${channel}.address`]: address }).exec();
+		return doc ? mapAccount(doc) : null;
+	}
+
+	async setChannelConfig(
+		id: AccountId,
+		channel: ProvisionedChannel,
+		config: AccountChannelConfig,
+	): Promise<Account | null> {
+		if (!Types.ObjectId.isValid(id)) {
+			return null;
+		}
+		try {
+			const doc = await AccountModel.findByIdAndUpdate(
+				id,
+				{ $set: { [`channels.${channel}`]: config } },
+				{ new: true },
+			).exec();
+			return doc ? mapAccount(doc) : null;
+		} catch (error) {
+			// The partial-unique index rejects an address already held by another
+			// account (a provider double-assigning a number) — surface it as a conflict.
+			if (isDuplicateKeyError(error)) {
+				throw new ConflictError('address', 'That channel number is already in use');
+			}
+			throw error;
+		}
 	}
 
 	async cancel(id: AccountId): Promise<Account | null> {
@@ -940,6 +1003,36 @@ export class MongoCustomerRepository implements CustomerRepository {
 			.sort({ createdAt: -1, _id: -1 })
 			.exec();
 		return doc ? mapCustomer(doc) : null;
+	}
+
+	async findByPhone(accountId: AccountId, phoneE164: string): Promise<Customer | null> {
+		if (phoneE164 === '' || !Types.ObjectId.isValid(accountId)) {
+			return null;
+		}
+		// Stored phones are free text, so E.164 matching can't be a query predicate:
+		// page the account's customers with a phone on file (newest-first, so the
+		// most recent record wins) and normalize each in app code. Bounded at
+		// MAX_PHONE_SCAN_PAGES × 100 — ample for a small business; the documented
+		// upgrade path is a normalized shadow field if an account ever outgrows it.
+		const PAGE_SIZE = 100;
+		const MAX_PHONE_SCAN_PAGES = 50;
+		const filter = { accountId: new Types.ObjectId(accountId), phone: { $ne: '' } };
+		for (let page = 0; page < MAX_PHONE_SCAN_PAGES; page += 1) {
+			const docs = await CustomerModel.find(filter)
+				.sort({ createdAt: -1, _id: -1 })
+				.skip(page * PAGE_SIZE)
+				.limit(PAGE_SIZE)
+				.exec();
+			for (const doc of docs) {
+				if (normalizePhone(doc.phone) === phoneE164) {
+					return mapCustomer(doc);
+				}
+			}
+			if (docs.length < PAGE_SIZE) {
+				break;
+			}
+		}
+		return null;
 	}
 
 	async update(

@@ -1,5 +1,26 @@
-import { type Account, gravatarUrl, type Invite, type Membership, type User } from '@rivus/core';
+import {
+	type Account,
+	gravatarUrl,
+	type Invite,
+	type Membership,
+	type ProvisionedChannel,
+	type User,
+} from '@rivus/core';
 import type { StoredUser } from './repositories/types';
+
+/** A provisioned channel's config as exposed to clients — the provider reference stays server-side. */
+export interface PublicAccountChannelConfig {
+	enabled: boolean;
+	address: string;
+}
+
+/**
+ * An account as returned by the API: like {@link Account}, but each channel
+ * config drops `providerRef` (a provider-internal handle clients never need).
+ */
+export type PublicAccount = Omit<Account, 'channels'> & {
+	channels: Record<ProvisionedChannel, PublicAccountChannelConfig>;
+};
 
 /** The user's custom avatar override, or their Gravatar if none is set. */
 function resolveAvatarUrl(user: StoredUser): string {
@@ -20,8 +41,13 @@ export function toPublicUser(user: StoredUser): User {
 	};
 }
 
-/** Accounts carry no secrets; this just pins the serialized shape. */
-export function toPublicAccount(account: Account): Account {
+/** One stored channel config → its public shape (drops `providerRef`). */
+function toPublicChannel(config: Account['channels']['whatsapp']): PublicAccountChannelConfig {
+	return { enabled: config.enabled, address: config.address };
+}
+
+/** Pins the serialized account shape; channel configs expose only `enabled`/`address`. */
+export function toPublicAccount(account: Account): PublicAccount {
 	return {
 		id: account.id,
 		name: account.name,
@@ -30,6 +56,11 @@ export function toPublicAccount(account: Account): Account {
 		address: account.address,
 		website: account.website,
 		timezone: account.timezone,
+		channels: {
+			whatsapp: toPublicChannel(account.channels.whatsapp),
+			sms: toPublicChannel(account.channels.sms),
+			voice: toPublicChannel(account.channels.voice),
+		},
 		status: account.status,
 		canceledAt: account.canceledAt,
 		createdAt: account.createdAt,

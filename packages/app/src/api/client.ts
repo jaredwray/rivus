@@ -194,6 +194,15 @@ const userResponseSchema = z.object({
 /** The signed-in user as returned by the API (id is a plain string on the wire). */
 export type ProfileUser = z.infer<typeof userResponseSchema>;
 
+// The API omits `providerRef` (a server-only handle) from channel configs, so it
+// defaults to '' here — keeping the parsed shape assignable to the full `Account`
+// type. Channels default as a whole so a session from an older API still parses.
+const channelConfigResponseSchema = z.object({
+	enabled: z.boolean(),
+	address: z.string(),
+	providerRef: z.string().default(''),
+});
+
 const accountResponseSchema = z.object({
 	id: accountId(),
 	name: z.string(),
@@ -202,6 +211,17 @@ const accountResponseSchema = z.object({
 	address: z.string(),
 	website: z.string(),
 	timezone: z.string(),
+	channels: z
+		.object({
+			whatsapp: channelConfigResponseSchema,
+			sms: channelConfigResponseSchema,
+			voice: channelConfigResponseSchema,
+		})
+		.default({
+			whatsapp: { enabled: false, address: '', providerRef: '' },
+			sms: { enabled: false, address: '', providerRef: '' },
+			voice: { enabled: false, address: '', providerRef: '' },
+		}),
 	status: accountStatusSchema,
 	canceledAt: z.string().nullable(),
 	createdAt: z.string(),

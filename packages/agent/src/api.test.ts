@@ -32,6 +32,11 @@ const account = {
 	address: '1 Main St',
 	website: 'https://acme.example',
 	timezone: 'America/Los_Angeles',
+	channels: {
+		whatsapp: { enabled: false, address: '', providerRef: '' },
+		sms: { enabled: false, address: '', providerRef: '' },
+		voice: { enabled: false, address: '', providerRef: '' },
+	},
 	status: 'active' as const,
 	canceledAt: null,
 	createdAt: '2026-01-01T00:00:00.000Z',

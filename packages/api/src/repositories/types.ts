@@ -1,6 +1,7 @@
 import type {
 	Account,
 	AccountBusinessInput,
+	AccountChannelConfig,
 	AccountId,
 	AgentSlot,
 	AgentThread,
@@ -33,6 +34,7 @@ import type {
 	Message,
 	Notification,
 	NotificationId,
+	ProvisionedChannel,
 	Role,
 	UpdateConversationInput,
 	UpdateCustomerInput,
@@ -173,6 +175,25 @@ export interface AccountRepository {
 	list(options: ListAccountsOptions): Promise<{ accounts: Account[]; total: number }>;
 	/** Apply a partial business-info update; returns the updated account or null. */
 	update(id: AccountId, input: UpdateAccount): Promise<Account | null>;
+	/**
+	 * The account that holds this provisioned channel identifier (exact match on
+	 * the stored, normalized E.164 address), or null. The multi-tenant analog of
+	 * resolving an agent-email local part: how an inbound channel webhook finds
+	 * its tenant. Matches regardless of `enabled` — the route decides what a
+	 * disabled channel does. An empty address never matches.
+	 */
+	findByChannelAddress(channel: ProvisionedChannel, address: string): Promise<Account | null>;
+	/**
+	 * Persist one channel's config (enable/disable/provision), replacing that
+	 * channel's subdocument wholesale. Separate from {@link update} so a business-
+	 * info PATCH can never touch a provisioned identifier. Throws
+	 * {@link ConflictError} when the address is already held by another account.
+	 */
+	setChannelConfig(
+		id: AccountId,
+		channel: ProvisionedChannel,
+		config: AccountChannelConfig,
+	): Promise<Account | null>;
 	/** Soft-delete: mark the account `canceled` (data retained). Returns it, or null. */
 	cancel(id: AccountId): Promise<Account | null>;
 }
@@ -307,6 +328,15 @@ export interface CustomerRepository {
 	 * without an address on file all store `''`.
 	 */
 	findByEmail(accountId: AccountId, email: string): Promise<Customer | null>;
+	/**
+	 * The account's customer whose phone matches this E.164 number, or null — how
+	 * a phone-shaped channel (WhatsApp/SMS) recognizes an inbound sender. Stored
+	 * phones are free text ("(555) 123-4567"), so both sides are normalized via
+	 * `normalizePhone`; the newest record wins on ties, and an unnormalizable
+	 * stored phone (or an empty query) never matches. The phone-space twin of
+	 * {@link findByEmail}.
+	 */
+	findByPhone(accountId: AccountId, phoneE164: string): Promise<Customer | null>;
 	update(
 		accountId: AccountId,
 		id: CustomerId,

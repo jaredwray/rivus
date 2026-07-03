@@ -46,6 +46,11 @@ function makeAccount() {
 		address: '',
 		website: '',
 		timezone: 'UTC',
+		channels: {
+			whatsapp: { enabled: false, address: '', providerRef: '' },
+			sms: { enabled: false, address: '', providerRef: '' },
+			voice: { enabled: false, address: '', providerRef: '' },
+		},
 		status: 'active' as const,
 		canceledAt: null,
 		createdAt: now,

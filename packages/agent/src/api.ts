@@ -54,6 +54,15 @@ const userSchema = z.object({
 	updatedAt: z.string(),
 }) satisfies z.ZodType<User>;
 
+// The API serializes channel configs without `providerRef` (a server-only
+// handle), so it defaults to '' here — keeping the parsed shape assignable to the
+// full `Account` type without leaking a provider internal onto the wire.
+const channelConfigSchema = z.object({
+	enabled: z.boolean(),
+	address: z.string(),
+	providerRef: z.string().default(''),
+});
+
 const accountSchema = z.object({
 	id: branded<AccountId>(),
 	name: z.string(),
@@ -62,6 +71,18 @@ const accountSchema = z.object({
 	address: z.string(),
 	website: z.string(),
 	timezone: z.string(),
+	// Default the whole map so a session from an API that predates channels still parses.
+	channels: z
+		.object({
+			whatsapp: channelConfigSchema,
+			sms: channelConfigSchema,
+			voice: channelConfigSchema,
+		})
+		.default({
+			whatsapp: { enabled: false, address: '', providerRef: '' },
+			sms: { enabled: false, address: '', providerRef: '' },
+			voice: { enabled: false, address: '', providerRef: '' },
+		}),
 	// Reuse the core enums so the agent never drifts from the API's source of truth.
 	status: accountStatusSchema,
 	canceledAt: z.string().nullable(),

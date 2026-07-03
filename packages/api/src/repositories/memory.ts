@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import {
 	type Account,
+	type AccountChannelConfig,
+	type AccountChannels,
 	type AccountId,
 	type AgentThread,
 	type AgentThreadId,
@@ -17,6 +19,7 @@ import {
 	type CreateNotificationInput,
 	type Customer,
 	type CustomerId,
+	emptyAccountChannels,
 	type Faq,
 	type FaqId,
 	type Invite,
@@ -32,6 +35,8 @@ import {
 	type Notification,
 	type NotificationId,
 	normalizePagination,
+	normalizePhone,
+	type ProvisionedChannel,
 	pageToSkip,
 	type Role,
 	type UpdateConversationInput,
@@ -233,6 +238,7 @@ export class InMemoryAccountRepository implements AccountRepository {
 			address: input.address,
 			website: input.website,
 			timezone: input.timezone,
+			channels: emptyAccountChannels(),
 			status: 'active',
 			canceledAt: null,
 			createdAt: timestamp,
@@ -294,6 +300,45 @@ export class InMemoryAccountRepository implements AccountRepository {
 			}
 		}
 		const updated: Account = { ...account, ...patch, updatedAt: now() };
+		this.data.accounts.set(id, updated);
+		return structuredClone(updated);
+	}
+
+	async findByChannelAddress(
+		channel: ProvisionedChannel,
+		address: string,
+	): Promise<Account | null> {
+		if (address === '') {
+			return null;
+		}
+		for (const account of this.data.accounts.values()) {
+			if (account.channels[channel].address === address) {
+				return structuredClone(account);
+			}
+		}
+		return null;
+	}
+
+	async setChannelConfig(
+		id: AccountId,
+		channel: ProvisionedChannel,
+		config: AccountChannelConfig,
+	): Promise<Account | null> {
+		const account = this.data.accounts.get(id);
+		if (!account) {
+			return null;
+		}
+		// Enforce the same cross-account uniqueness the Mongo partial index does, so
+		// a provider double-assigning a number fails identically under test.
+		if (config.address !== '') {
+			for (const other of this.data.accounts.values()) {
+				if (other.id !== id && other.channels[channel].address === config.address) {
+					throw new ConflictError('address', 'That channel number is already in use');
+				}
+			}
+		}
+		const channels: AccountChannels = { ...account.channels, [channel]: { ...config } };
+		const updated: Account = { ...account, channels, updatedAt: now() };
 		this.data.accounts.set(id, updated);
 		return structuredClone(updated);
 	}
@@ -738,6 +783,22 @@ export class InMemoryCustomerRepository implements CustomerRepository {
 			.reverse()
 			.find(
 				(customer) => customer.accountId === accountId && customer.email.toLowerCase() === needle,
+			);
+		return match ? structuredClone(match) : null;
+	}
+
+	async findByPhone(accountId: AccountId, phoneE164: string): Promise<Customer | null> {
+		if (phoneE164 === '') {
+			return null;
+		}
+		// Newest-first (reverse insertion order), so the most recent record wins;
+		// stored phones are free text, so both sides normalize before comparison and
+		// an unnormalizable stored phone simply never matches.
+		const match = [...this.data.customers.values()]
+			.reverse()
+			.find(
+				(customer) =>
+					customer.accountId === accountId && normalizePhone(customer.phone) === phoneE164,
 			);
 		return match ? structuredClone(match) : null;
 	}
