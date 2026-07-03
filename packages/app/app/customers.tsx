@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { type ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
 import {
 	ActivityIndicator,
@@ -151,13 +151,18 @@ export default function CustomersScreen() {
 
 	// Deep link from the global search: `?focus=<id>` selects (and, where the panel
 	// shows, opens) that customer once the list has loaded.
+	const router = useRouter();
 	const { focus } = useLocalSearchParams<{ focus?: string }>();
 	useEffect(() => {
 		if (typeof focus === 'string' && focus) {
 			setSelectedId(focus);
 			setPanelOpen(true);
+			// `focus` is a one-shot signal — clear it once consumed so re-selecting the
+			// same customer from global search pushes a changing param and re-runs this
+			// effect, reopening the panel even if it was manually closed.
+			router.setParams({ focus: '' });
 		}
-	}, [focus]);
+	}, [focus, router]);
 
 	function resetForm() {
 		setName('');
