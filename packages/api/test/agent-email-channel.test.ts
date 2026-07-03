@@ -235,6 +235,19 @@ describe('extractReplyText', () => {
 		expect(extractReplyText(raw)).toBe('Option 2 please.');
 	});
 
+	it('cuts at an "On … wrote:" attribution that a long address wrapped across lines', () => {
+		const raw = [
+			'Lets do Tuesday at 10AM',
+			'',
+			'On Fri, Jul 3, 2026 at 1:53 PM JW Riv Inc <jw-riv-inc-311ce5a1@dev.riv.us>',
+			'wrote:',
+			'',
+			'> Here are a few openings:',
+			'> 1. Tuesday 10:00 AM',
+		].join('\n');
+		expect(extractReplyText(raw)).toBe('Lets do Tuesday at 10AM');
+	});
+
 	it('cuts at Outlook-style From: blocks and dividers', () => {
 		expect(extractReplyText('Yes!\nFrom: Rivus <a@riv.us>\nSent: things')).toBe('Yes!');
 		expect(extractReplyText('Yes!\n________________________\nold stuff')).toBe('Yes!');
@@ -242,6 +255,13 @@ describe('extractReplyText', () => {
 
 	it('drops interleaved quote lines without a marker', () => {
 		expect(extractReplyText('> old line\nMy reply\n> more old')).toBe('My reply');
+	});
+
+	it('keeps prose that merely opens with "On" and never closes an attribution', () => {
+		const raw = ['On Tuesday I have a dentist appointment,', 'so Wednesday works better.'].join(
+			'\n',
+		);
+		expect(extractReplyText(raw)).toBe(raw);
 	});
 });
 
