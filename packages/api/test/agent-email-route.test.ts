@@ -233,6 +233,72 @@ describe('POST /v1/channels/email/inbound — end to end', () => {
 		await app.close();
 	});
 
+	it('reassures a booked customer who just confirms, instead of re-offering slots', async () => {
+		const { app, repos } = await buildTestAppWithRepos();
+		const owner = await signupOwner(app);
+		const slug = owner.account.slug;
+		const accountId = owner.account.id as AccountId;
+		const mailer = agentMailbox(app);
+		await repos.customers.create(accountId, {
+			name: 'Dana Fox',
+			email: SENDER,
+			phone: '',
+			address: '',
+			lifetimeValue: 0,
+			balance: 0,
+			notes: '',
+		});
+
+		// A deterministic weekday ≥7 days out at 10:00 (account timezone is UTC).
+		const target = new Date();
+		target.setUTCDate(target.getUTCDate() + 7);
+		while (target.getUTCDay() === 0 || target.getUTCDay() === 6) {
+			target.setUTCDate(target.getUTCDate() + 1);
+		}
+		const yyyy = target.getUTCFullYear();
+		const mm = String(target.getUTCMonth() + 1).padStart(2, '0');
+		const dd = String(target.getUTCDate()).padStart(2, '0');
+
+		const booked = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: inboundPayload(slug, {
+				text: `Could you do ${yyyy}-${mm}-${dd} 10:00?`,
+				message_id: '<c1@mail.example.com>',
+			}),
+		});
+		expect(booked.json()).toEqual({ handled: true, outcome: 'book' });
+		const afterBooking = await repos.agentThreads.findByContact(accountId, 'email', SENDER);
+		expect(afterBooking?.state).toBe('booked');
+
+		// The customer simply acknowledges. This must not reopen scheduling — the
+		// bug this guards against re-offered three fresh openings after "Confirmed!".
+		const confirmed = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: inboundPayload(slug, {
+				text: 'Confirmed!',
+				message_id: '<c2@mail.example.com>',
+			}),
+		});
+		expect(confirmed.json()).toEqual({ handled: true, outcome: 'confirm_existing' });
+
+		// The thread stays booked against the same job; no second round, no new job.
+		const afterConfirm = await repos.agentThreads.findByContact(accountId, 'email', SENDER);
+		expect(afterConfirm?.state).toBe('booked');
+		expect(afterConfirm?.bookedJobId).toBe(afterBooking?.bookedJobId);
+		expect(afterConfirm?.offeredSlots).toEqual([]);
+		const { jobs } = await repos.jobs.list({ accountId, page: 1, pageSize: 10 });
+		expect(jobs).toHaveLength(1);
+
+		// The reply reassures the standing booking and never lists fresh openings.
+		const reply = mailer.agentEmails.at(-1);
+		expect(reply?.text).toContain('already booked');
+		expect(reply?.text).not.toContain('openings');
+
+		await app.close();
+	});
+
 	it('offers alternatives when the picked slot got booked in the meantime', async () => {
 		const { app, repos } = await buildTestAppWithRepos();
 		const owner = await signupOwner(app);
