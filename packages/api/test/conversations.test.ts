@@ -687,6 +687,26 @@ describe('inbox replies dispatch email on the email channel', () => {
 		expect(sent?.references).toEqual(['<m1@mail.example.com>']);
 	});
 
+	it('renders CRLF replies as separate paragraphs without stray carriage returns', async () => {
+		const conversation = await seedEmailThread();
+		// A reply typed in a Windows/native mail client arrives with CRLF endings:
+		// a blank line between paragraphs, a single break within one.
+		const response = await app.inject({
+			method: 'POST',
+			url: `/v1/conversations/${conversation.id}/messages`,
+			headers: authHeader(token),
+			payload: { body: 'Line one.\r\n\r\nLine two.\r\nStill line two.' },
+		});
+
+		expect(response.statusCode).toBe(201);
+		const sent = outbox().agentEmails[0];
+		// The blank line splits paragraphs; the single break becomes a <br> — and no
+		// literal carriage return leaks into the HTML.
+		expect(sent?.html).toContain('>Line one.</p>');
+		expect(sent?.html).toContain('>Line two.<br>Still line two.</p>');
+		expect(sent?.html).not.toContain('\r');
+	});
+
 	it('emails the held draft when a flagged reply is approved', async () => {
 		const conversation = await seedEmailThread();
 		await repos.conversations.setReviewState(accountId, conversation.id as ConversationId, {
