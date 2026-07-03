@@ -188,7 +188,7 @@ Wiring it up:
 | ----------------------- | ----------------------- | ------------------------------------------------------------------------ |
 | `AGENT_EMAIL_DOMAIN`    | `riv.us`                | Domain of the per-account agent addresses.                                |
 | `RESEND_WEBHOOK_SECRET` | _(unset)_               | Svix signing secret (`whsec_…`). Unset: dev/test accept unsigned deliveries; **production refuses the route (503)**. |
-| `WEBSITE_URL`           | `https://www.rivus.ai`  | Base URL for the customer self-signup link (`/customers/join/<slug>`).    |
+| `WEBSITE_URL`           | `https://rivus.ai`      | Base URL for the customer self-signup link (`/customers/join/<slug>`).    |
 
 The webhook only carries metadata, so the email body is fetched back through
 Resend's received-emails API (`RESEND_API_KEY`). Local testing needs no key:

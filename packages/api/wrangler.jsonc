@@ -87,7 +87,7 @@
 				// Base URL for the accept-invite / sign-in-code links in emails.
 				"APP_URL": "https://app.rivus.ai",
 				// Base URL for the agent's customer self-signup links (/customers/join).
-				"WEBSITE_URL": "https://www.rivus.ai"
+				"WEBSITE_URL": "https://rivus.ai"
 			},
 			"containers": [
 				{

@@ -142,7 +142,7 @@ while the rest of the API runs normally. Configure the receiving domain (default
 `riv.us`, overridable via the `AGENT_EMAIL_DOMAIN` var) and the webhook in Resend
 first, then add this secret so `/v1/channels/email/inbound` goes live on the next
 deploy. The self-signup link domain (`WEBSITE_URL`) is a non-sensitive `vars` entry
-in `packages/api/wrangler.jsonc` (dev → `dev.rivus.ai`, prod → `www.rivus.ai`).
+in `packages/api/wrangler.jsonc` (dev → `dev.rivus.ai`, prod → `rivus.ai`).
 The chat model defaults to `gpt-5.4-mini` and the embedding model (used to rank FAQs
 by relevance once a knowledge base outgrows the answerer's candidate cap) to
 `text-embedding-3-small`; since model ids aren't sensitive, override them — if needed —
