@@ -707,6 +707,23 @@ describe('inbox replies dispatch email on the email channel', () => {
 		expect(sent?.html).not.toContain('\r');
 	});
 
+	it('splits paragraphs even when the blank line carries trailing whitespace', async () => {
+		const conversation = await seedEmailThread();
+		// Some clients leave spaces/tabs on the "blank" separator line.
+		const response = await app.inject({
+			method: 'POST',
+			url: `/v1/conversations/${conversation.id}/messages`,
+			headers: authHeader(token),
+			payload: { body: 'First.\r\n \r\nSecond.' },
+		});
+
+		expect(response.statusCode).toBe(201);
+		const sent = outbox().agentEmails[0];
+		// Rendered as two separate paragraphs, not one run-on block.
+		expect(sent?.html).toContain('>First.</p>');
+		expect(sent?.html).toContain('>Second.</p>');
+	});
+
 	it('emails the held draft when a flagged reply is approved', async () => {
 		const conversation = await seedEmailThread();
 		await repos.conversations.setReviewState(accountId, conversation.id as ConversationId, {

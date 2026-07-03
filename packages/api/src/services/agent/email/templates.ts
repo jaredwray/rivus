@@ -278,9 +278,11 @@ export function renderReplyEmail(context: {
 	const subject = replySubject(context.inboundSubject, context.accountName);
 	// A blank line separates paragraphs; single breaks within one become <br>.
 	// Newlines are matched as `\r?\n` (like the inbound reply parser) so CRLF
-	// bodies from Windows/native mail clients split the same as LF ones.
+	// bodies from Windows/native mail clients split the same as LF ones. The
+	// separator tolerates spaces/tabs left on an otherwise-blank line
+	// (`\r\n \r\n`) while preserving the next paragraph's own leading indent.
 	const paragraphs = context.body
-		.split(/(?:\r?\n){2,}/)
+		.split(/\r?\n(?:[ \t]*\r?\n)+/)
 		.map((block) =>
 			block
 				.split(/\r?\n/)
