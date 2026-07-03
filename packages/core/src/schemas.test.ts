@@ -18,6 +18,7 @@ import {
 	createJobSchema,
 	createMessageSchema,
 	createNotificationSchema,
+	emptyAccountChannels,
 	inviteMemberSchema,
 	jobConflictQuerySchema,
 	jobListQuerySchema,
@@ -271,6 +272,16 @@ describe('accountChannelsSchema', () => {
 			providerRef: 'zwa_1',
 		});
 		expect(parsed.sms.enabled).toBe(false);
+	});
+
+	it('emptyAccountChannels builds a fresh all-off map', () => {
+		expect(emptyAccountChannels()).toEqual({
+			whatsapp: { enabled: false, address: '', providerRef: '' },
+			sms: { enabled: false, address: '', providerRef: '' },
+			voice: { enabled: false, address: '', providerRef: '' },
+		});
+		// A fresh object each call — never a shared reference callers could mutate.
+		expect(emptyAccountChannels()).not.toBe(emptyAccountChannels());
 	});
 });
 

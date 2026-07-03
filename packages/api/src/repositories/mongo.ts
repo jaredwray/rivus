@@ -1016,7 +1016,10 @@ export class MongoCustomerRepository implements CustomerRepository {
 		// upgrade path is a normalized shadow field if an account ever outgrows it.
 		const PAGE_SIZE = 100;
 		const MAX_PHONE_SCAN_PAGES = 50;
-		const filter = { accountId: new Types.ObjectId(accountId), phone: { $ne: '' } };
+		// `$gt: ''` (not `$ne: ''`) so only real non-empty string phones are scanned:
+		// `$ne: ''` would also match documents whose `phone` is null/missing, and
+		// `normalizePhone(null)` would throw. Legacy customers may lack the field.
+		const filter = { accountId: new Types.ObjectId(accountId), phone: { $gt: '' } };
 		for (let page = 0; page < MAX_PHONE_SCAN_PAGES; page += 1) {
 			const docs = await CustomerModel.find(filter)
 				.sort({ createdAt: -1, _id: -1 })
