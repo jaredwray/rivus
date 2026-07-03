@@ -79,6 +79,7 @@ export default function CustomersScreen() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
+	const [panelOpen, setPanelOpen] = useState(true);
 
 	const [formOpen, setFormOpen] = useState(false);
 	const [editing, setEditing] = useState<Customer | null>(null);
@@ -153,6 +154,7 @@ export default function CustomersScreen() {
 	useEffect(() => {
 		if (typeof focus === 'string' && focus) {
 			setSelectedId(focus);
+			setPanelOpen(true);
 		}
 	}, [focus]);
 
@@ -380,7 +382,10 @@ export default function CustomersScreen() {
 								return (
 									<Pressable
 										key={customer.id}
-										onPress={() => setSelectedId(customer.id)}
+										onPress={() => {
+											setSelectedId(customer.id);
+											setPanelOpen(true);
+										}}
 										style={[
 											styles.tr,
 											index === list.length - 1 && styles.trLast,
@@ -410,8 +415,12 @@ export default function CustomersScreen() {
 				)}
 			</ScrollView>
 
-			{showPanel && selected ? (
-				<AccountPanel customer={selected} onEdit={() => openEdit(selected)} />
+			{showPanel && selected && panelOpen ? (
+				<AccountPanel
+					customer={selected}
+					onEdit={() => openEdit(selected)}
+					onClose={() => setPanelOpen(false)}
+				/>
 			) : null}
 		</View>
 	);
@@ -437,11 +446,24 @@ function ContactRow({
 	);
 }
 
-function AccountPanel({ customer, onEdit }: { customer: Customer; onEdit: () => void }) {
+function AccountPanel({
+	customer,
+	onEdit,
+	onClose,
+}: {
+	customer: Customer;
+	onEdit: () => void;
+	onClose: () => void;
+}) {
 	const since = new Date(customer.createdAt).getFullYear();
 	return (
 		<ScrollView style={styles.panel} contentContainerStyle={styles.panelPad}>
-			<SectionLabel style={{ marginBottom: 14 }}>Account</SectionLabel>
+			<View style={styles.panelHead}>
+				<SectionLabel>Customer</SectionLabel>
+				<Pressable onPress={onClose} accessibilityRole="button">
+					<Icon name="x" size={18} color={colors.textMuted} />
+				</Pressable>
+			</View>
 			<View style={styles.acctHead}>
 				<Avatar initials={initialsOf(customer.name)} size={50} />
 				<View style={{ flex: 1 }}>
@@ -571,6 +593,12 @@ const styles = StyleSheet.create({
 		backgroundColor: colors.surfaceAlt,
 	},
 	panelPad: { paddingVertical: 24, paddingHorizontal: 22 },
+	panelHead: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		marginBottom: 14,
+	},
 	acctHead: { flexDirection: 'row', alignItems: 'center', gap: 13, marginBottom: 14 },
 	acctName: { fontFamily: font.semibold, fontSize: 16 },
 	acctSub: { fontFamily: font.regular, fontSize: 12.5, color: colors.textMuted },
