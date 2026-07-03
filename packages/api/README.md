@@ -177,8 +177,10 @@ already handled inline: the booking is rolled back and the delivery retried.)
 
 Wiring it up:
 
-1. In Resend, add `riv.us` (or your `AGENT_EMAIL_DOMAIN`) as a **receiving**
-   domain (MX records) and as a verified sending domain.
+1. In Resend, add your `AGENT_EMAIL_DOMAIN` as a **receiving** domain (MX records)
+   and as a verified sending domain. The deployed environments use separate domains
+   so dev traffic never lands in the production inbox — `dev.riv.us` for development
+   and `riv.us` for production (set per environment in `packages/api/wrangler.jsonc`).
 2. Create a webhook pointing at `POST /v1/channels/email/inbound`, subscribed to
    `email.received` **and** the delivery events `email.bounced` and
    `email.complained`, and set its signing secret as `RESEND_WEBHOOK_SECRET`.
@@ -186,7 +188,7 @@ Wiring it up:
 
 | Variable                | Default                 | Notes                                                                    |
 | ----------------------- | ----------------------- | ------------------------------------------------------------------------ |
-| `AGENT_EMAIL_DOMAIN`    | `riv.us`                | Domain of the per-account agent addresses.                                |
+| `AGENT_EMAIL_DOMAIN`    | `riv.us`                | Domain of the per-account agent addresses. Deployed: `dev.riv.us` (dev), `riv.us` (prod). |
 | `RESEND_WEBHOOK_SECRET` | _(unset)_               | Svix signing secret (`whsec_…`). Unset: dev/test accept unsigned deliveries; **production refuses the route (503)**. |
 | `WEBSITE_URL`           | `https://rivus.ai`      | Base URL for the customer self-signup link (`/customers/join/<slug>`).    |
 

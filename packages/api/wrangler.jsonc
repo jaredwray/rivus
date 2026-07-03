@@ -53,7 +53,12 @@
 				// Base URL for the accept-invite / sign-in-code links in emails.
 				"APP_URL": "https://dev-app.rivus.ai",
 				// Base URL for the agent's customer self-signup links (/customers/join).
-				"WEBSITE_URL": "https://dev.rivus.ai"
+				"WEBSITE_URL": "https://dev.rivus.ai",
+				// Inbound/outbound domain for the scheduling agent's email channel
+				// (Resend). Dev uses the `dev.riv.us` subdomain so test traffic never
+				// lands in the production `riv.us` inbox; it's configured as a receiving
+				// (MX) and verified sending domain in Resend, separate from prod's.
+				"AGENT_EMAIL_DOMAIN": "dev.riv.us"
 			},
 			"containers": [
 				{
@@ -87,7 +92,10 @@
 				// Base URL for the accept-invite / sign-in-code links in emails.
 				"APP_URL": "https://app.rivus.ai",
 				// Base URL for the agent's customer self-signup links (/customers/join).
-				"WEBSITE_URL": "https://rivus.ai"
+				"WEBSITE_URL": "https://rivus.ai",
+				// Inbound/outbound domain for the scheduling agent's email channel
+				// (Resend). Production customers email `<account-slug>@riv.us`.
+				"AGENT_EMAIL_DOMAIN": "riv.us"
 			},
 			"containers": [
 				{
