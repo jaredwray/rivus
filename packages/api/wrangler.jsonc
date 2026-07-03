@@ -51,7 +51,9 @@
 				// granted credentialed CORS, so siblings can't read authenticated data.
 				"COOKIE_DOMAIN": ".rivus.ai",
 				// Base URL for the accept-invite / sign-in-code links in emails.
-				"APP_URL": "https://dev-app.rivus.ai"
+				"APP_URL": "https://dev-app.rivus.ai",
+				// Base URL for the agent's customer self-signup links (/customers/join).
+				"WEBSITE_URL": "https://dev.rivus.ai"
 			},
 			"containers": [
 				{
@@ -83,7 +85,9 @@
 				// authenticated agent.
 				"COOKIE_DOMAIN": ".rivus.ai",
 				// Base URL for the accept-invite / sign-in-code links in emails.
-				"APP_URL": "https://app.rivus.ai"
+				"APP_URL": "https://app.rivus.ai",
+				// Base URL for the agent's customer self-signup links (/customers/join).
+				"WEBSITE_URL": "https://www.rivus.ai"
 			},
 			"containers": [
 				{
