@@ -33,6 +33,10 @@ const COLS = {
 	balance: 1.2,
 };
 
+// Expand the small (18px) icon close buttons to the ~44dp minimum tap target
+// (18 + 13*2 = 44) without changing their visual size — matches schedule.tsx.
+const CLOSE_HIT_SLOP = { top: 13, bottom: 13, left: 13, right: 13 };
+
 /** Format integer cents as a grouped dollar string (54000 → "$540.00"). */
 function formatMoney(cents: number): string {
 	const sign = cents < 0 ? '-' : '';
@@ -71,9 +75,6 @@ export default function CustomersScreen() {
 	const { width } = useWindowDimensions();
 	const sidebar = width >= SIDEBAR_BREAKPOINT ? SIDEBAR_WIDTH : 0;
 	const showPanel = width >= 1040;
-	const panel = showPanel ? 340 : 0;
-	const avail = width - sidebar - panel - 48;
-	const tableWidth = Math.max(640, avail);
 
 	const [list, setList] = useState<Customer[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -256,6 +257,12 @@ export default function CustomersScreen() {
 	const selected = list.find((customer) => customer.id === selectedId) ?? list[0] ?? null;
 	const countLabel = `${list.length} ${list.length === 1 ? 'contact' : 'contacts'}`;
 
+	// Only reserve the side panel's 340px when it's actually on screen (a customer
+	// is selected and the panel hasn't been closed); otherwise let the table reclaim
+	// that width so closing the panel doesn't leave a blank gap beside a cramped table.
+	const panelVisible = showPanel && selected !== null && panelOpen;
+	const tableWidth = Math.max(640, width - sidebar - (panelVisible ? 340 : 0) - 48);
+
 	return (
 		<View style={styles.row}>
 			<ScrollView style={{ flex: 1 }} contentContainerStyle={styles.leftPad}>
@@ -271,7 +278,12 @@ export default function CustomersScreen() {
 					<Card style={styles.form}>
 						<View style={styles.formHead}>
 							<Txt style={styles.formTitle}>{editing ? 'Edit customer' : 'New customer'}</Txt>
-							<Pressable onPress={closeForm} accessibilityRole="button">
+							<Pressable
+								onPress={closeForm}
+								accessibilityRole="button"
+								accessibilityLabel="Close"
+								hitSlop={CLOSE_HIT_SLOP}
+							>
 								<Icon name="x" size={18} color={colors.textMuted} />
 							</Pressable>
 						</View>
@@ -415,7 +427,7 @@ export default function CustomersScreen() {
 				)}
 			</ScrollView>
 
-			{showPanel && selected && panelOpen ? (
+			{panelVisible ? (
 				<AccountPanel
 					customer={selected}
 					onEdit={() => openEdit(selected)}
@@ -460,7 +472,12 @@ function AccountPanel({
 		<ScrollView style={styles.panel} contentContainerStyle={styles.panelPad}>
 			<View style={styles.panelHead}>
 				<SectionLabel>Customer</SectionLabel>
-				<Pressable onPress={onClose} accessibilityRole="button">
+				<Pressable
+					onPress={onClose}
+					accessibilityRole="button"
+					accessibilityLabel="Close"
+					hitSlop={CLOSE_HIT_SLOP}
+				>
 					<Icon name="x" size={18} color={colors.textMuted} />
 				</Pressable>
 			</View>
