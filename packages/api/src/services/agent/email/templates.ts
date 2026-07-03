@@ -198,6 +198,31 @@ const TEXT_PRIMARY = '#16161f';
 const TEXT_SUB = '#8a8b99';
 const GRADIENT = 'linear-gradient(135deg, #1ebefa, #6e1ec8)';
 
+/** One body paragraph in the shared card style (its text is HTML-escaped). */
+function paragraph(line: string): string {
+	return `<p style="margin: 0 0 12px; font-size: 13.5px; line-height: 1.6; color: ${TEXT_PRIMARY};">${escapeHtml(line)}</p>`;
+}
+
+/**
+ * Wrap already-rendered body fragments in the shared design-system chrome — the
+ * page background, the account-headed card, and the Rivus footer — so every
+ * agent email (a scheduling decision or a plain reply) looks like one thread.
+ */
+function emailShell(accountName: string, body: string[]): string {
+	return [
+		'<!doctype html>',
+		'<html lang="en">',
+		`<body style="margin: 0; padding: 24px 12px; background: ${PAGE_BG}; font-family: ${FONT_STACK};">`,
+		`<div style="max-width: 560px; margin: 0 auto; background: ${CARD_BG}; border: 1px solid ${HAIRLINE}; border-radius: 14px; padding: 24px;">`,
+		`<p style="margin: 0 0 16px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: ${TEXT_SUB};">${escapeHtml(accountName)}</p>`,
+		...body,
+		'</div>',
+		`<p style="max-width: 560px; margin: 12px auto 0; font-size: 11.5px; font-weight: 500; color: ${TEXT_SUB}; text-align: center;">${escapeHtml(FOOTER_NOTE(accountName))}</p>`,
+		'</body>',
+		'</html>',
+	].join('\n');
+}
+
 /** Render a decision as a full email (subject + design-system HTML + text). */
 export function renderAgentEmail(
 	decision: AgentDecision,
@@ -206,9 +231,6 @@ export function renderAgentEmail(
 	const content = contentFor(decision, context);
 	const subject = replySubject(context.inboundSubject, context.accountName);
 	const text = renderAgentReplyText(decision, context);
-
-	const paragraph = (line: string) =>
-		`<p style="margin: 0 0 12px; font-size: 13.5px; line-height: 1.6; color: ${TEXT_PRIMARY};">${escapeHtml(line)}</p>`;
 
 	const body: string[] = [
 		paragraph(greeting(context.customerName)),
@@ -235,18 +257,38 @@ export function renderAgentEmail(
 	}
 	body.push(...content.trail.map(paragraph));
 
-	const html = [
-		'<!doctype html>',
-		'<html lang="en">',
-		`<body style="margin: 0; padding: 24px 12px; background: ${PAGE_BG}; font-family: ${FONT_STACK};">`,
-		`<div style="max-width: 560px; margin: 0 auto; background: ${CARD_BG}; border: 1px solid ${HAIRLINE}; border-radius: 14px; padding: 24px;">`,
-		`<p style="margin: 0 0 16px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: ${TEXT_SUB};">${escapeHtml(context.accountName)}</p>`,
-		...body,
-		'</div>',
-		`<p style="max-width: 560px; margin: 12px auto 0; font-size: 11.5px; font-weight: 500; color: ${TEXT_SUB}; text-align: center;">${escapeHtml(FOOTER_NOTE(context.accountName))}</p>`,
-		'</body>',
-		'</html>',
-	].join('\n');
+	return { subject, html: emailShell(context.accountName, body), text };
+}
 
-	return { subject, html, text };
+/**
+ * Render a free-text reply into an email thread: a human team member's message
+ * from the inbox, or an approved Rivus draft. There's no scheduling decision
+ * behind it — the body is whatever was written — so it carries no slot list or
+ * action button, but it wears the same `Re:` subject and design-system card as
+ * the agent's own replies, so the customer sees one consistent thread. The
+ * writer's paragraph and line breaks are preserved; every line is HTML-escaped.
+ */
+export function renderReplyEmail(context: {
+	accountName: string;
+	/** The email thread's subject, so the reply threads under `Re: …`. */
+	inboundSubject: string;
+	/** The reply text, exactly as the human wrote it (or the approved draft). */
+	body: string;
+}): RenderedEmail {
+	const subject = replySubject(context.inboundSubject, context.accountName);
+	// A blank line separates paragraphs; single breaks within one become <br>.
+	const paragraphs = context.body
+		.split(/\n{2,}/)
+		.map((block) =>
+			block
+				.split(/\n/)
+				.map((line) => escapeHtml(line))
+				.join('<br>'),
+		)
+		.filter((block) => block.trim() !== '')
+		.map(
+			(block) =>
+				`<p style="margin: 0 0 12px; font-size: 13.5px; line-height: 1.6; color: ${TEXT_PRIMARY};">${block}</p>`,
+		);
+	return { subject, html: emailShell(context.accountName, paragraphs), text: context.body };
 }

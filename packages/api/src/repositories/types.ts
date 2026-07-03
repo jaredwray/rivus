@@ -529,6 +529,17 @@ export interface AgentThreadRepository {
 		channel: ConversationChannel,
 		contactAddress: string,
 	): Promise<AgentThread | null>;
+	/**
+	 * The thread whose transcript is this conversation, or null when the
+	 * conversation isn't agent-driven. How an inbox reply on an email thread
+	 * finds the customer's address and the RFC 5322 id to thread under, so a
+	 * human's message actually leaves as email instead of only landing in the
+	 * transcript.
+	 */
+	findByConversationId(
+		accountId: AccountId,
+		conversationId: ConversationId,
+	): Promise<AgentThread | null>;
 	/** Apply a machine-state patch; returns the updated thread, or null when it isn't the account's. */
 	update(
 		accountId: AccountId,
