@@ -111,6 +111,7 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
 				user: toPublicUser(user),
 				account: toPublicAccount(account),
 				role,
+				agentEmailDomain: app.deps.config.AGENT_EMAIL_DOMAIN,
 			});
 		},
 	);

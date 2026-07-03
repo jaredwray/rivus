@@ -54,7 +54,13 @@ function makeAccount() {
 }
 
 function makeAuthResponse(role: 'owner' | 'manager' | 'member' = 'owner') {
-	return { token: faker.string.alphanumeric(40), user: makeUser(), account: makeAccount(), role };
+	return {
+		token: faker.string.alphanumeric(40),
+		user: makeUser(),
+		account: makeAccount(),
+		role,
+		agentEmailDomain: 'riv.us',
+	};
 }
 
 function makeCodeSent(email: string) {
@@ -339,7 +345,12 @@ describe('createApiClient', () => {
 
 	describe('me', () => {
 		it('returns the current session and sends the bearer token', async () => {
-			const session = { user: makeUser(), account: makeAccount(), role: 'owner' as const };
+			const session = {
+				user: makeUser(),
+				account: makeAccount(),
+				role: 'owner' as const,
+				agentEmailDomain: 'riv.us',
+			};
 			fetchMock.mockResolvedValueOnce(jsonResponse(session));
 
 			const client = createApiClient(BASE, fetchMock);
@@ -1829,7 +1840,12 @@ describe('createApiClient', () => {
 
 	describe('cookie (credentials) mode', () => {
 		it('sends credentials and omits the bearer header when no token is given', async () => {
-			const session = { user: makeUser(), account: makeAccount(), role: 'owner' as const };
+			const session = {
+				user: makeUser(),
+				account: makeAccount(),
+				role: 'owner' as const,
+				agentEmailDomain: 'riv.us',
+			};
 			fetchMock.mockResolvedValueOnce(jsonResponse(session));
 
 			const client = createApiClient(BASE, fetchMock, { withCredentials: true });

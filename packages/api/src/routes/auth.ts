@@ -43,8 +43,19 @@ const SLUG_RETRY_LIMIT = 5;
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
-	const { users, accounts, memberships, invites, onboarding, verificationCodes, mailer, notifier } =
-		app.deps;
+	const {
+		config,
+		users,
+		accounts,
+		memberships,
+		invites,
+		onboarding,
+		verificationCodes,
+		mailer,
+		notifier,
+	} = app.deps;
+	/** The account's inbound agent-address domain, returned with every session. */
+	const agentEmailDomain = config.AGENT_EMAIL_DOMAIN;
 
 	/**
 	 * Deliver a code without blocking the response on it. Decoupling delivery keeps
@@ -235,6 +246,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 					user: toPublicUser(user),
 					account: toPublicAccount(account),
 					role: membership.role,
+					agentEmailDomain,
 				});
 			}
 
@@ -261,6 +273,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 				user: toPublicUser(user),
 				account: toPublicAccount(account),
 				role: membership.role,
+				agentEmailDomain,
 			});
 		},
 	);
@@ -286,6 +299,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 				user: toPublicUser(user),
 				account: toPublicAccount(account),
 				role: request.user.role,
+				agentEmailDomain,
 			};
 		},
 	);
@@ -460,6 +474,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 				user: toPublicUser(updated),
 				account: toPublicAccount(account),
 				role: membership.role,
+				agentEmailDomain,
 			});
 		},
 	);
@@ -520,6 +535,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 				user: toPublicUser(user),
 				account: toPublicAccount(account),
 				role: membership.role,
+				agentEmailDomain,
 			});
 		},
 	);
