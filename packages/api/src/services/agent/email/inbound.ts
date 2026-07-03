@@ -33,8 +33,27 @@ export const inboundEmailEventSchema = z.object({
 });
 export type InboundEmailEvent = z.infer<typeof inboundEmailEventSchema>;
 
-/** The one event type this channel handles. */
+/** The inbound event: a customer emailed the account's agent address. */
 export const INBOUND_EMAIL_EVENT = 'email.received';
+/** Outbound delivery failures — a reply Rivus sent never reached the customer. */
+export const EMAIL_BOUNCED_EVENT = 'email.bounced';
+export const EMAIL_COMPLAINED_EVENT = 'email.complained';
+
+/**
+ * The account local part of one of our own agent-domain addresses. A delivery
+ * event (`email.bounced`/`email.complained`) is about mail Rivus *sent*, so the
+ * account is identified by the `From` (`<slug>@domain`), not the recipient.
+ * Returns the local part (slug or id), or null when the address isn't ours.
+ */
+export function agentAddressLocalPart(address: string, agentDomain: string): string | null {
+	const suffix = `@${agentDomain.toLowerCase()}`;
+	const lower = address.toLowerCase();
+	if (!lower.endsWith(suffix)) {
+		return null;
+	}
+	const localPart = lower.slice(0, -suffix.length);
+	return localPart === '' ? null : localPart;
+}
 
 /** A parsed `From`/`To` mailbox: display name (may be '') + bare address. */
 export interface ParsedAddress {

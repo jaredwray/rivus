@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+	agentAddressLocalPart,
 	cleanSubject,
 	extractReplyText,
 	htmlToText,
@@ -159,6 +160,17 @@ describe('resolveAgentRecipient', () => {
 	it('returns null when no recipient is at the agent domain', () => {
 		expect(resolveAgentRecipient(event(['someone@example.com']), 'riv.us')).toBeNull();
 		expect(resolveAgentRecipient(event([]), 'riv.us')).toBeNull();
+	});
+});
+
+describe('agentAddressLocalPart', () => {
+	it('returns the local part of one of our agent addresses (case-insensitive)', () => {
+		expect(agentAddressLocalPart('Cascade-Plumbing@RIV.US', 'riv.us')).toBe('cascade-plumbing');
+	});
+
+	it('returns null for an address at another domain, or with an empty local part', () => {
+		expect(agentAddressLocalPart('hello@rivus.ai', 'riv.us')).toBeNull();
+		expect(agentAddressLocalPart('@riv.us', 'riv.us')).toBeNull();
 	});
 });
 

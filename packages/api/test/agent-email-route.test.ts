@@ -679,3 +679,131 @@ describe('POST /v1/channels/email/inbound — delivery semantics (review-driven)
 		await app.close();
 	});
 });
+
+/** A Resend delivery-status webhook (bounce / spam complaint) for a reply Rivus sent. */
+function deliveryPayload(type: 'email.bounced' | 'email.complained', slug: string, to = SENDER) {
+	return {
+		type,
+		created_at: new Date().toISOString(),
+		data: {
+			email_id: 'em_out_1',
+			// A delivery event is about mail *Rivus sent*: from the agent address, to the customer.
+			from: `Cascade Plumbing <${slug}@riv.us>`,
+			to: [to],
+			subject: 'Re: Water heater',
+		},
+	};
+}
+
+describe('POST /v1/channels/email/inbound — outbound delivery failures', () => {
+	async function withThread() {
+		const { app, repos } = await buildTestAppWithRepos();
+		const owner = await signupOwner(app);
+		const slug = owner.account.slug;
+		const accountId = owner.account.id as AccountId;
+		await repos.customers.create(accountId, {
+			name: 'Dana Fox',
+			email: SENDER,
+			phone: '',
+			address: '',
+			lifetimeValue: 0,
+			balance: 0,
+			notes: '',
+		});
+		// One inbound message opens the thread + conversation (agent offers slots).
+		await app.inject({ method: 'POST', url: WEBHOOK_URL, payload: inboundPayload(slug) });
+		const thread = await repos.agentThreads.findByContact(accountId, 'email', SENDER);
+		return { app, repos, slug, accountId, conversationId: thread?.conversationId ?? ('' as never) };
+	}
+
+	it('flags the conversation for a human when a reply bounces', async () => {
+		const { app, repos, slug, accountId, conversationId } = await withThread();
+
+		const response = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: deliveryPayload('email.bounced', slug),
+		});
+		expect(response.json()).toEqual({ handled: true, outcome: 'delivery_bounced' });
+
+		const conversation = await repos.conversations.findById(accountId, conversationId);
+		expect(conversation?.status).toBe('needs_attention');
+		expect(conversation?.flagReason).toContain("didn't reach");
+		const messages = await repos.conversations.listMessages(accountId, conversationId);
+		expect(messages?.at(-1)?.author).toBe('note');
+		expect(messages?.at(-1)?.body).toContain('bounced');
+
+		// The team was notified.
+		const userId = (await repos.memberships.listByAccount(accountId))[0]?.userId;
+		if (!userId) {
+			throw new Error('expected the owner to have a membership');
+		}
+		const notifications = await repos.notifications.list({
+			accountId,
+			userId,
+			page: 1,
+			pageSize: 10,
+			unreadOnly: false,
+		});
+		expect(notifications.notifications.some((n) => n.title === 'A conversation needs you')).toBe(
+			true,
+		);
+		await app.close();
+	});
+
+	it('uses spam-complaint wording for email.complained', async () => {
+		const { app, repos, slug, accountId, conversationId } = await withThread();
+		const response = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: deliveryPayload('email.complained', slug),
+		});
+		expect(response.json()).toEqual({ handled: true, outcome: 'delivery_complained' });
+		const messages = await repos.conversations.listMessages(accountId, conversationId);
+		expect(messages?.at(-1)?.body).toContain('spam');
+		await app.close();
+	});
+
+	it('is idempotent — a redelivered bounce does not stack notes', async () => {
+		const { app, repos, slug, accountId, conversationId } = await withThread();
+		await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: deliveryPayload('email.bounced', slug),
+		});
+		const afterFirst = (await repos.conversations.listMessages(accountId, conversationId))?.length;
+
+		const second = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: deliveryPayload('email.bounced', slug),
+		});
+		expect(second.json()).toEqual({ handled: false, outcome: 'already_flagged' });
+		const afterSecond = (await repos.conversations.listMessages(accountId, conversationId))?.length;
+		expect(afterSecond).toBe(afterFirst);
+		await app.close();
+	});
+
+	it('ignores a delivery event whose sender is not an agent address, or with no thread', async () => {
+		const { app, slug } = await withThread();
+		// Not our domain.
+		const notOurs = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: {
+				type: 'email.bounced',
+				data: { email_id: 'x', from: 'hello@rivus.ai', to: [SENDER], subject: 'x' },
+			},
+		});
+		expect(notOurs.json()).toEqual({ handled: false, outcome: 'not_agent_sender' });
+
+		// Our domain + account, but a recipient we have no thread for.
+		const noThread = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: deliveryPayload('email.bounced', slug, 'stranger@nowhere.example'),
+		});
+		expect(noThread.json()).toEqual({ handled: false, outcome: 'no_thread' });
+		await app.close();
+	});
+});

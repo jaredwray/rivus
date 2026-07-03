@@ -168,13 +168,21 @@ books the job (a confirmed, unassigned `Job`) once a time is agreed, keeping
 the multi-turn state on an `AgentThread` and mirroring the whole exchange into
 the inbox as an `email` conversation.
 
+The same webhook also handles **outbound delivery status**: when a reply Rivus
+sent bounces (`email.bounced`) or is marked as spam (`email.complained`), the
+conversation is flagged `needs_attention` with an inline note, so it surfaces
+in the inbox's "Needs you" filter and a human can reach the customer another
+way. (The synchronous send failure — Resend rejecting the request outright — is
+already handled inline: the booking is rolled back and the delivery retried.)
+
 Wiring it up:
 
 1. In Resend, add `riv.us` (or your `AGENT_EMAIL_DOMAIN`) as a **receiving**
    domain (MX records) and as a verified sending domain.
-2. Create a webhook for the `email.received` event pointing at
-   `POST /v1/channels/email/inbound`, and set its signing secret as
-   `RESEND_WEBHOOK_SECRET`.
+2. Create a webhook pointing at `POST /v1/channels/email/inbound`, subscribed to
+   `email.received` **and** the delivery events `email.bounced` and
+   `email.complained`, and set its signing secret as `RESEND_WEBHOOK_SECRET`.
+   (All events hit the one endpoint; it branches on the event type.)
 
 | Variable                | Default                 | Notes                                                                    |
 | ----------------------- | ----------------------- | ------------------------------------------------------------------------ |

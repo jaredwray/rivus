@@ -4267,11 +4267,11 @@
     },
     "/v1/channels/email/inbound": {
       "post": {
-        "summary": "Receive an inbound customer email (Resend webhook)",
+        "summary": "Resend email webhook (inbound customer mail + delivery status)",
         "tags": [
           "channels"
         ],
-        "description": "Resend delivers every email sent to an account’s agent address (`<account-slug>@riv.us`) here. Rivus validates the sender against the account’s customers, keeps the multi-turn scheduling state on the thread, and replies by email — offering open times and booking the job once a time is agreed. Deliveries are authenticated with the Svix signature headers when `RESEND_WEBHOOK_SECRET` is configured.",
+        "description": "Resend delivers email events for the account’s agent address (`<account-slug>@riv.us`) here. On `email.received` Rivus validates the sender against the account’s customers, keeps the multi-turn scheduling state on the thread, and replies by email — offering open times and booking the job once a time is agreed. On `email.bounced`/`email.complained` (a reply that never reached the customer) it flags the conversation for a human. Deliveries are authenticated with the Svix signature headers when `RESEND_WEBHOOK_SECRET` is configured.",
         "requestBody": {
           "required": true,
           "content": {
