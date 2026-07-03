@@ -1,6 +1,11 @@
 import type { AgentSlot } from '@rivus/core';
 import { describe, expect, it } from 'vitest';
-import { matchOfferedSlot, parseProposedTime, parseSlotChoice } from '../src/services/agent/parse';
+import {
+	isAcknowledgement,
+	matchOfferedSlot,
+	parseProposedTime,
+	parseSlotChoice,
+} from '../src/services/agent/parse';
 
 const PACIFIC = 'America/Los_Angeles';
 // Wednesday July 1st 2026, 10:00 AM PDT.
@@ -213,6 +218,75 @@ describe('parseSlotChoice — ordinals need to name an offer', () => {
 		expect(parseSlotChoice('the third option', 3)).toBe(2);
 		expect(parseSlotChoice('first', 3)).toBe(0);
 		expect(parseSlotChoice('second works', 3)).toBe(1);
+	});
+});
+
+describe('isAcknowledgement', () => {
+	it.each([
+		'Confirmed!',
+		'confirmed',
+		'Confirmed, thanks!',
+		'ok',
+		'OK!',
+		'Okay 👍',
+		'k',
+		'kk',
+		'yes',
+		'yep',
+		'sure',
+		'sounds good',
+		'Sounds good, thanks!',
+		'that works for me',
+		'perfect',
+		'Great, thanks!',
+		'thank you',
+		'thanks so much',
+		'see you then',
+		'Great — see you then!',
+		'will do',
+		'got it',
+		'all set',
+		"that's perfect, thank you!",
+		'awesome, see you then',
+		'Hi there, confirmed!',
+		'no worries, thanks',
+	])('reads %j as an acknowledgement', (text) => {
+		expect(isAcknowledgement(text)).toBe(true);
+	});
+
+	it.each([
+		// Genuine new scheduling asks must never read as a bare acknowledgement.
+		'Actually I need a second visit too — what else is open?',
+		'what else do you have?',
+		'can we reschedule?',
+		'do you have anything sooner?',
+		'move it to Friday',
+		'actually, cancel that please',
+		'ok but what else is open?',
+		'sounds good, but can you also do Monday?',
+		'when is it again?',
+		'thanks, what time was that?',
+		// Not affirmations at all.
+		'sounds terrible',
+		'that does not work',
+		'',
+		'   ',
+	])('does not read %j as an acknowledgement', (text) => {
+		expect(isAcknowledgement(text)).toBe(false);
+	});
+
+	it.each([
+		// Numeric scheduling content must survive normalization as an unrecognized
+		// token, so a reply proposing a (here unparseable) date/time stays a real
+		// scheduling turn rather than being discarded down to "works"/"ok".
+		'10 works',
+		'7/10 works',
+		'ok 7/10',
+		'2 works',
+		'9 or 10 works',
+		'how about the 10th',
+	])('does not read numeric scheduling content in %j as an acknowledgement', (text) => {
+		expect(isAcknowledgement(text)).toBe(false);
 	});
 });
 
