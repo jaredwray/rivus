@@ -100,8 +100,11 @@ export function parseSlotChoice(text: string, offeredCount: number): number | nu
 	} else if (/(?:^|\b)(?:the\s+)?last\s+one\b/.test(normalized)) {
 		pick = offeredCount;
 	} else {
+		// An ordinal only counts mid-sentence when it names an offer explicitly
+		// ("the second one/slot/option/time") — a bare "second" in passing ("I
+		// need a second visit", "first thing in the morning") is not a pick.
 		const ordinal = normalized.match(
-			/\b(?:the\s+)?(first|second|third|fourth|fifth)\b(?:\s+(?:one|slot|option|time))?/,
+			/\b(?:the\s+)?(first|second|third|fourth|fifth)\s+(?:one|slot|option|time)\b/,
 		);
 		if (ordinal?.[1]) {
 			pick = ORDINAL_WORDS[ordinal[1]] ?? null;
@@ -114,10 +117,13 @@ export function parseSlotChoice(text: string, offeredCount: number): number | nu
 			if (bare?.[1]) {
 				pick = Number(bare[1]);
 			} else {
+				// Same whole-message rule for spelled-out picks — "first", "two
+				// please", "second works" — so an unadorned ordinal still needs the
+				// message to be about nothing else.
 				const word = normalized
 					.trim()
 					.match(
-						/^(?:the\s+)?(one|two|three|four|five)\s*(?:please|works|thanks|thank you|!|\.)*$/,
+						/^(?:the\s+)?(one|two|three|four|five|first|second|third|fourth|fifth)\s*(?:please|works|thanks|thank you|!|\.)*$/,
 					);
 				if (word?.[1]) {
 					pick = ORDINAL_WORDS[word[1]] ?? null;
@@ -217,6 +223,28 @@ function isRealTime(hour: number | null, minute: number): boolean {
  */
 export function parseProposedTime(text: string, context: ParseTimeContext): IsoDateString | null {
 	const normalized = text.toLowerCase().replace(/\s+/g, ' ');
+	if (!NEGATION.test(normalized)) {
+		return parseTimeClause(normalized, context);
+	}
+	// A negated time must never be booked: "I can't do Tuesday at 2" proposes
+	// nothing. But the alternative half of "Tuesday doesn't work, how about
+	// Wednesday at 3?" still does — so read clause by clause, skipping any
+	// clause that says no.
+	for (const clause of normalized.split(
+		/[,;.?!\n–—]+|\b(?:but|how about|what about|instead|though)\b/,
+	)) {
+		if (NEGATION.test(clause)) {
+			continue;
+		}
+		const proposed = parseTimeClause(clause, context);
+		if (proposed) {
+			return proposed;
+		}
+	}
+	return null;
+}
+
+function parseTimeClause(normalized: string, context: ParseTimeContext): IsoDateString | null {
 	const today = zonedParts(context.now, context.timeZone);
 
 	// 2026-07-10 14:00 / 2026-07-10T14:00 — an explicit wall-clock time in the

@@ -153,25 +153,34 @@ export function extractReplyText(text: string): string {
 	return kept.join('\n').trim();
 }
 
-/** A crude but dependency-free fallback when an email has HTML and no text part. */
+/**
+ * A crude but dependency-free fallback when an email has HTML and no text
+ * part. The output is plain text handed to the reply parser and transcript —
+ * it is never rendered as HTML, so this is a readability aid, not a sanitizer.
+ */
 export function htmlToText(html: string): string {
-	return html
-		.replace(/<(?:style|script)[\s\S]*?<\/(?:style|script)>/gi, ' ')
-		.replace(/<br\s*\/?>/gi, '\n')
-		.replace(/<\/(?:p|div|li|tr|h[1-6])>/gi, '\n')
-		.replace(/<[^>]+>/g, ' ')
-		.replace(/&nbsp;/gi, ' ')
-		.replace(/&amp;/gi, '&')
-		.replace(/&lt;/gi, '<')
-		.replace(/&gt;/gi, '>')
-		.replace(/&quot;/gi, '"')
-		.replace(/&#39;/gi, "'")
-		.replace(/[ \t]+/g, ' ')
-		.split('\n')
-		.map((line) => line.trim())
-		.join('\n')
-		.replace(/\n{3,}/g, '\n\n')
-		.trim();
+	return (
+		html
+			// `\s*>` also matches sloppy closers like `</script >`.
+			.replace(/<(?:style|script)[\s\S]*?<\/(?:style|script)\s*>/gi, ' ')
+			.replace(/<br\s*\/?>/gi, '\n')
+			.replace(/<\/(?:p|div|li|tr|h[1-6])>/gi, '\n')
+			.replace(/<[^>]+>/g, ' ')
+			.replace(/&nbsp;/gi, ' ')
+			.replace(/&lt;/gi, '<')
+			.replace(/&gt;/gi, '>')
+			.replace(/&quot;/gi, '"')
+			.replace(/&#39;/gi, "'")
+			// `&amp;` is decoded last so `&amp;lt;` yields the literal text "&lt;"
+			// the author wrote, rather than being double-unescaped into "<".
+			.replace(/&amp;/gi, '&')
+			.replace(/[ \t]+/g, ' ')
+			.split('\n')
+			.map((line) => line.trim())
+			.join('\n')
+			.replace(/\n{3,}/g, '\n\n')
+			.trim()
+	);
 }
 
 /** Strip `Re:`/`Fwd:` chains off a subject; '' stays ''. */

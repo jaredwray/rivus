@@ -113,7 +113,12 @@ function contentFor(decision: AgentDecision, context: AgentEmailRenderContext): 
 					`${context.jobTitle} — ${formatSlotLabel(decision.slot.startAt, context.timeZone, currentYearIn(context))} (${decision.slot.durationMinutes} minutes).`,
 				],
 				options: [],
-				trail: [`If you need to change anything, just reply to this email.`],
+				trail: [
+					// Changes are a human's call (a "move it to Friday" reply would book a
+					// second appointment, not move this one) — and every reply lands in the
+					// team inbox, so pointing at the team is both honest and true.
+					`Need to change or cancel? Reply here and the ${context.accountName} team will take care of it.`,
+				],
 				button: null,
 			};
 		case 'confirm_existing':

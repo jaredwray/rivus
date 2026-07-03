@@ -141,6 +141,9 @@ jobs:
       PROD_RESEND_API_KEY: ${{ secrets.PROD_RESEND_API_KEY }}
       # Optional: enables the AI duplicate-FAQ check. Unset → the check is a no-op.
       PROD_OPENAI_API_KEY: ${{ secrets.PROD_OPENAI_API_KEY }}
+      # Optional: enables the agent email channel's inbound webhook. Unset → the
+      # route answers 503 (the channel is off) while everything else still works.
+      PROD_RESEND_WEBHOOK_SECRET: ${{ secrets.PROD_RESEND_WEBHOOK_SECRET }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup
@@ -169,6 +172,12 @@ jobs:
         if: ${{ env.PROD_OPENAI_API_KEY != '' }}
         run: |
           printf '%s' "$PROD_OPENAI_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put OPENAI_API_KEY --env production
+      # Optional inbound-email webhook secret — same empty-value guard as above.
+      # Without it the email scheduling channel stays disabled (503) after deploy.
+      - name: Sync optional email-channel secret
+        if: ${{ env.PROD_RESEND_WEBHOOK_SECRET != '' }}
+        run: |
+          printf '%s' "$PROD_RESEND_WEBHOOK_SECRET" | pnpm --filter @rivus/api exec wrangler secret put RESEND_WEBHOOK_SECRET --env production
 
   # The five service deploys above all ship to the single Cloudflare `production`
   # environment. If each of them set `environment: production`, GitHub would open

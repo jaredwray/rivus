@@ -43,7 +43,7 @@ const envSchema = z
 		APP_URL: z.string().url().default('https://app.rivus.ai'),
 		// Base URL of the marketing website, used to build the customer self-signup
 		// link the scheduling agent emails to unrecognized senders.
-		WEBSITE_URL: z.string().url().default('https://www.rivus.ai'),
+		WEBSITE_URL: z.url().default('https://www.rivus.ai'),
 		// --- Agent email channel (scheduling over email) ---
 		// Domain of the per-account agent addresses customers write to. The local
 		// part identifies the account (its slug or id): `cascade-plumbing@riv.us`.

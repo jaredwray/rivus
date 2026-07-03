@@ -221,6 +221,16 @@ describe('htmlToText', () => {
 	it('drops style and script bodies', () => {
 		expect(htmlToText('<style>p{color:red}</style><p>hello</p><script>x()</script>')).toBe('hello');
 	});
+
+	it('drops script bodies with sloppy end tags too', () => {
+		expect(htmlToText('<p>hello</p><script>x()</script >world')).toBe('hello\nworld');
+	});
+
+	it('never double-unescapes entities', () => {
+		// The author literally wrote "&lt;b&gt;" (encoded as &amp;lt;…) — it must
+		// stay "&lt;b&gt;", not collapse twice into "<b>".
+		expect(htmlToText('<p>&amp;lt;b&amp;gt;</p>')).toBe('&lt;b&gt;');
+	});
 });
 
 describe('cleanSubject', () => {

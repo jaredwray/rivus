@@ -2025,7 +2025,10 @@ svg {
 		box-shadow 0.15s ease;
 }
 
-.join-form__field input:focus {
+/* Scoped to text-entry types: they get the violet ring in place of the
+   outline, while any future checkbox/radio in the form keeps the browser's
+   own focus indicator (WCAG 2.4.7). */
+.join-form__field input:is([type="text"], [type="email"], [type="tel"]):focus {
 	outline: none;
 	border-color: var(--violet);
 	box-shadow: 0 0 0 3px rgba(110, 30, 200, 0.12);

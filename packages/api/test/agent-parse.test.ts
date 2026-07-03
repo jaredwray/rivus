@@ -198,3 +198,45 @@ describe('matchOfferedSlot — guards', () => {
 		expect(matchOfferedSlot("Tuesday doesn't work for me", offered, PACIFIC)).toBeNull();
 	});
 });
+
+describe('parseSlotChoice — ordinals need to name an offer', () => {
+	it.each([
+		'I need a second visit for the outdoor faucet',
+		'first thing in the morning would be great',
+		'my third request this month…',
+	])('does not read a passing ordinal in %j as a pick', (text) => {
+		expect(parseSlotChoice(text, 3)).toBeNull();
+	});
+
+	it('still reads explicit ordinal picks', () => {
+		expect(parseSlotChoice('The second one works great, thanks!', 3)).toBe(1);
+		expect(parseSlotChoice('the third option', 3)).toBe(2);
+		expect(parseSlotChoice('first', 3)).toBe(0);
+		expect(parseSlotChoice('second works', 3)).toBe(1);
+	});
+});
+
+describe('parseProposedTime — negated times are not proposals', () => {
+	it.each([
+		"I can't do Tuesday at 2",
+		"July 10 at 2pm doesn't work for me",
+		'we cannot make tomorrow at 9am',
+	])('returns null for %j', (text) => {
+		expect(parseProposedTime(text, CTX)).toBeNull();
+	});
+
+	it('still reads the alternative half of a rejection', () => {
+		// It is Wednesday July 1st 10 AM, so "Wednesday at 3pm" is later today:
+		// 3 PM PDT = 22:00 UTC (same next-occurrence rule as the positive tests).
+		expect(parseProposedTime("Tuesday doesn't work, how about Wednesday at 3pm?", CTX)).toBe(
+			'2026-07-01T22:00:00.000Z',
+		);
+		expect(parseProposedTime("I can't do the morning. Tomorrow at 3pm works.", CTX)).toBe(
+			'2026-07-02T22:00:00.000Z',
+		);
+		// An em-dash separates the rejection from the alternative just like a comma.
+		expect(parseProposedTime('none of those — July 10 at 2pm?', CTX)).toBe(
+			'2026-07-10T21:00:00.000Z',
+		);
+	});
+});

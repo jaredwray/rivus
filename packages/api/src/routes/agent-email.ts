@@ -64,8 +64,12 @@ const BUSY_WINDOW_DAYS = BOOKING_HORIZON_DAYS + 2;
  * double-book over it.
  */
 const BUSY_LOOKBACK_MINUTES = 24 * 60;
-/** Safety cap on calendar pages fetched per webhook (100 jobs each). */
-const MAX_BUSY_PAGES = 10;
+/**
+ * Backstop on calendar pages fetched per webhook (100 jobs each). Far above
+ * any real account's bookings for a ~9-week window; if it is ever hit the
+ * handler fails the delivery rather than silently booking over unseen jobs.
+ */
+const MAX_BUSY_PAGES = 100;
 
 /** First value of a possibly-repeated header, as a string. */
 function headerValue(value: string | string[] | undefined): string {
@@ -138,7 +142,7 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 		const from = new Date(now.getTime() - BUSY_LOOKBACK_MINUTES * 60_000).toISOString();
 		const to = new Date(now.getTime() + BUSY_WINDOW_DAYS * 24 * 60 * 60_000).toISOString();
 		const busy: BusyInterval[] = [];
-		for (let page = 1; page <= MAX_BUSY_PAGES; page += 1) {
+		for (let page = 1; ; page += 1) {
 			const { jobs: batch, total } = await jobs.list({ accountId, page, pageSize: 100, from, to });
 			for (const job of batch) {
 				if (job.status !== 'canceled') {
@@ -147,6 +151,13 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 			}
 			if (page * 100 >= total || batch.length === 0) {
 				break;
+			}
+			if (page >= MAX_BUSY_PAGES) {
+				// An incomplete calendar must not look like an open one — offering or
+				// booking against it could double-book. Fail the delivery instead.
+				throw app.httpErrors.internalServerError(
+					'Calendar too large to load for availability; the delivery will be retried.',
+				);
 			}
 		}
 		return busy;
@@ -381,7 +392,9 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 			try {
 				await mailer.sendAgentEmail({
 					to: sender.address,
-					from: displayName === '' ? agentAddress : `${displayName} <${agentAddress}>`,
+					// Quoted so names with commas/periods ("Cascade Plumbing, Inc.")
+					// survive RFC 5322 parsing; sanitize already stripped any quotes.
+					from: displayName === '' ? agentAddress : `"${displayName}" <${agentAddress}>`,
 					subject: rendered.subject,
 					html: rendered.html,
 					text: rendered.text,
