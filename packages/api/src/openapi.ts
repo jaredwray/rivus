@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createInMemoryRepositories } from './repositories/memory';
+import { NoopReceivedEmailReader } from './services/agent/email/received';
 import { NoopMailer } from './services/email';
 import { NoopFaqAnswerService } from './services/faq-answer';
 import { NoopFaqSimilarityService } from './services/faq-similarity';
@@ -27,6 +28,7 @@ async function main(): Promise<void> {
 		jobs,
 		notifications,
 		conversations,
+		agentThreads,
 		verificationCodes,
 	} = createInMemoryRepositories();
 	const app = buildApp({
@@ -42,8 +44,10 @@ async function main(): Promise<void> {
 		jobs,
 		notifications,
 		conversations,
+		agentThreads,
 		verificationCodes,
 		mailer: new NoopMailer(),
+		receivedEmails: new NoopReceivedEmailReader(),
 		notifier: createNotificationService({ notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),

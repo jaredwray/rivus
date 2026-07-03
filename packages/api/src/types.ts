@@ -3,6 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Config } from './config';
 import type {
 	AccountRepository,
+	AgentThreadRepository,
 	ConversationRepository,
 	CustomerRepository,
 	FaqRepository,
@@ -15,6 +16,7 @@ import type {
 	UserRepository,
 	VerificationCodeRepository,
 } from './repositories/types';
+import type { ReceivedEmailReader } from './services/agent/email/received';
 import type { Mailer } from './services/email';
 import type { FaqAnswerService } from './services/faq-answer';
 import type { FaqSimilarityService } from './services/faq-similarity';
@@ -44,10 +46,14 @@ export interface AppDeps {
 	notifications: NotificationRepository;
 	/** Customer conversations (the inbox). */
 	conversations: ConversationRepository;
+	/** The agent's per-contact scheduling state across messaging channels. */
+	agentThreads: AgentThreadRepository;
 	/** Stores one-time sign-in codes for passwordless auth. */
 	verificationCodes: VerificationCodeRepository;
 	/** Sends transactional email (invitations and sign-in codes). */
 	mailer: Mailer;
+	/** Fetches inbound email bodies (Resend's webhook delivers metadata only). */
+	receivedEmails: ReceivedEmailReader;
 	/** Turns domain events (job assigned, invite accepted, …) into notifications. */
 	notifier: NotificationService;
 	/** AI check for near-duplicate FAQs (a no-op when no provider key is set). */

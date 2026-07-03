@@ -1,5 +1,6 @@
 import type { Config } from '../config';
 import {
+	type AgentEmail,
 	type InviteEmail,
 	type Mailer,
 	NoopMailer,
@@ -14,7 +15,8 @@ export type FetchLike = (
 	init: {
 		method: string;
 		headers: Record<string, string>;
-		body: string;
+		/** Absent for bodyless requests (GET) — `fetch` rejects a GET with a body. */
+		body?: string;
 	},
 ) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
 
@@ -59,11 +61,34 @@ export class ResendMailer implements Mailer {
 		await this.send({ to: email.to, subject, html, text });
 	}
 
+	async sendAgentEmail(email: AgentEmail): Promise<void> {
+		// Threading headers keep the reply in the customer's existing thread;
+		// mail clients fall back to subject-matching when they're absent.
+		const headers: Record<string, string> = {};
+		if (email.inReplyTo) {
+			headers['In-Reply-To'] = email.inReplyTo;
+		}
+		if (email.references.length > 0) {
+			headers.References = email.references.join(' ');
+		}
+		await this.send({
+			to: email.to,
+			subject: email.subject,
+			html: email.html,
+			text: email.text,
+			// The agent writes as the account's own address, not the global sender.
+			from: email.from,
+			...(Object.keys(headers).length > 0 ? { headers } : {}),
+		});
+	}
+
 	private async send(message: {
 		to: string;
 		subject: string;
 		html: string;
 		text: string;
+		from?: string;
+		headers?: Record<string, string>;
 	}): Promise<void> {
 		const response = await this.fetchImpl(this.endpoint, {
 			method: 'POST',

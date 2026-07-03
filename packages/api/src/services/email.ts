@@ -36,10 +36,32 @@ export interface RenderedEmail {
 	text: string;
 }
 
+/**
+ * A reply the scheduling agent sends into an email thread. Unlike the
+ * transactional emails above it is addressed *from* the account's own agent
+ * address (`<slug>@riv.us`) rather than the global `EMAIL_FROM`, and it
+ * carries RFC 5322 threading headers so mail clients keep the conversation in
+ * one thread.
+ */
+export interface AgentEmail {
+	to: string;
+	/** Full `Name <address>` form of the account's agent address. */
+	from: string;
+	subject: string;
+	html: string;
+	text: string;
+	/** `Message-ID` of the inbound email being answered; '' when unknown. */
+	inReplyTo: string;
+	/** The thread's `Message-ID` chain (usually just the inbound id); may be empty. */
+	references: string[];
+}
+
 /** Delivers transactional email. Implementations reject on delivery failure. */
 export interface Mailer {
 	sendInviteEmail(email: InviteEmail): Promise<void>;
 	sendVerificationCode(email: VerificationEmail): Promise<void>;
+	/** Send a scheduling-agent reply into an email thread. */
+	sendAgentEmail(email: AgentEmail): Promise<void>;
 }
 
 /** Human-readable labels for each role. */
@@ -50,7 +72,7 @@ const ROLE_LABELS: Record<Role, string> = {
 };
 
 /** Escape the five characters that are unsafe to interpolate into HTML. */
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
 	return value
 		.replace(/&/g, '&amp;')
 		.replace(/</g, '&lt;')
@@ -151,6 +173,10 @@ export class NoopMailer implements Mailer {
 	}
 
 	async sendVerificationCode(_email: VerificationEmail): Promise<void> {
+		// Intentionally does nothing.
+	}
+
+	async sendAgentEmail(_email: AgentEmail): Promise<void> {
 		// Intentionally does nothing.
 	}
 }

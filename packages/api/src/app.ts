@@ -13,6 +13,7 @@ import swaggerPlugin from './plugins/swagger';
 import { ConflictError, InviteNotPendingError, LastOwnerError } from './repositories/errors';
 import { accountRoutes } from './routes/account';
 import { adminRoutes } from './routes/admin';
+import { agentEmailRoutes } from './routes/agent-email';
 import { authRoutes } from './routes/auth';
 import { billingRoutes } from './routes/billing';
 import { conversationRoutes } from './routes/conversations';
@@ -23,6 +24,7 @@ import { itemRoutes } from './routes/items';
 import { jobRoutes } from './routes/jobs';
 import { memberRoutes } from './routes/members';
 import { notificationRoutes } from './routes/notifications';
+import { publicRoutes } from './routes/public';
 import { searchRoutes } from './routes/search';
 import type { AppDeps } from './types';
 
@@ -188,6 +190,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 	app.register(notificationRoutes, { prefix: '/v1/notifications' });
 	app.register(conversationRoutes, { prefix: '/v1/conversations' });
 	app.register(searchRoutes, { prefix: '/v1/search' });
+	// Public (unauthenticated) surface for customer self-signup, and the inbound
+	// webhook feeding the agent's email channel.
+	app.register(publicRoutes, { prefix: '/v1/public' });
+	app.register(agentEmailRoutes, { prefix: '/v1/channels' });
 
 	return app;
 }

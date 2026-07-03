@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto';
 import {
 	type Account,
 	type AccountId,
+	type AgentThread,
+	type AgentThreadId,
 	type Conversation,
+	type ConversationChannel,
 	type ConversationDetail,
 	type ConversationId,
 	type CreateConversationInput,
@@ -43,6 +46,7 @@ import type {
 	AcceptInviteInput,
 	AcceptInviteResult,
 	AccountRepository,
+	AgentThreadRepository,
 	ConversationRepository,
 	ConversationReviewPatch,
 	CustomerRepository,
@@ -60,6 +64,7 @@ import type {
 	ListNotificationsOptions,
 	MembershipRepository,
 	NewAccount,
+	NewAgentThread,
 	NewInvite,
 	NewMembership,
 	NewUser,
@@ -73,6 +78,7 @@ import type {
 	StoredUser,
 	StoredVerificationCode,
 	UpdateAccount,
+	UpdateAgentThread,
 	UpdateUser,
 	UserRepository,
 	VerificationCodeRepository,
@@ -97,6 +103,8 @@ export interface InMemoryData {
 	notifications: Map<string, Notification>;
 	/** Conversations, each carrying its own embedded message transcript. */
 	conversations: Map<string, StoredConversation>;
+	/** The agent's per-contact scheduling state, one per (account, channel, address). */
+	agentThreads: Map<string, AgentThread>;
 	/** Active one-time codes, keyed by normalized email (one per email). */
 	verificationCodes: Map<string, StoredVerificationCode>;
 }
@@ -113,6 +121,7 @@ export function createInMemoryData(): InMemoryData {
 		jobs: new Map(),
 		notifications: new Map(),
 		conversations: new Map(),
+		agentThreads: new Map(),
 		verificationCodes: new Map(),
 	};
 }
@@ -713,6 +722,22 @@ export class InMemoryCustomerRepository implements CustomerRepository {
 		return customer && customer.accountId === accountId ? structuredClone(customer) : null;
 	}
 
+	async findByEmail(accountId: AccountId, email: string): Promise<Customer | null> {
+		const needle = email.trim().toLowerCase();
+		// Customers without an email all store '', so a blank needle must not match them.
+		if (needle === '') {
+			return null;
+		}
+		// Newest-first (Map preserves insertion order), matching list()'s ordering,
+		// so the most recent record wins when several share an address.
+		const match = [...this.data.customers.values()]
+			.reverse()
+			.find(
+				(customer) => customer.accountId === accountId && customer.email.toLowerCase() === needle,
+			);
+		return match ? structuredClone(match) : null;
+	}
+
 	async update(
 		accountId: AccountId,
 		id: CustomerId,
@@ -1157,6 +1182,98 @@ export class InMemoryConversationRepository implements ConversationRepository {
 	}
 }
 
+/** In-memory agent-thread store — the agent's per-contact scheduling memory. */
+export class InMemoryAgentThreadRepository implements AgentThreadRepository {
+	constructor(private readonly data: InMemoryData) {}
+
+	async create(input: NewAgentThread): Promise<AgentThread> {
+		const address = input.contactAddress.toLowerCase();
+		const existing = await this.findByContact(input.accountId, input.channel, address);
+		if (existing) {
+			throw new ConflictError(
+				'contactAddress',
+				'An agent thread already exists for this contact on this channel',
+			);
+		}
+		const timestamp = now();
+		const thread: AgentThread = {
+			id: randomUUID() as AgentThreadId,
+			accountId: input.accountId,
+			channel: input.channel,
+			// Stored lower-cased so lookups by the same contact always converge on one
+			// thread, however the sending client capitalizes the address.
+			contactAddress: address,
+			conversationId: input.conversationId,
+			customerId: input.customerId,
+			state: 'new',
+			offeredSlots: [],
+			lastExternalMessageId: '',
+			subject: input.subject,
+			bookedJobId: '',
+			createdAt: timestamp,
+			updatedAt: timestamp,
+		};
+		this.data.agentThreads.set(thread.id, thread);
+		return structuredClone(thread);
+	}
+
+	async findById(accountId: AccountId, id: AgentThreadId): Promise<AgentThread | null> {
+		const thread = this.data.agentThreads.get(id);
+		return thread && thread.accountId === accountId ? structuredClone(thread) : null;
+	}
+
+	async findByContact(
+		accountId: AccountId,
+		channel: ConversationChannel,
+		contactAddress: string,
+	): Promise<AgentThread | null> {
+		const address = contactAddress.toLowerCase();
+		const match = [...this.data.agentThreads.values()].find(
+			(thread) =>
+				thread.accountId === accountId &&
+				thread.channel === channel &&
+				thread.contactAddress === address,
+		);
+		return match ? structuredClone(match) : null;
+	}
+
+	async update(
+		accountId: AccountId,
+		id: AgentThreadId,
+		input: UpdateAgentThread,
+	): Promise<AgentThread | null> {
+		const thread = this.data.agentThreads.get(id);
+		if (!thread || thread.accountId !== accountId) {
+			return null;
+		}
+		const patch: Partial<AgentThread> = {};
+		if (input.customerId !== undefined) {
+			patch.customerId = input.customerId;
+		}
+		if (input.state !== undefined) {
+			patch.state = input.state;
+		}
+		if (input.offeredSlots !== undefined) {
+			patch.offeredSlots = structuredClone(input.offeredSlots);
+		}
+		if (input.lastExternalMessageId !== undefined) {
+			patch.lastExternalMessageId = input.lastExternalMessageId;
+		}
+		if (input.subject !== undefined) {
+			patch.subject = input.subject;
+		}
+		if (input.bookedJobId !== undefined) {
+			patch.bookedJobId = input.bookedJobId;
+		}
+		if (input.conversationId !== undefined) {
+			patch.conversationId = input.conversationId;
+		}
+		const updated: AgentThread = { ...thread, ...patch, updatedAt: now() };
+		this.data.agentThreads.set(id, updated);
+		return structuredClone(updated);
+	}
+}
+
 export interface InMemoryRepositories {
 	data: InMemoryData;
 	users: InMemoryUserRepository;
@@ -1169,6 +1286,7 @@ export interface InMemoryRepositories {
 	jobs: InMemoryJobRepository;
 	notifications: InMemoryNotificationRepository;
 	conversations: InMemoryConversationRepository;
+	agentThreads: InMemoryAgentThreadRepository;
 	verificationCodes: InMemoryVerificationCodeRepository;
 	onboarding: InMemoryOnboardingRepository;
 }
@@ -1187,6 +1305,7 @@ export function createInMemoryRepositories(
 	const jobs = new InMemoryJobRepository(data);
 	const notifications = new InMemoryNotificationRepository(data);
 	const conversations = new InMemoryConversationRepository(data);
+	const agentThreads = new InMemoryAgentThreadRepository(data);
 	const verificationCodes = new InMemoryVerificationCodeRepository(data);
 	const onboarding = new InMemoryOnboardingRepository(users, accounts, memberships, invites);
 	return {
@@ -1201,6 +1320,7 @@ export function createInMemoryRepositories(
 		jobs,
 		notifications,
 		conversations,
+		agentThreads,
 		verificationCodes,
 		onboarding,
 	};

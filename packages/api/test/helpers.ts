@@ -4,7 +4,8 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
 import { createInMemoryRepositories, type InMemoryRepositories } from '../src/repositories/memory';
-import type { InviteEmail, Mailer, VerificationEmail } from '../src/services/email';
+import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
+import type { AgentEmail, InviteEmail, Mailer, VerificationEmail } from '../src/services/email';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
@@ -14,6 +15,7 @@ import type { AppDeps } from '../src/types';
 export class RecordingMailer implements Mailer {
 	readonly invites: InviteEmail[] = [];
 	readonly codes: VerificationEmail[] = [];
+	readonly agentEmails: AgentEmail[] = [];
 
 	async sendInviteEmail(email: InviteEmail): Promise<void> {
 		this.invites.push(email);
@@ -21,6 +23,10 @@ export class RecordingMailer implements Mailer {
 
 	async sendVerificationCode(email: VerificationEmail): Promise<void> {
 		this.codes.push(email);
+	}
+
+	async sendAgentEmail(email: AgentEmail): Promise<void> {
+		this.agentEmails.push(email);
 	}
 }
 
@@ -42,6 +48,7 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		jobs,
 		notifications,
 		conversations,
+		agentThreads,
 		verificationCodes,
 	} = createInMemoryRepositories();
 	const app = buildApp({
@@ -57,9 +64,12 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		jobs,
 		notifications,
 		conversations,
+		agentThreads,
 		verificationCodes,
 		// A recording mailer by default so helpers can read back the emailed code.
 		mailer: new RecordingMailer(),
+		// No inbound-email fetching in tests — webhook payloads embed their content.
+		receivedEmails: new NoopReceivedEmailReader(),
 		// A real notification service over the in-memory store, so route emission is
 		// exercised end-to-end in tests.
 		notifier: createNotificationService({ notifications }),
@@ -94,6 +104,7 @@ export async function buildTestAppWithRepos(): Promise<{
 		jobs,
 		notifications,
 		conversations,
+		agentThreads,
 		verificationCodes,
 	} = repos;
 	const app = buildApp({
@@ -109,8 +120,10 @@ export async function buildTestAppWithRepos(): Promise<{
 		jobs,
 		notifications,
 		conversations,
+		agentThreads,
 		verificationCodes,
 		mailer: new RecordingMailer(),
+		receivedEmails: new NoopReceivedEmailReader(),
 		notifier: createNotificationService({ notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),

@@ -156,3 +156,38 @@ Invitation **and one-time sign-in codes** are delivered through
 
 The API calls Resend's HTTP API directly (no SDK) so the transport stays small
 and is testable by injecting a fake `fetch`.
+
+### Agent email channel (scheduling over email)
+
+Customers of a business can email the business's agent address —
+`<account-slug>@riv.us` (the local part also accepts the raw account id) — and
+Rivus schedules with them over email: it validates the sender against the
+account's customers (unknown senders get a link to the public self-signup view
+on the website), offers open calendar slots in the account's timezone, and
+books the job (a confirmed, unassigned `Job`) once a time is agreed, keeping
+the multi-turn state on an `AgentThread` and mirroring the whole exchange into
+the inbox as an `email` conversation.
+
+Wiring it up:
+
+1. In Resend, add `riv.us` (or your `AGENT_EMAIL_DOMAIN`) as a **receiving**
+   domain (MX records) and as a verified sending domain.
+2. Create a webhook for the `email.received` event pointing at
+   `POST /v1/channels/email/inbound`, and set its signing secret as
+   `RESEND_WEBHOOK_SECRET`.
+
+| Variable                | Default                 | Notes                                                                    |
+| ----------------------- | ----------------------- | ------------------------------------------------------------------------ |
+| `AGENT_EMAIL_DOMAIN`    | `riv.us`                | Domain of the per-account agent addresses.                                |
+| `RESEND_WEBHOOK_SECRET` | _(unset)_               | Svix signing secret (`whsec_…`). Unset: dev/test accept unsigned deliveries; **production refuses the route (503)**. |
+| `WEBSITE_URL`           | `https://www.rivus.ai`  | Base URL for the customer self-signup link (`/customers/join/<slug>`).    |
+
+The webhook only carries metadata, so the email body is fetched back through
+Resend's received-emails API (`RESEND_API_KEY`). Local testing needs no key:
+a payload that embeds `data.text` is used as-is, so you can drive the whole
+flow with `curl` against a dev API. The scheduling policy itself is pure
+(`src/services/agent/`): deterministic parsing of replies ("option 2",
+"Tuesday at 2pm"), business-hours availability (Mon–Fri 9–5 account-local,
+60-minute slots, 24 h notice), and a channel-agnostic decision the email
+templates render — an SMS or WhatsApp channel can reuse everything but the
+templates.

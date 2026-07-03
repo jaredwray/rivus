@@ -4,6 +4,7 @@ import { loadConfig } from './config';
 import { checkDatabaseReady, connectMongoose, disconnectMongoose } from './db/mongoose';
 import {
 	MongoAccountRepository,
+	MongoAgentThreadRepository,
 	MongoConversationRepository,
 	MongoCustomerRepository,
 	MongoFaqRepository,
@@ -16,6 +17,7 @@ import {
 	MongoUserRepository,
 	MongoVerificationCodeRepository,
 } from './repositories/mongo';
+import { createReceivedEmailReader } from './services/agent/email/received';
 import { createFaqAnswerService } from './services/faq-answer';
 import { createFaqSimilarityService } from './services/faq-similarity';
 import { createNotificationService } from './services/notifications';
@@ -40,8 +42,10 @@ export async function start(): Promise<void> {
 		jobs: new MongoJobRepository(),
 		notifications,
 		conversations: new MongoConversationRepository(),
+		agentThreads: new MongoAgentThreadRepository(),
 		verificationCodes: new MongoVerificationCodeRepository(),
 		mailer: createMailer(config),
+		receivedEmails: createReceivedEmailReader(config),
 		notifier: createNotificationService({ notifications }),
 		faqSimilarity: createFaqSimilarityService(config),
 		faqAnswer: createFaqAnswerService(config),

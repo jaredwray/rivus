@@ -12,6 +12,29 @@ import {
 } from '@rivus/core';
 import { z } from 'zod';
 
+/**
+ * The public projection of an account, for unauthenticated surfaces (the
+ * customer self-signup page): just enough to say who the visitor is joining —
+ * no phone, address, status, or timestamps.
+ */
+export const publicAccountResponseSchema = z
+	.object({
+		name: z.string(),
+		slug: z.string(),
+	})
+	.meta({ id: 'PublicAccount' });
+
+/**
+ * Acknowledges a customer self-signup. Deliberately the same shape whether the
+ * record was created or the email already belonged to a customer, so the
+ * public endpoint can't be used to probe who is in an account's CRM.
+ */
+export const publicCustomerSignupResponseSchema = z
+	.object({
+		status: z.literal('registered'),
+	})
+	.meta({ id: 'PublicCustomerSignupResult' });
+
 /** Public user projection — never includes the password hash. */
 export const userResponseSchema = z
 	.object({

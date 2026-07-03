@@ -635,6 +635,42 @@ export const conversationListQuerySchema = paginationQuerySchema.extend({
 });
 export type ConversationListQuery = z.infer<typeof conversationListQuerySchema>;
 
+// --- Agent threads (multi-channel scheduling) ----------------------------------
+
+// `AgentThreadState` is the source-of-truth union in `types.ts` (mirroring the
+// `ItemStatus`/`itemStatusSchema` split); here we only add the runtime schema.
+/** Where an agent scheduling thread stands (see {@link AgentThreadState}). */
+export const agentThreadStateSchema = z.enum(
+	['new', 'awaiting_signup', 'slots_offered', 'booked'],
+	{ error: 'Choose a valid agent thread state.' },
+);
+
+/** One offered appointment window: a UTC instant plus a bounded duration. */
+export const agentSlotSchema = z.object({
+	startAt: jobStartSchema,
+	durationMinutes: z
+		.number({ error: 'Duration must be a number of minutes.' })
+		.int({ error: 'Duration must be a whole number of minutes.' })
+		.min(1, { error: 'Duration must be at least 1 minute.' })
+		.max(1440, { error: 'Duration must be 24 hours or less.' }),
+});
+export type AgentSlotInput = z.infer<typeof agentSlotSchema>;
+
+/**
+ * Body for the public "add yourself as a customer" form (linked from the
+ * agent's email when a sender isn't in the CRM yet). Unlike
+ * {@link createCustomerSchema}, `email` is required — it's how the agent will
+ * recognize the sender on their next message — and the money/notes fields are
+ * server-owned, so they aren't accepted here.
+ */
+export const publicCustomerSignupSchema = z.object({
+	name: nameSchema,
+	email: emailSchema,
+	phone: phoneSchema.default(''),
+	address: addressSchema.default(''),
+});
+export type PublicCustomerSignupInput = z.infer<typeof publicCustomerSignupSchema>;
+
 // --- Account seeding (development only) ---------------------------------------
 
 /**
