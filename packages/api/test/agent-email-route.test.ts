@@ -410,6 +410,55 @@ describe('POST /v1/channels/email/inbound — address resolution', () => {
 		expect(agentMailbox(app).agentEmails).toHaveLength(0);
 		await app.close();
 	});
+
+	it('throws away mail to the other environment’s domain alias', async () => {
+		// A production-configured API (AGENT_EMAIL_DOMAIN defaults to riv.us) must
+		// ignore mail to the development alias `@dev.riv.us` — even for a real
+		// account — so the two deployments never share an inbox.
+		const app = await buildTestApp();
+		const owner = await signupOwner(app);
+		const tagged = agentEmailLocalPart(owner.account.slug, owner.account.id as AccountId);
+
+		const response = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: inboundPayload(owner.account.slug, { to: [`${tagged}@dev.riv.us`] }),
+		});
+		expect(response.json()).toEqual({ handled: false, outcome: 'no_agent_recipient' });
+		expect(agentMailbox(app).agentEmails).toHaveLength(0);
+		await app.close();
+	});
+
+	it('serves its own domain and rejects the production alias when configured for development', async () => {
+		// The development deployment runs AGENT_EMAIL_DOMAIN=dev.riv.us: it answers
+		// mail to `@dev.riv.us` and throws away mail to the bare production `@riv.us`.
+		const app = await buildTestApp({
+			config: loadConfig({
+				NODE_ENV: 'test',
+				JWT_SECRET: 'test-secret-value-1234',
+				AGENT_EMAIL_DOMAIN: 'dev.riv.us',
+			} as NodeJS.ProcessEnv),
+		});
+		const owner = await signupOwner(app);
+		const tagged = agentEmailLocalPart(owner.account.slug, owner.account.id as AccountId);
+
+		const served = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: inboundPayload(owner.account.slug, { to: [`${tagged}@dev.riv.us`] }),
+		});
+		expect(served.json()).toEqual({ handled: true, outcome: 'send_signup_link' });
+		// The reply goes back out from that same dev-domain address.
+		expect(agentMailbox(app).agentEmails.at(-1)?.from).toContain(`<${tagged}@dev.riv.us>`);
+
+		const prodAlias = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: inboundPayload(owner.account.slug, { to: [`${tagged}@riv.us`] }),
+		});
+		expect(prodAlias.json()).toEqual({ handled: false, outcome: 'no_agent_recipient' });
+		await app.close();
+	});
 });
 
 describe('POST /v1/channels/email/inbound — signatures', () => {
