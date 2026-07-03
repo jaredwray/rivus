@@ -170,35 +170,45 @@ const QUOTE_MARKERS = [
 //   wrote:
 //
 // Neither physical line matches "On … wrote:" on its own, so the whole quoted
-// history used to leak into the parsed reply. We match the "On …" opener and the
-// closing "wrote:" as one unit that may span a few wrapped lines.
-const ATTRIBUTION_OPENER = /^\s*on\s.{0,200}$/i;
+// history used to leak into the parsed reply. We join the "On …" opener with the
+// lines up to a closing "wrote:" and treat the span as an attribution only when
+// it also carries a hallmark a real one always has: the sender's
+// angle-bracketed address or a clock time. That distinguishes it from ordinary
+// prose that merely opens with "On" and ends a later line with "wrote:"
+// ("On Tuesday I checked with Sam\nand he wrote:"), which must stay in the reply.
+const ATTRIBUTION_OPENER = /^\s*on\s/i;
 const ATTRIBUTION_CLOSER = /\bwrote:\s*$/i;
+const ATTRIBUTION_SIGNATURE = /<[^<>\s]+@[^<>\s]+>|\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*[ap]m\b/i;
 /** Physical lines an attribution may occupy (opener + a couple of wrapped tail lines). */
 const ATTRIBUTION_MAX_LINES = 3;
+/** A generous ceiling on the joined attribution — a sanity bound, not a filter. */
+const ATTRIBUTION_MAX_LENGTH = 300;
 
 /**
  * Whether a reply attribution ("On <date>, <sender> wrote:") begins at
- * `lines[index]`, in either the single-line form or the wrapped form a long
- * sender address produces. The lines must be contiguous — a blank line ends the
- * scan — so ordinary prose that merely opens with "On Monday…" and only later
- * happens to end a line with "wrote:" is never mistaken for quoted history.
+ * `lines[index]` — in the single-line form or the wrapped form a long sender
+ * address produces. The opener and its continuation lines must be contiguous (a
+ * blank line ends the scan), and the joined span must both close with "wrote:"
+ * and carry an attribution hallmark (an angle-bracketed address or a clock
+ * time), so ordinary prose beginning with "On" is never mistaken for quoted
+ * history — whatever physical line "wrote:" happens to land on.
  */
 function startsReplyAttribution(lines: string[], index: number): boolean {
-	const opener = lines[index] ?? '';
-	if (!ATTRIBUTION_OPENER.test(opener)) {
+	if (!ATTRIBUTION_OPENER.test(lines[index] ?? '')) {
 		return false;
 	}
-	if (ATTRIBUTION_CLOSER.test(opener)) {
-		return true;
-	}
-	for (let i = index + 1; i < lines.length && i - index < ATTRIBUTION_MAX_LINES; i += 1) {
+	let joined = '';
+	for (let i = index; i < lines.length && i - index < ATTRIBUTION_MAX_LINES; i += 1) {
 		const line = lines[i] ?? '';
-		if (line.trim() === '') {
+		if (i > index && line.trim() === '') {
 			return false;
 		}
-		if (ATTRIBUTION_CLOSER.test(line)) {
-			return true;
+		joined = i === index ? line : `${joined} ${line}`;
+		if (joined.length > ATTRIBUTION_MAX_LENGTH) {
+			return false;
+		}
+		if (ATTRIBUTION_CLOSER.test(joined)) {
+			return ATTRIBUTION_SIGNATURE.test(joined);
 		}
 	}
 	return false;

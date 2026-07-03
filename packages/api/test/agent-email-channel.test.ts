@@ -263,6 +263,24 @@ describe('extractReplyText', () => {
 		);
 		expect(extractReplyText(raw)).toBe(raw);
 	});
+
+	it('keeps multi-line prose whose lines happen to open with "On" and end with "wrote:"', () => {
+		// No address or clock time, so this is prose the customer wrote, not a
+		// quoted-history attribution — it must survive intact.
+		const raw = ['On Tuesday I checked with Sam', 'and he wrote:', 'that Friday is best.'].join(
+			'\n',
+		);
+		expect(extractReplyText(raw)).toBe(raw);
+	});
+
+	it('still strips a long single-line attribution beyond the old length budget', () => {
+		const longName = `${'Cascade Plumbing & Heating of Springfield '.repeat(4)}LLC`;
+		const attribution = `On Jul 1, 2026, at 9:12 AM, ${longName} <dispatch@cascade.example.com> wrote:`;
+		expect(attribution.length).toBeGreaterThan(210);
+		expect(extractReplyText(`Book it, thanks!\n\n${attribution}\n> old thread`)).toBe(
+			'Book it, thanks!',
+		);
+	});
 });
 
 describe('htmlToText', () => {
