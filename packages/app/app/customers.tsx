@@ -81,6 +81,11 @@ export default function CustomersScreen() {
 	const [error, setError] = useState<string | null>(null);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [panelOpen, setPanelOpen] = useState(true);
+	// Width of the list's vertical scrollbar, measured from its viewport (see the
+	// onLayout below). Tracking this *offset* rather than the absolute width lets
+	// the table width recompute from the (window-derived) estimate in the same
+	// render as a panel toggle or resize, instead of lagging a frame on stale state.
+	const [scrollbarWidth, setScrollbarWidth] = useState(0);
 
 	const [formOpen, setFormOpen] = useState(false);
 	const [editing, setEditing] = useState<Customer | null>(null);
@@ -266,7 +271,13 @@ export default function CustomersScreen() {
 	// is selected and the panel hasn't been closed); otherwise let the table reclaim
 	// that width so closing the panel doesn't leave a blank gap beside a cramped table.
 	const panelVisible = showPanel && selected !== null && panelOpen;
-	const tableWidth = Math.max(640, width - sidebar - (panelVisible ? 340 : 0) - 48);
+	// Fill the available width, but never shrink the four columns below a readable
+	// minimum — below that the table scrolls sideways. The estimate recomputes every
+	// render, so a panel toggle or resize applies instantly; subtracting the measured
+	// scrollbar width keeps the right border, corners, and balance padding from being
+	// clipped by the scrollbar.
+	const estimatedTableSpace = width - sidebar - (panelVisible ? 340 : 0) - 48;
+	const tableWidth = Math.max(640, estimatedTableSpace - scrollbarWidth);
 
 	return (
 		<View style={styles.row}>
@@ -394,7 +405,19 @@ export default function CustomersScreen() {
 							No customers yet. Add your first contact to start tracking jobs and balances.
 						</Txt>
 					) : (
-						<ScrollView horizontal showsHorizontalScrollIndicator={false}>
+						<ScrollView
+							horizontal
+							showsHorizontalScrollIndicator={false}
+							onLayout={(event) => {
+								// The gap between the window-based estimate and the real viewport is
+								// the vertical scrollbar's width — a platform constant that doesn't
+								// change with the panel or window size, so store just that offset.
+								const diff = estimatedTableSpace - event.nativeEvent.layout.width;
+								if (diff >= 0 && diff !== scrollbarWidth) {
+									setScrollbarWidth(diff);
+								}
+							}}
+						>
 							<View style={[styles.table, { width: tableWidth }]}>
 								<View style={styles.tableHead}>
 									<Txt style={[styles.th, { flex: COLS.customer }]}>Customer</Txt>
