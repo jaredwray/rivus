@@ -165,8 +165,10 @@ export interface AccountRepository {
 	findById(id: AccountId): Promise<Account | null>;
 	findBySlug(slug: string): Promise<Account | null>;
 	/**
-	 * A page of active accounts (newest filter applied first), for the staff
-	 * company switcher. Canceled accounts are excluded since they can't be entered.
+	 * A page of accounts (sorted by name), for the staff company switcher. Only
+	 * canceled accounts are excluded, since they can't be entered — every other
+	 * account, including one whose stored record predates the `status` field, is
+	 * listed.
 	 */
 	list(options: ListAccountsOptions): Promise<{ accounts: Account[]; total: number }>;
 	/** Apply a partial business-info update; returns the updated account or null. */

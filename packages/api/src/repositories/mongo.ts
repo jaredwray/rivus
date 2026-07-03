@@ -414,18 +414,23 @@ export class MongoAccountRepository implements AccountRepository {
 		const { pageSize } = normalizePagination(options.page, options.pageSize);
 		const skip = pageToSkip(options.page, options.pageSize);
 		const needle = options.search?.trim();
+		// Exclude only canceled accounts (they can't be entered) — matching every other
+		// account-status gate (auth, the switch route, …). A positive `status: 'active'`
+		// match would also drop legacy documents that predate the `status` field and so
+		// have none stored: Mongoose's schema default is applied on create/hydration, not
+		// to the query, so those accounts would silently vanish from the staff switcher.
+		const notCanceled = { status: { $ne: 'canceled' as const } };
 		// Match the term case-insensitively against either the name or the slug (escaped
-		// so it's literal text). Only active accounts are listed — a canceled one can't
-		// be entered.
+		// so it's literal text).
 		const filter = needle
 			? {
-					status: 'active' as const,
+					...notCanceled,
 					$or: [
 						{ name: new RegExp(escapeRegex(needle), 'i') },
 						{ slug: new RegExp(escapeRegex(needle), 'i') },
 					],
 				}
-			: { status: 'active' as const };
+			: notCanceled;
 		const [docs, total] = await Promise.all([
 			AccountModel.find(filter).sort({ name: 1, _id: 1 }).skip(skip).limit(pageSize).exec(),
 			AccountModel.countDocuments(filter).exec(),

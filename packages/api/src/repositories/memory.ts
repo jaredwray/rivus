@@ -260,7 +260,11 @@ export class InMemoryAccountRepository implements AccountRepository {
 	async list(options: ListAccountsOptions): Promise<{ accounts: Account[]; total: number }> {
 		const needle = options.search?.trim().toLowerCase() ?? '';
 		const matched = [...this.data.accounts.values()]
-			.filter((account) => account.status === 'active')
+			// Exclude only canceled accounts, mirroring the Mongo repository (and every
+			// other account-status gate). A positive `status === 'active'` check would drop
+			// any account without an explicit status — the condition that hides legacy
+			// companies from the staff switcher in a real database.
+			.filter((account) => account.status !== 'canceled')
 			.filter(
 				(account) =>
 					needle === '' ||
