@@ -81,6 +81,10 @@ export default function CustomersScreen() {
 	const [error, setError] = useState<string | null>(null);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [panelOpen, setPanelOpen] = useState(true);
+	// The list's real on-screen width, measured from its viewport (see onLayout
+	// below) rather than derived from the window — so the table fills the space the
+	// vertical scrollbar leaves and its right border/corners aren't clipped.
+	const [tableSpace, setTableSpace] = useState(0);
 
 	const [formOpen, setFormOpen] = useState(false);
 	const [editing, setEditing] = useState<Customer | null>(null);
@@ -266,7 +270,13 @@ export default function CustomersScreen() {
 	// is selected and the panel hasn't been closed); otherwise let the table reclaim
 	// that width so closing the panel doesn't leave a blank gap beside a cramped table.
 	const panelVisible = showPanel && selected !== null && panelOpen;
-	const tableWidth = Math.max(640, width - sidebar - (panelVisible ? 340 : 0) - 48);
+	// Fill the measured viewport when there's room, but never shrink the four
+	// columns below a readable minimum — below that the table scrolls sideways.
+	// `tableSpace` is the width the list actually has after the sidebar, panel, page
+	// padding, and the vertical scrollbar; fall back to a window-based estimate for
+	// the first paint, before onLayout has measured the real width.
+	const estimatedTableSpace = width - sidebar - (panelVisible ? 340 : 0) - 48;
+	const tableWidth = Math.max(640, tableSpace || estimatedTableSpace);
 
 	return (
 		<View style={styles.row}>
@@ -394,7 +404,11 @@ export default function CustomersScreen() {
 							No customers yet. Add your first contact to start tracking jobs and balances.
 						</Txt>
 					) : (
-						<ScrollView horizontal showsHorizontalScrollIndicator={false}>
+						<ScrollView
+							horizontal
+							showsHorizontalScrollIndicator={false}
+							onLayout={(event) => setTableSpace(event.nativeEvent.layout.width)}
+						>
 							<View style={[styles.table, { width: tableWidth }]}>
 								<View style={styles.tableHead}>
 									<Txt style={[styles.th, { flex: COLS.customer }]}>Customer</Txt>
