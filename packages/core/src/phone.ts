@@ -36,8 +36,11 @@ const E164_MAX_DIGITS = 15;
  * @example normalizePhone('nope') // ''
  */
 // A trailing extension: an `ext`/`extension`/`x` word or a `#`/`,`/`;` separator,
-// then the extension digits, at the very end of the value.
-const EXTENSION_SUFFIX = /\s*(?:ext\.?|extension|x|[#,;])\s*\d{1,6}\s*$/i;
+// then the extension digits, at the very end of the value. Whitespace is a single
+// bounded run (`\s{0,4}`) and there is no leading `\s*` — any space left before the
+// marker is removed by the outer `.trim()` — so the pattern stays linear-time (no
+// adjacent unbounded quantifiers that could backtrack polynomially).
+const EXTENSION_SUFFIX = /(?:ext\.?|extension|x|[#,;])\s{0,4}\d{1,6}$/i;
 
 export function normalizePhone(raw: string, options?: { defaultCountry?: 'US' }): string {
 	const trimmed = raw.trim().replace(EXTENSION_SUFFIX, '').trim();
