@@ -138,11 +138,14 @@ created normally) and question-answering degrades to a deterministic keyword mat
 `RESEND_WEBHOOK_SECRET` is likewise pushed only when set. It's the signing secret
 of the Resend `email.received` webhook (Resend → Webhooks); without it the agent
 email scheduling channel stays off — the webhook route answers `503` in production
-while the rest of the API runs normally. Configure the receiving domain (default
-`riv.us`, overridable via the `AGENT_EMAIL_DOMAIN` var) and the webhook in Resend
-first, then add this secret so `/v1/channels/email/inbound` goes live on the next
-deploy. The self-signup link domain (`WEBSITE_URL`) is a non-sensitive `vars` entry
-in `packages/api/wrangler.jsonc` (dev → `dev.rivus.ai`, prod → `rivus.ai`).
+while the rest of the API runs normally. Configure the receiving domain and the
+webhook in Resend first, then add this secret so `/v1/channels/email/inbound` goes
+live on the next deploy. The receiving domain is set per environment via the
+`AGENT_EMAIL_DOMAIN` `vars` entry in `packages/api/wrangler.jsonc`
+(dev → `dev.riv.us`, prod → `riv.us`) so dev traffic never lands in the production
+inbox — each must be a receiving (MX) and verified sending domain in Resend. The
+self-signup link domain (`WEBSITE_URL`) is likewise a non-sensitive `vars` entry
+(dev → `dev.rivus.ai`, prod → `rivus.ai`).
 The chat model defaults to `gpt-5.4-mini` and the embedding model (used to rank FAQs
 by relevance once a knowledge base outgrows the answerer's candidate cap) to
 `text-embedding-3-small`; since model ids aren't sensitive, override them — if needed —
