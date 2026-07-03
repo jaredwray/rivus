@@ -214,6 +214,215 @@ function isRealTime(hour: number | null, minute: number): boolean {
 	return hour !== null && minute >= 0 && minute <= 59;
 }
 
+// Greetings and pure connectors that carry no scheduling content. They may sit
+// anywhere around an acknowledgement without turning it into a request, so the
+// consumer below skips them. Deliberately excludes words that often *lead* a new
+// ask ("but", "can", "actually", "what", "also"-followed-by-a-verb), so those
+// keep an unrecognized token in the message and fail the whole-message match.
+const ACK_FILLER_WORDS = [
+	'hi',
+	'hello',
+	'hey',
+	'hiya',
+	'yo',
+	'there',
+	'and',
+	'then',
+	'so',
+	'really',
+	'very',
+	'much',
+	'just',
+	'well',
+	'please',
+];
+
+// Complete acknowledgement phrases — an affirmation, a thanks, or a sign-off —
+// ordered most-specific-first so a greedy leading match consumes the longest
+// form. A reply built only of these (plus filler) is a pure acknowledgement;
+// any other word ("open", "else", "reschedule", "sooner") stays unconsumed and
+// the reply is treated as a real scheduling turn instead.
+const ACK_PHRASES = [
+	'consider it confirmed',
+	'consider it done',
+	'that is confirmed',
+	'thats confirmed',
+	'i confirm',
+	'confirming',
+	'confirmed',
+	'confirm',
+	'sounds like a plan',
+	'that sounds good',
+	'that sounds great',
+	'that sounds perfect',
+	'sounds good to me',
+	'sounds good',
+	'sounds great',
+	'sounds perfect',
+	'sounds wonderful',
+	'sounds lovely',
+	'that looks good',
+	'that looks great',
+	'looks good',
+	'looks great',
+	'that works for me',
+	'that works great',
+	'that works perfectly',
+	'that works',
+	'that will work',
+	'thatll work',
+	'works for me',
+	'works great',
+	'works perfectly',
+	'works',
+	'that is great',
+	'that is perfect',
+	'that is fine',
+	'thats great',
+	'thats perfect',
+	'thats fine',
+	'thats good',
+	'of course',
+	'for sure',
+	'you bet',
+	'sure thing',
+	'sure',
+	'absolutely',
+	'definitely',
+	'certainly',
+	'okay',
+	'okey',
+	'okie',
+	'ok',
+	'kk',
+	'k',
+	'alrighty',
+	'alright',
+	'roger that',
+	'roger',
+	'yes',
+	'yep',
+	'yeah',
+	'yup',
+	'ya',
+	'perfect',
+	'great',
+	'awesome',
+	'excellent',
+	'wonderful',
+	'fantastic',
+	'cool',
+	'nice',
+	'lovely',
+	'brilliant',
+	'amazing',
+	'terrific',
+	'splendid',
+	'fabulous',
+	'fab',
+	'super',
+	'good',
+	'fine',
+	'thank you so much',
+	'thank you very much',
+	'thank you again',
+	'thank you',
+	'thankyou',
+	'thanks so much',
+	'thanks a lot',
+	'thanks again',
+	'thanks',
+	'thx',
+	'tysm',
+	'ty',
+	'cheers',
+	'much appreciated',
+	'appreciated',
+	'i appreciate it',
+	'appreciate it',
+	'see you then',
+	'see you soon',
+	'see you there',
+	'see you',
+	'see ya then',
+	'see ya soon',
+	'see ya',
+	'see u then',
+	'see u soon',
+	'see u',
+	'catch you then',
+	'catch you later',
+	'talk soon',
+	'speak soon',
+	'will do',
+	'got it',
+	'gotcha',
+	'understood',
+	'duly noted',
+	'noted',
+	'done',
+	'im all set',
+	'i am all set',
+	'were all set',
+	'we are all set',
+	'all set',
+	'no problem',
+	'no worries',
+];
+
+// Head-anchored matchers: a leading filler word, or a leading acknowledgement
+// phrase, each requiring a word boundary (a following space or end of string) so
+// "great" never matches inside "greater". Phrases carry only letters and spaces,
+// so no escaping is needed.
+const ACK_FILLER_HEAD = new RegExp(`^(?:${ACK_FILLER_WORDS.join('|')})(?:\\s+|$)`);
+const ACK_PHRASE_HEAD = new RegExp(`^(?:${ACK_PHRASES.join('|')})(?:\\s+|$)`);
+
+/**
+ * Whether a reply is a pure acknowledgement — "Confirmed!", "ok", "sounds good,
+ * thanks", "great — see you then!" — with no fresh scheduling ask in it. Used
+ * once a job is booked so a simple "thanks!" reassures the standing booking
+ * instead of reopening scheduling; a genuine new request ("what else is open?")
+ * is not an acknowledgement and still gets concrete slots.
+ *
+ * Conservative by construction: the message is normalized to letters, then
+ * consumed left to right, dropping a filler word or a whole acknowledgement
+ * phrase at each step. It is an acknowledgement only when the *entire* message is
+ * consumed and at least one real acknowledgement was seen — so anything carrying
+ * more than an affirmation ("ok but what else do you have?") never matches.
+ */
+export function isAcknowledgement(text: string): boolean {
+	const normalized = text
+		.toLowerCase()
+		// Drop apostrophes so "that's"/"i'm" read as "thats"/"im", then map every
+		// other non-letter (digits, punctuation, emoji) to a space and collapse.
+		.replace(/['’]/g, '')
+		.replace(/[^a-z\s]/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim();
+	if (normalized === '') {
+		return false;
+	}
+	let rest = normalized;
+	let sawAcknowledgement = false;
+	while (rest !== '') {
+		const filler = rest.match(ACK_FILLER_HEAD);
+		if (filler) {
+			rest = rest.slice(filler[0].length);
+			continue;
+		}
+		const phrase = rest.match(ACK_PHRASE_HEAD);
+		if (phrase) {
+			sawAcknowledgement = true;
+			rest = rest.slice(phrase[0].length);
+			continue;
+		}
+		// An unrecognized word — the reply says more than "yes/thanks", so it is a
+		// real scheduling turn, not a bare acknowledgement.
+		return false;
+	}
+	return sawAcknowledgement;
+}
+
 /**
  * The specific instant a reply proposes ("July 10 at 2pm", "10 July 14:00",
  * "2026-07-10 14:00", "Tuesday at 2pm", "tomorrow at 9"), as a UTC ISO

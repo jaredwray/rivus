@@ -224,3 +224,55 @@ describe('decideScheduling — review-driven guards', () => {
 		}
 	});
 });
+
+describe('decideScheduling — acknowledging a booking', () => {
+	const bookedSlot = { startAt: '2026-07-07T16:00:00.000Z', durationMinutes: 60 };
+
+	function decideBooked(text: string) {
+		return decideScheduling({
+			customerKnown: true,
+			text,
+			offeredSlots: [],
+			busy: [bookedSlot],
+			timeZone: PACIFIC,
+			now: NOW,
+			bookedSlot,
+		});
+	}
+
+	it.each([
+		'Confirmed!',
+		'ok thanks!',
+		'Sounds good, see you then!',
+		'Perfect — thank you!',
+	])('reassures the existing booking instead of re-offering for %j', (text) => {
+		expect(decideBooked(text)).toEqual({ kind: 'confirm_existing', slot: bookedSlot });
+	});
+
+	it('still starts a fresh round when a booked contact asks for more times', () => {
+		// A real new request is not an acknowledgement, so the booking doesn't
+		// suppress it — the agent offers concrete openings again.
+		const decision = decideBooked('Actually I need a second visit too — what else is open?');
+		expect(decision.kind).toBe('offer_slots');
+	});
+
+	it('does not re-offer scheduling for a bare "ok" on a booked thread', () => {
+		const decision = decideBooked('ok');
+		expect(decision.kind).toBe('confirm_existing');
+	});
+
+	it('only reassures when a booking actually stands — a bare "ok" with no booking re-offers', () => {
+		// No bookedSlot (e.g. the thread is still `slots_offered`): there is nothing
+		// to confirm, so an unparseable reply keeps moving toward a booking.
+		const decision = decideScheduling({
+			customerKnown: true,
+			text: 'ok',
+			offeredSlots: OFFERED,
+			busy: [],
+			timeZone: PACIFIC,
+			now: NOW,
+			bookedSlot: null,
+		});
+		expect(decision.kind).toBe('offer_slots');
+	});
+});

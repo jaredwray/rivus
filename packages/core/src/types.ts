@@ -339,8 +339,9 @@ export interface ConversationDetail {
  *   add themselves and the agent is waiting for them to write back.
  * - `slots_offered` — the agent proposed appointment times and is waiting for
  *   the contact to pick one (or suggest their own).
- * - `booked` — a job was created and confirmed; a later message on the same
- *   thread starts a fresh scheduling round.
+ * - `booked` — a job was created and confirmed; a later message that asks for
+ *   more scheduling starts a fresh round, while one that merely acknowledges the
+ *   booking ("Confirmed!", "thanks") is reassured without reopening scheduling.
  */
 export type AgentThreadState = 'new' | 'awaiting_signup' | 'slots_offered' | 'booked';
 

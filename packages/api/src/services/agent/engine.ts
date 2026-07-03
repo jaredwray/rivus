@@ -1,5 +1,5 @@
 import type { AgentSlot } from '@rivus/core';
-import { matchOfferedSlot, parseProposedTime, parseSlotChoice } from './parse';
+import { isAcknowledgement, matchOfferedSlot, parseProposedTime, parseSlotChoice } from './parse';
 import {
 	BOOKING_HORIZON_DAYS,
 	type BusyInterval,
@@ -67,6 +67,9 @@ export interface SchedulingDecisionInput {
  *   have booked over it since.
  * - A reply proposing its own time books it when it's inside business hours
  *   and free; otherwise the agent says why not and offers what *is* open.
+ * - Once a job is booked, a reply that merely acknowledges it ("Confirmed!",
+ *   "thanks, see you then") reassures the existing booking rather than reopening
+ *   scheduling — only a genuine new request starts another round.
  * - Anything else (first contact, small talk, an unparseable pick) gets
  *   concrete openings — the agent always moves the exchange toward a booking.
  */
@@ -150,6 +153,15 @@ export function decideScheduling(input: SchedulingDecisionInput): AgentDecision 
 			};
 		}
 		return { kind: 'book', slot };
+	}
+
+	// Once a job is booked, a reply that only acknowledges it ("Confirmed!",
+	// "sounds good, thanks", "great — see you then!") must not reopen scheduling.
+	// Reassure the standing booking instead of offering fresh times. A genuine new
+	// ask ("what else is open?") is not an acknowledgement and still falls through
+	// to a fresh offer below, so a booked thread can still start another round.
+	if (input.bookedSlot && isAcknowledgement(input.text)) {
+		return { kind: 'confirm_existing', slot: input.bookedSlot };
 	}
 
 	const slots = openSlots();
