@@ -1,4 +1,12 @@
-import type { AccountId, AgentSlot, JobId, UserId } from '@rivus/core';
+import {
+	type Account,
+	type AccountId,
+	type AgentSlot,
+	agentEmailLocalPart,
+	type JobId,
+	stripAgentEmailTag,
+	type UserId,
+} from '@rivus/core';
 import type { FastifyBaseLogger, FastifyError, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -105,6 +113,23 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 	} = app.deps;
 
 	/**
+	 * Resolve the account an agent-domain local part addresses. New addresses are
+	 * `${slug}-${tag}` (see {@link agentEmailLocalPart}); older mail may carry the
+	 * bare slug or the raw account id. Try the local part verbatim first (bare
+	 * slug / id), then peel the hex tag and resolve by slug — so every form maps
+	 * back to the same account.
+	 */
+	async function resolveAccountByLocalPart(localPart: string): Promise<Account | null> {
+		const direct =
+			(await accounts.findBySlug(localPart)) ?? (await accounts.findById(localPart as AccountId));
+		if (direct) {
+			return direct;
+		}
+		const slug = stripAgentEmailTag(localPart);
+		return slug === localPart ? null : accounts.findBySlug(slug);
+	}
+
+	/**
 	 * A reply Rivus sent bounced or was marked as spam: the customer never got
 	 * it, so flag the thread's conversation for a human and drop an inline note.
 	 * The account is resolved from the delivery event's `From` (our own agent
@@ -121,8 +146,7 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 		if (!localPart) {
 			return { handled: false, outcome: 'not_agent_sender' };
 		}
-		const account =
-			(await accounts.findBySlug(localPart)) ?? (await accounts.findById(localPart as AccountId));
+		const account = await resolveAccountByLocalPart(localPart);
 		if (!account || account.status === 'canceled') {
 			return { handled: false, outcome: 'unknown_account' };
 		}
@@ -251,7 +275,7 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 				summary: 'Resend email webhook (inbound customer mail + delivery status)',
 				description:
 					'Resend delivers email events for the account’s agent address ' +
-					'(`<account-slug>@riv.us`) here. On `email.received` Rivus validates the ' +
+					'(`<account-slug>-<hex>@riv.us`) here. On `email.received` Rivus validates the ' +
 					'sender against the account’s customers, keeps the multi-turn scheduling ' +
 					'state on the thread, and replies by email — offering open times and ' +
 					'booking the job once a time is agreed. On `email.bounced`/`email.complained` ' +
@@ -286,8 +310,7 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!localPart) {
 				return { handled: false, outcome: 'no_agent_recipient' };
 			}
-			const account =
-				(await accounts.findBySlug(localPart)) ?? (await accounts.findById(localPart as AccountId));
+			const account = await resolveAccountByLocalPart(localPart);
 			if (!account || account.status === 'canceled') {
 				return { handled: false, outcome: 'unknown_account' };
 			}
@@ -473,7 +496,9 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 				inboundSubject: subject !== '' ? subject : thread.subject,
 				now,
 			});
-			const agentAddress = `${localPart}@${config.AGENT_EMAIL_DOMAIN}`;
+			// Always reply from the account's canonical tagged address, regardless of
+			// which form (tagged or legacy bare slug) the customer happened to write to.
+			const agentAddress = `${agentEmailLocalPart(account.slug, account.id)}@${config.AGENT_EMAIL_DOMAIN}`;
 			const displayName = sanitizeDisplayName(account.name);
 			try {
 				await mailer.sendAgentEmail({

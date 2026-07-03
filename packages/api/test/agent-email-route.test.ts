@@ -1,4 +1,4 @@
-import type { AccountId } from '@rivus/core';
+import { type AccountId, agentEmailLocalPart } from '@rivus/core';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
@@ -72,11 +72,12 @@ describe('POST /v1/channels/email/inbound — end to end', () => {
 		expect(first.statusCode).toBe(200);
 		expect(first.json()).toEqual({ handled: true, outcome: 'send_signup_link' });
 
-		// The agent replied from the account's own address with the signup link.
+		// The agent replied from the account's own address — the business slug plus
+		// its unique hex tag — with the signup link.
 		expect(mailer.agentEmails).toHaveLength(1);
 		const signupReply = mailer.agentEmails[0];
 		expect(signupReply?.to).toBe(SENDER);
-		expect(signupReply?.from).toContain(`<${slug}@riv.us>`);
+		expect(signupReply?.from).toContain(`<${agentEmailLocalPart(slug, accountId)}@riv.us>`);
 		expect(signupReply?.subject).toBe('Re: Water heater');
 		expect(signupReply?.inReplyTo).toBe('<m1@mail.example.com>');
 		expect(signupReply?.text).toContain(
@@ -374,6 +375,38 @@ describe('POST /v1/channels/email/inbound — end to end', () => {
 		});
 		expect(selfMail.json()).toEqual({ handled: false, outcome: 'auto_generated' });
 
+		expect(agentMailbox(app).agentEmails).toHaveLength(0);
+		await app.close();
+	});
+});
+
+describe('POST /v1/channels/email/inbound — address resolution', () => {
+	it('resolves mail sent to the canonical `<slug>-<hex>@riv.us` address', async () => {
+		const app = await buildTestApp();
+		const owner = await signupOwner(app);
+		const tagged = agentEmailLocalPart(owner.account.slug, owner.account.id as AccountId);
+
+		const response = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: inboundPayload(owner.account.slug, { to: [`${tagged}@riv.us`] }),
+		});
+		expect(response.json()).toEqual({ handled: true, outcome: 'send_signup_link' });
+
+		// And the reply goes back out from that same tagged address.
+		expect(agentMailbox(app).agentEmails.at(-1)?.from).toContain(`<${tagged}@riv.us>`);
+		await app.close();
+	});
+
+	it('rejects a tagged address whose slug matches no account', async () => {
+		const app = await buildTestApp();
+		await signupOwner(app);
+		const response = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: inboundPayload('no-such-business', { to: ['no-such-business-abcdef12@riv.us'] }),
+		});
+		expect(response.json()).toEqual({ handled: false, outcome: 'unknown_account' });
 		expect(agentMailbox(app).agentEmails).toHaveLength(0);
 		await app.close();
 	});

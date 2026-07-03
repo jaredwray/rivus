@@ -1,3 +1,4 @@
+export * from './agent-email';
 export * from './gravatar';
 export * from './pagination';
 export * from './regex';

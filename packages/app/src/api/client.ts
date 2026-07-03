@@ -214,7 +214,8 @@ const authResponseSchema = z.object({
 	account: accountResponseSchema,
 	role: roleSchema,
 	// Domain of the account's inbound agent address; the UI shows the full
-	// address as `${account.slug}@${agentEmailDomain}` (see Settings).
+	// address as `${agentEmailLocalPart(account.slug, account.id)}@${agentEmailDomain}`
+	// (see Settings).
 	agentEmailDomain: z.string(),
 });
 export type AuthResponse = z.infer<typeof authResponseSchema>;
