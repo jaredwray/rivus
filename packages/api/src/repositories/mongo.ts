@@ -1,7 +1,10 @@
 import {
 	type Account,
 	type AccountId,
+	type AgentThread,
+	type AgentThreadId,
 	type Conversation,
+	type ConversationChannel,
 	type ConversationDetail,
 	type ConversationId,
 	type CreateConversationInput,
@@ -40,6 +43,7 @@ import {
 } from '@rivus/core';
 import mongoose, { type ClientSession, type HydratedDocument, Types } from 'mongoose';
 import { type AccountDocument, AccountModel } from '../db/models/account.model';
+import { type AgentThreadDocument, AgentThreadModel } from '../db/models/agent-thread.model';
 import {
 	type ConversationDocument,
 	ConversationModel,
@@ -62,6 +66,7 @@ import type {
 	AcceptInviteInput,
 	AcceptInviteResult,
 	AccountRepository,
+	AgentThreadRepository,
 	ConversationRepository,
 	ConversationReviewPatch,
 	CustomerRepository,
@@ -79,6 +84,7 @@ import type {
 	ListNotificationsOptions,
 	MembershipRepository,
 	NewAccount,
+	NewAgentThread,
 	NewInvite,
 	NewMembership,
 	NewUser,
@@ -92,6 +98,7 @@ import type {
 	StoredUser,
 	StoredVerificationCode,
 	UpdateAccount,
+	UpdateAgentThread,
 	UpdateUser,
 	UserRepository,
 	VerificationCodeRepository,
@@ -263,6 +270,27 @@ function mapMessage(subdoc: MessageSubdocument, conversationId: ConversationId):
 		author: subdoc.author,
 		body: subdoc.body,
 		createdAt: subdoc.createdAt.toISOString(),
+	};
+}
+
+function mapAgentThread(doc: HydratedDocument<AgentThreadDocument>): AgentThread {
+	return {
+		id: doc._id.toString() as AgentThreadId,
+		accountId: doc.accountId.toString() as AccountId,
+		channel: doc.channel,
+		contactAddress: doc.contactAddress,
+		conversationId: doc.conversationId.toString() as ConversationId,
+		customerId: doc.customerId,
+		state: doc.state,
+		offeredSlots: doc.offeredSlots.map((slot) => ({
+			startAt: slot.startAt.toISOString(),
+			durationMinutes: slot.durationMinutes,
+		})),
+		lastExternalMessageId: doc.lastExternalMessageId,
+		subject: doc.subject,
+		bookedJobId: doc.bookedJobId,
+		createdAt: doc.createdAt.toISOString(),
+		updatedAt: doc.updatedAt.toISOString(),
 	};
 }
 
@@ -897,6 +925,23 @@ export class MongoCustomerRepository implements CustomerRepository {
 		return doc ? mapCustomer(doc) : null;
 	}
 
+	async findByEmail(accountId: AccountId, email: string): Promise<Customer | null> {
+		const needle = email.trim().toLowerCase();
+		// Customers without an email all store '', so a blank needle must not match them.
+		if (needle === '' || !Types.ObjectId.isValid(accountId)) {
+			return null;
+		}
+		// Anchored case-insensitive match (stored emails may predate normalization);
+		// newest-first so the most recent record wins when several share an address.
+		const doc = await CustomerModel.findOne({
+			accountId: new Types.ObjectId(accountId),
+			email: new RegExp(`^${escapeRegex(needle)}$`, 'i'),
+		})
+			.sort({ createdAt: -1, _id: -1 })
+			.exec();
+		return doc ? mapCustomer(doc) : null;
+	}
+
 	async update(
 		accountId: AccountId,
 		id: CustomerId,
@@ -1418,5 +1463,102 @@ export class MongoConversationRepository implements ConversationRepository {
 			.select('-messages')
 			.exec();
 		return doc ? mapConversation(doc) : null;
+	}
+}
+
+export class MongoAgentThreadRepository implements AgentThreadRepository {
+	async create(input: NewAgentThread): Promise<AgentThread> {
+		try {
+			const doc = await AgentThreadModel.create({
+				accountId: new Types.ObjectId(input.accountId),
+				channel: input.channel,
+				// The schema lower-cases too; normalizing here keeps the value the
+				// caller sees consistent with what a later lookup will match.
+				contactAddress: input.contactAddress.toLowerCase(),
+				conversationId: new Types.ObjectId(input.conversationId),
+				customerId: input.customerId,
+				subject: input.subject,
+			});
+			return mapAgentThread(doc);
+		} catch (error) {
+			// Two concurrent inbound messages from a brand-new contact can race this
+			// create; the unique (account, channel, address) index makes the loser
+			// surface as a conflict the webhook route can retry.
+			if (isDuplicateKeyError(error)) {
+				throw new ConflictError(
+					'contactAddress',
+					'An agent thread already exists for this contact on this channel',
+				);
+			}
+			throw error;
+		}
+	}
+
+	async findById(accountId: AccountId, id: AgentThreadId): Promise<AgentThread | null> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return null;
+		}
+		const doc = await AgentThreadModel.findOne({
+			_id: id,
+			accountId: new Types.ObjectId(accountId),
+		}).exec();
+		return doc ? mapAgentThread(doc) : null;
+	}
+
+	async findByContact(
+		accountId: AccountId,
+		channel: ConversationChannel,
+		contactAddress: string,
+	): Promise<AgentThread | null> {
+		if (!Types.ObjectId.isValid(accountId)) {
+			return null;
+		}
+		const doc = await AgentThreadModel.findOne({
+			accountId: new Types.ObjectId(accountId),
+			channel,
+			contactAddress: contactAddress.toLowerCase(),
+		}).exec();
+		return doc ? mapAgentThread(doc) : null;
+	}
+
+	async update(
+		accountId: AccountId,
+		id: AgentThreadId,
+		input: UpdateAgentThread,
+	): Promise<AgentThread | null> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return null;
+		}
+		const patch: Record<string, unknown> = {};
+		if (input.customerId !== undefined) {
+			patch.customerId = input.customerId;
+		}
+		if (input.state !== undefined) {
+			patch.state = input.state;
+		}
+		if (input.offeredSlots !== undefined) {
+			patch.offeredSlots = input.offeredSlots.map((slot) => ({
+				startAt: new Date(slot.startAt),
+				durationMinutes: slot.durationMinutes,
+			}));
+		}
+		if (input.lastExternalMessageId !== undefined) {
+			patch.lastExternalMessageId = input.lastExternalMessageId;
+		}
+		if (input.subject !== undefined) {
+			patch.subject = input.subject;
+		}
+		if (input.bookedJobId !== undefined) {
+			patch.bookedJobId = input.bookedJobId;
+		}
+		if (input.conversationId !== undefined && Types.ObjectId.isValid(input.conversationId)) {
+			patch.conversationId = new Types.ObjectId(input.conversationId);
+		}
+		const doc = await AgentThreadModel.findOneAndUpdate(
+			{ _id: id, accountId: new Types.ObjectId(accountId) },
+			{ $set: patch },
+			{ new: true },
+		).exec();
+		return doc ? mapAgentThread(doc) : null;
 	}
 }

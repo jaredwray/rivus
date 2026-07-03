@@ -12,6 +12,7 @@ import { getGoogleMapsApiKey, isSeedingEnabled } from '@/src/api/config';
 import { deviceTimezone, listTimezones } from '@/src/api/timezones';
 import { useAuth } from '@/src/auth/AuthContext';
 import { AddressAutocomplete } from '@/src/components/AddressAutocomplete';
+import { CopyField } from '@/src/components/CopyField';
 import {
 	Card,
 	GradientButton,
@@ -235,6 +236,10 @@ export default function SettingsScreen() {
 		}
 	}
 
+	// The inbound address customers email to reach Rivus. The domain comes from
+	// the session (`AGENT_EMAIL_DOMAIN`), so nothing is hardcoded here.
+	const agentEmail = `${session.account.slug}@${session.agentEmailDomain}`;
+
 	return (
 		<ScrollView
 			contentContainerStyle={styles.content}
@@ -295,6 +300,15 @@ export default function SettingsScreen() {
 						onPress={onSave}
 					/>
 				</View>
+			</Card>
+
+			<Card style={styles.card}>
+				<SectionLabel>Agent email</SectionLabel>
+				<Txt style={styles.agentEmailHint}>
+					Customers can book by emailing this address — Rivus checks your calendar and schedules
+					them automatically. Share it, or add it to your website.
+				</Txt>
+				<CopyField label="Your agent address" value={agentEmail} />
 			</Card>
 
 			<Card style={styles.card}>
@@ -386,6 +400,14 @@ const styles = StyleSheet.create({
 		fontFamily: font.regular,
 		fontSize: 12.5,
 		color: colors.textMuted,
+	},
+	agentEmailHint: {
+		fontFamily: font.regular,
+		fontSize: 12.5,
+		lineHeight: 18,
+		color: colors.textMuted,
+		marginTop: -2,
+		marginBottom: 4,
 	},
 	errorTxt: {
 		fontFamily: font.medium,

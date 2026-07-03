@@ -9,6 +9,14 @@ export interface Env {
 	RESEND_API_KEY: string;
 	EMAIL_FROM: string;
 	APP_URL: string;
+	// Base URL of the marketing website (customer self-signup links). Optional so
+	// deployments predating the agent email channel keep booting with the default.
+	WEBSITE_URL?: string;
+	// Agent email channel: the per-account inbound address domain and the Svix
+	// signing secret for Resend's `email.received` webhook. Both optional — the
+	// webhook route fails closed (503) in production when the secret is unset.
+	AGENT_EMAIL_DOMAIN?: string;
+	RESEND_WEBHOOK_SECRET?: string;
 	// Which deployed Rivus environment this is (`development` | `production`). Set
 	// per environment in wrangler.jsonc `vars`; gates the staff-only account seeder
 	// (the deployed dev API exposes it, production never does). Optional so a local
@@ -53,6 +61,11 @@ export class ApiContainer extends Container<Env> {
 		...(this.env.RESEND_API_KEY ? { RESEND_API_KEY: this.env.RESEND_API_KEY } : {}),
 		...(this.env.EMAIL_FROM ? { EMAIL_FROM: this.env.EMAIL_FROM } : {}),
 		...(this.env.APP_URL ? { APP_URL: this.env.APP_URL } : {}),
+		...(this.env.WEBSITE_URL ? { WEBSITE_URL: this.env.WEBSITE_URL } : {}),
+		...(this.env.AGENT_EMAIL_DOMAIN ? { AGENT_EMAIL_DOMAIN: this.env.AGENT_EMAIL_DOMAIN } : {}),
+		...(this.env.RESEND_WEBHOOK_SECRET
+			? { RESEND_WEBHOOK_SECRET: this.env.RESEND_WEBHOOK_SECRET }
+			: {}),
 		...(this.env.OPENAI_API_KEY ? { OPENAI_API_KEY: this.env.OPENAI_API_KEY } : {}),
 		...(this.env.OPENAI_MODEL ? { OPENAI_MODEL: this.env.OPENAI_MODEL } : {}),
 		...(this.env.GOOGLE_GENERATIVE_AI_API_KEY

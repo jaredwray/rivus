@@ -4137,6 +4137,182 @@
           }
         }
       }
+    },
+    "/v1/public/accounts/{slug}": {
+      "get": {
+        "summary": "Look up an account for the customer self-signup page",
+        "tags": [
+          "public"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicAccount"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/public/accounts/{slug}/customers": {
+      "post": {
+        "summary": "Add yourself as a customer of an account",
+        "tags": [
+          "public"
+        ],
+        "description": "Backs the self-signup view the scheduling agent links unrecognized senders to. Idempotent by email: if the address already belongs to one of the account’s customers the call succeeds without creating a duplicate — and without revealing that the record already existed.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "address": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                },
+                "required": [
+                  "name",
+                  "email"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCustomerSignupResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/channels/email/inbound": {
+      "post": {
+        "summary": "Resend email webhook (inbound customer mail + delivery status)",
+        "tags": [
+          "channels"
+        ],
+        "description": "Resend delivers email events for the account’s agent address (`<account-slug>@riv.us`) here. On `email.received` Rivus validates the sender against the account’s customers, keeps the multi-turn scheduling state on the thread, and replies by email — offering open times and booking the job once a time is agreed. On `email.bounced`/`email.complained` (a reply that never reached the customer) it flags the conversation for a human. Deliveries are authenticated with the Svix signature headers when `RESEND_WEBHOOK_SECRET` is configured.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentEmailWebhookResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [

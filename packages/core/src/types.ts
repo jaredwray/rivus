@@ -15,6 +15,7 @@ export type InviteId = Id<'Invite'>;
 export type NotificationId = Id<'Notification'>;
 export type ConversationId = Id<'Conversation'>;
 export type MessageId = Id<'Message'>;
+export type AgentThreadId = Id<'AgentThread'>;
 
 /** ISO-8601 timestamp, e.g. `2026-06-19T12:00:00.000Z`. */
 export type IsoDateString = string;
@@ -328,6 +329,63 @@ export interface Message {
 export interface ConversationDetail {
 	conversation: Conversation;
 	messages: Message[];
+}
+
+/**
+ * Where an agent-driven scheduling thread stands, in the order it typically
+ * advances:
+ * - `new` — the contact has written but the agent hasn't resolved them yet.
+ * - `awaiting_signup` — the sender isn't a customer; they were sent a link to
+ *   add themselves and the agent is waiting for them to write back.
+ * - `slots_offered` — the agent proposed appointment times and is waiting for
+ *   the contact to pick one (or suggest their own).
+ * - `booked` — a job was created and confirmed; a later message on the same
+ *   thread starts a fresh scheduling round.
+ */
+export type AgentThreadState = 'new' | 'awaiting_signup' | 'slots_offered' | 'booked';
+
+/** One appointment window the agent offered or booked: a UTC instant + length. */
+export interface AgentSlot {
+	/** Slot start as an ISO-8601 UTC instant, e.g. `2026-07-07T16:00:00.000Z`. */
+	startAt: IsoDateString;
+	/** Slot length in whole minutes; the end is `startAt + durationMinutes`. */
+	durationMinutes: number;
+}
+
+/**
+ * The agent's per-contact state for one messaging channel — what makes a
+ * multi-turn exchange (offer times, pick one, book) resumable when the next
+ * message arrives hours later. One thread exists per
+ * `(account, channel, contactAddress)`; the human-readable transcript lives on
+ * the linked {@link Conversation}, so this record carries only the machine
+ * state the next turn needs. Channel-agnostic on purpose: email today, SMS and
+ * WhatsApp threads reuse the same shape with their own `contactAddress` form.
+ */
+export interface AgentThread {
+	id: AgentThreadId;
+	accountId: AccountId;
+	/** The messaging channel this thread lives on (same union the inbox uses). */
+	channel: ConversationChannel;
+	/** The contact's channel address — an email address for `email`, a phone number for `sms`. */
+	contactAddress: string;
+	/** The inbox conversation carrying this thread's transcript. */
+	conversationId: ConversationId;
+	/** The matched CRM {@link Customer}, or an empty string until the sender is validated. */
+	customerId: string;
+	state: AgentThreadState;
+	/** Slots most recently offered; only meaningful while `state` is `slots_offered`. */
+	offeredSlots: AgentSlot[];
+	/**
+	 * Channel-native id of the contact's latest inbound message (the RFC 5322
+	 * `Message-ID` for email), so replies can thread; empty when unknown.
+	 */
+	lastExternalMessageId: string;
+	/** Subject of the email thread; empty for channels without subjects. */
+	subject: string;
+	/** The {@link Job} booked on this thread, or an empty string until one is. */
+	bookedJobId: string;
+	createdAt: IsoDateString;
+	updatedAt: IsoDateString;
 }
 
 /** A page of results plus the metadata a client needs to paginate. */

@@ -367,6 +367,9 @@ describe('me', () => {
 		expect(body.user.email).toBe(credentials.email);
 		expect(body.account.id).toBe(account.id);
 		expect(body.role).toBe('owner');
+		// The session carries the agent-email domain so the app can show the
+		// account's inbound address (`<slug>@<domain>`) without hardcoding it.
+		expect(body.agentEmailDomain).toBe('riv.us');
 	});
 
 	it('defaults the user avatar to their Gravatar when no custom image is set', async () => {

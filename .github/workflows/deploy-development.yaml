@@ -133,6 +133,9 @@ jobs:
       DEV_RESEND_API_KEY: ${{ secrets.DEV_RESEND_API_KEY }}
       # Optional: enables the AI duplicate-FAQ check. Unset → the check is a no-op.
       DEV_OPENAI_API_KEY: ${{ secrets.DEV_OPENAI_API_KEY }}
+      # Optional: enables the agent email channel's inbound webhook. Unset → the
+      # route answers 503 (the channel is off) while everything else still works.
+      DEV_RESEND_WEBHOOK_SECRET: ${{ secrets.DEV_RESEND_WEBHOOK_SECRET }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup
@@ -151,6 +154,12 @@ jobs:
         if: ${{ env.DEV_OPENAI_API_KEY != '' }}
         run: |
           printf '%s' "$DEV_OPENAI_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put OPENAI_API_KEY --env development
+      # Optional inbound-email webhook secret — pushed only when set, so an empty
+      # value never reaches the container (min(1) would crash-loop it).
+      - name: Sync optional email-channel secret
+        if: ${{ env.DEV_RESEND_WEBHOOK_SECRET != '' }}
+        run: |
+          printf '%s' "$DEV_RESEND_WEBHOOK_SECRET" | pnpm --filter @rivus/api exec wrangler secret put RESEND_WEBHOOK_SECRET --env development
 
   # The five service deploys above all ship to the single Cloudflare `development`
   # environment. If each of them set `environment: development`, GitHub would open

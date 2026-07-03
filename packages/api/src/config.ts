@@ -41,6 +41,20 @@ const envSchema = z
 		EMAIL_FROM: z.string().min(3).default('Rivus <hello@rivus.ai>'),
 		// Base URL of the app, used to build the link in invitation emails.
 		APP_URL: z.string().url().default('https://app.rivus.ai'),
+		// Base URL of the marketing website, used to build the customer self-signup
+		// link the scheduling agent emails to unrecognized senders.
+		WEBSITE_URL: z.url().default('https://rivus.ai'),
+		// --- Agent email channel (scheduling over email) ---
+		// Domain of the per-account agent addresses customers write to. The local
+		// part identifies the account (its slug or id): `cascade-plumbing@riv.us`.
+		// Must be configured as an inbound (receiving) domain in Resend.
+		AGENT_EMAIL_DOMAIN: z.string().min(3).default('riv.us'),
+		// Signing secret (`whsec_…`) for Resend's inbound-email webhook. When set,
+		// every webhook delivery must carry a valid Svix signature. When unset, the
+		// webhook accepts unsigned payloads in development/tests but refuses to
+		// serve at all in production — never unauthenticated in prod, and never a
+		// hard boot failure for deployments that don't use the email channel.
+		RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
 		// --- AI (duplicate-FAQ detection) ---
 		// The knowledge base's "is this a duplicate?" check runs through the AI SDK,
 		// so any provider whose key is set can serve it. OpenAI is the primary; the

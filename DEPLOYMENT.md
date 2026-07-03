@@ -128,10 +128,21 @@ with `NODE_ENV=production` and would crash-loop without them.
 | ---------------------- | ----------- | --------------------------------------------------------- |
 | `DEV_OPENAI_API_KEY`   | development | OpenAI key for the knowledge-base AI features (duplicate check, question answering, and embedding retrieval). Pushed as the `OPENAI_API_KEY` Worker secret by `deploy-api`. |
 | `PROD_OPENAI_API_KEY`  | production  | Same, for production. |
+| `DEV_RESEND_WEBHOOK_SECRET`  | development | Svix signing secret for Resend's inbound-email webhook. Pushed as the `RESEND_WEBHOOK_SECRET` Worker secret by `deploy-api`, enabling the agent email scheduling channel (`POST /v1/channels/email/inbound`). |
+| `PROD_RESEND_WEBHOOK_SECRET` | production  | Same, for production. |
 
 These are **optional**: the `deploy-api` job pushes `OPENAI_API_KEY` only when the
 secret is set. With no key, the "is this a duplicate?" check no-ops (FAQs are still
 created normally) and question-answering degrades to a deterministic keyword match.
+
+`RESEND_WEBHOOK_SECRET` is likewise pushed only when set. It's the signing secret
+of the Resend `email.received` webhook (Resend → Webhooks); without it the agent
+email scheduling channel stays off — the webhook route answers `503` in production
+while the rest of the API runs normally. Configure the receiving domain (default
+`riv.us`, overridable via the `AGENT_EMAIL_DOMAIN` var) and the webhook in Resend
+first, then add this secret so `/v1/channels/email/inbound` goes live on the next
+deploy. The self-signup link domain (`WEBSITE_URL`) is a non-sensitive `vars` entry
+in `packages/api/wrangler.jsonc` (dev → `dev.rivus.ai`, prod → `rivus.ai`).
 The chat model defaults to `gpt-5.4-mini` and the embedding model (used to rank FAQs
 by relevance once a knowledge base outgrows the answerer's candidate cap) to
 `text-embedding-3-small`; since model ids aren't sensitive, override them — if needed —

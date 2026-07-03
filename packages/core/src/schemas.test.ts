@@ -4,6 +4,8 @@ import {
 	acceptInviteSchema,
 	accountBusinessSchema,
 	accountStatusSchema,
+	agentSlotSchema,
+	agentThreadStateSchema,
 	approveReplySchema,
 	conversationChannelSchema,
 	conversationListQuerySchema,
@@ -24,6 +26,7 @@ import {
 	notificationReadStateSchema,
 	notificationTypeSchema,
 	paginationQuerySchema,
+	publicCustomerSignupSchema,
 	SEED_COUNT_MAX,
 	seedAccountSchema,
 	sendMessageSchema,
@@ -913,5 +916,81 @@ describe('seedAccountSchema', () => {
 
 	it('rejects a non-boolean ai flag', () => {
 		expect(seedAccountSchema.safeParse({ ai: 'yes' }).success).toBe(false);
+	});
+});
+
+describe('agentThreadStateSchema', () => {
+	it.each(['new', 'awaiting_signup', 'slots_offered', 'booked'] as const)('accepts %s', (state) => {
+		expect(agentThreadStateSchema.parse(state)).toBe(state);
+	});
+
+	it('rejects an unknown state with plain language', () => {
+		const result = agentThreadStateSchema.safeParse('waiting');
+		expect(result.success).toBe(false);
+		expect(result.error?.issues[0]?.message).toBe('Choose a valid agent thread state.');
+	});
+});
+
+describe('agentSlotSchema', () => {
+	it('accepts a UTC instant plus a whole-minute duration', () => {
+		expect(agentSlotSchema.parse({ startAt: FUTURE_ISO, durationMinutes: 60 })).toEqual({
+			startAt: FUTURE_ISO,
+			durationMinutes: 60,
+		});
+	});
+
+	it('rejects a malformed instant', () => {
+		expect(agentSlotSchema.safeParse({ startAt: 'tomorrow', durationMinutes: 60 }).success).toBe(
+			false,
+		);
+	});
+
+	it('rejects a zero, fractional, or over-a-day duration', () => {
+		expect(agentSlotSchema.safeParse({ startAt: FUTURE_ISO, durationMinutes: 0 }).success).toBe(
+			false,
+		);
+		expect(agentSlotSchema.safeParse({ startAt: FUTURE_ISO, durationMinutes: 12.5 }).success).toBe(
+			false,
+		);
+		expect(agentSlotSchema.safeParse({ startAt: FUTURE_ISO, durationMinutes: 1441 }).success).toBe(
+			false,
+		);
+	});
+});
+
+describe('publicCustomerSignupSchema', () => {
+	it('requires an email (unlike createCustomerSchema) and normalizes it', () => {
+		const parsed = publicCustomerSignupSchema.parse({
+			name: 'Dana Fox',
+			email: '  Dana@Example.com ',
+		});
+		expect(parsed).toEqual({
+			name: 'Dana Fox',
+			email: 'dana@example.com',
+			phone: '',
+			address: '',
+		});
+	});
+
+	it('rejects a missing or invalid email', () => {
+		expect(publicCustomerSignupSchema.safeParse({ name: 'Dana Fox' }).success).toBe(false);
+		expect(
+			publicCustomerSignupSchema.safeParse({ name: 'Dana Fox', email: 'not-an-email' }).success,
+		).toBe(false);
+	});
+
+	it('rejects a blank name', () => {
+		expect(
+			publicCustomerSignupSchema.safeParse({ name: '  ', email: 'dana@example.com' }).success,
+		).toBe(false);
+	});
+
+	it('does not accept server-owned customer fields like balance', () => {
+		const parsed = publicCustomerSignupSchema.parse({
+			name: 'Dana Fox',
+			email: 'dana@example.com',
+			balance: 500,
+		});
+		expect(parsed).not.toHaveProperty('balance');
 	});
 });

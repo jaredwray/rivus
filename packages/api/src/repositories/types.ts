@@ -2,7 +2,12 @@ import type {
 	Account,
 	AccountBusinessInput,
 	AccountId,
+	AgentSlot,
+	AgentThread,
+	AgentThreadId,
+	AgentThreadState,
 	Conversation,
+	ConversationChannel,
 	ConversationDetail,
 	ConversationId,
 	ConversationStatus,
@@ -295,6 +300,13 @@ export interface CustomerRepository {
 	/** Up to `limit` customers matching a free-text term, newest-first (empty term → no matches). */
 	search(options: SearchCustomersOptions): Promise<Customer[]>;
 	findById(accountId: AccountId, id: CustomerId): Promise<Customer | null>;
+	/**
+	 * The account's customer with this email address (matched case-insensitively;
+	 * the newest record wins if several share it), or null — how the agent
+	 * recognizes an inbound sender. An empty email never matches, since customers
+	 * without an address on file all store `''`.
+	 */
+	findByEmail(accountId: AccountId, email: string): Promise<Customer | null>;
 	update(
 		accountId: AccountId,
 		id: CustomerId,
@@ -466,4 +478,61 @@ export interface ConversationRepository {
 		id: ConversationId,
 		patch: ConversationReviewPatch,
 	): Promise<Conversation | null>;
+}
+
+/**
+ * Shape used to open an agent thread — the identity fields plus the linked
+ * conversation. New threads always start in state `new` with nothing offered or
+ * booked, so only the identifying fields are taken here.
+ */
+export interface NewAgentThread {
+	accountId: AccountId;
+	channel: ConversationChannel;
+	/** The contact's channel address (an email address for the email channel). */
+	contactAddress: string;
+	conversationId: ConversationId;
+	/** The matched CRM customer, or '' when the sender isn't recognized yet. */
+	customerId: string;
+	/** The email thread's subject; '' for channels without subjects. */
+	subject: string;
+}
+
+/**
+ * Machine-state patch applied as the agent advances a thread. Every field is
+ * optional so a turn only touches what changed; identity fields (account,
+ * channel, address) are immutable for the thread's lifetime.
+ */
+export interface UpdateAgentThread {
+	customerId?: string;
+	state?: AgentThreadState;
+	offeredSlots?: AgentSlot[];
+	lastExternalMessageId?: string;
+	subject?: string;
+	bookedJobId?: string;
+	/** Re-linked only when the team deletes the transcript conversation mid-thread. */
+	conversationId?: ConversationId;
+}
+
+/**
+ * The agent's per-contact scheduling state, one record per
+ * `(account, channel, contactAddress)` — the memory that lets a multi-message
+ * exchange (offer times → pick one → book) resume when the next inbound
+ * message arrives. Uniqueness on that triple is enforced by the store; `create`
+ * throws {@link ConflictError} when a concurrent turn already opened the thread.
+ */
+export interface AgentThreadRepository {
+	create(input: NewAgentThread): Promise<AgentThread>;
+	findById(accountId: AccountId, id: AgentThreadId): Promise<AgentThread | null>;
+	/** The thread for one contact on one channel, or null when they've never written. */
+	findByContact(
+		accountId: AccountId,
+		channel: ConversationChannel,
+		contactAddress: string,
+	): Promise<AgentThread | null>;
+	/** Apply a machine-state patch; returns the updated thread, or null when it isn't the account's. */
+	update(
+		accountId: AccountId,
+		id: AgentThreadId,
+		input: UpdateAgentThread,
+	): Promise<AgentThread | null>;
 }

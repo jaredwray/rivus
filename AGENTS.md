@@ -92,7 +92,12 @@ Tests are an inventory of failure modes, not a coverage ritual.
 - **api** — Routes depend on repository interfaces (`repositories/types.ts`).
   Add a feature by extending the interface, both implementations
   (`memory.ts`, `mongo.ts`), and the route. Regenerate the OpenAPI doc with
-  `pnpm --filter @rivus/api openapi`.
+  `pnpm --filter @rivus/api openapi`. The customer-facing scheduling agent
+  lives in `src/services/agent/`: the policy (`engine.ts`), availability
+  (`slots.ts`), and reply parsing (`parse.ts`) are pure and channel-agnostic;
+  each messaging channel (email today, under `services/agent/email/` +
+  `routes/agent-email.ts`) supplies only transport, parsing-in, and rendering-
+  out. Add a new channel by reusing the engine, never by forking it.
 - **website** — `type-check` runs `next typegen` first; `next-env.d.ts` is
   generated, not committed. All UI follows [`DESIGN_SYSTEM.md`](./DESIGN_SYSTEM.md).
 - **docs** — `scripts/sync-openapi.mjs` copies the API spec into the site on

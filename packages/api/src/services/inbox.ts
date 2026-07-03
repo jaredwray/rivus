@@ -15,6 +15,14 @@ export const BILLING_PAUSE_REASON =
 export const UNSURE_PAUSE_REASON =
 	"Rivus wasn't sure how to answer this one — review and reply before it sends.";
 
+/**
+ * Shown when an email Rivus sent bounced or was marked as spam, so a human
+ * reaches the customer another way. Set on the agent-email conversation when a
+ * Resend delivery-failure webhook arrives.
+ */
+export const DELIVERY_FAILED_REASON =
+	"Rivus's last email didn't reach this customer — follow up another way.";
+
 // Terms that mark a customer message as money/billing-sensitive, so Rivus holds
 // its draft for a human even when the knowledge base could answer it. Matched as
 // whole words, case-insensitively.
