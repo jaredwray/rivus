@@ -270,7 +270,10 @@ export default function CustomersScreen() {
 
 	return (
 		<View style={styles.row}>
-			<ScrollView style={{ flex: 1 }} contentContainerStyle={styles.leftPad}>
+			<View style={styles.leftPane}>
+				{/* The header stays fixed above the list so the table scrolls within the
+				    viewport instead of the whole page running off the bottom edge —
+				    matching the schedule and inbox screens. */}
 				<View style={styles.head}>
 					<View>
 						<Txt style={styles.title}>Customers</Txt>
@@ -279,158 +282,160 @@ export default function CustomersScreen() {
 					<GradientButton label="Add customer" icon="plus" onPress={openCreate} />
 				</View>
 
-				{formOpen ? (
-					<Card style={styles.form}>
-						<View style={styles.formHead}>
-							<Txt style={styles.formTitle}>{editing ? 'Edit customer' : 'New customer'}</Txt>
-							<Pressable
-								onPress={closeForm}
-								accessibilityRole="button"
-								accessibilityLabel="Close"
-								hitSlop={CLOSE_HIT_SLOP}
-							>
-								<Icon name="x" size={18} color={colors.textMuted} />
-							</Pressable>
-						</View>
-						<TextField
-							label="Name"
-							value={name}
-							onChangeText={setName}
-							placeholder="Grace Kim"
-							autoCapitalize="words"
-						/>
-						<View style={styles.formRow}>
-							<View style={styles.formCol}>
-								<TextField
-									label="Email"
-									value={email}
-									onChangeText={setEmail}
-									placeholder="grace@example.com"
-									autoCapitalize="none"
-									keyboardType="email-address"
-								/>
+				<ScrollView style={styles.body} contentContainerStyle={styles.bodyPad}>
+					{formOpen ? (
+						<Card style={styles.form}>
+							<View style={styles.formHead}>
+								<Txt style={styles.formTitle}>{editing ? 'Edit customer' : 'New customer'}</Txt>
+								<Pressable
+									onPress={closeForm}
+									accessibilityRole="button"
+									accessibilityLabel="Close"
+									hitSlop={CLOSE_HIT_SLOP}
+								>
+									<Icon name="x" size={18} color={colors.textMuted} />
+								</Pressable>
 							</View>
-							<View style={styles.formCol}>
-								<TextField
-									label="Phone"
-									value={phone}
-									onChangeText={setPhone}
-									placeholder="(206) 555-0155"
-									keyboardType="phone-pad"
-								/>
-							</View>
-						</View>
-						<AddressAutocomplete
-							label="Address"
-							value={address}
-							onChangeText={setAddress}
-							placeholder="1 Main St, Seattle, WA"
-							apiKey={mapsApiKey}
-						/>
-						<View style={styles.formRow}>
-							<View style={styles.formCol}>
-								<TextField
-									label="Lifetime value ($)"
-									value={lifetime}
-									onChangeText={setLifetime}
-									placeholder="0.00"
-									keyboardType="decimal-pad"
-								/>
-							</View>
-							<View style={styles.formCol}>
-								<TextField
-									label="Balance ($)"
-									value={balance}
-									onChangeText={setBalance}
-									placeholder="0.00"
-									keyboardType="decimal-pad"
-								/>
-							</View>
-						</View>
-						<TextField
-							label="Notes"
-							value={notes}
-							onChangeText={setNotes}
-							placeholder="Repeat client · membership"
-							multiline
-							style={styles.notesInput}
-						/>
-
-						{formError ? <Txt style={styles.errorTxt}>{formError}</Txt> : null}
-
-						<View style={styles.btnRow}>
-							<GradientButton
-								label={saving ? 'Saving…' : editing ? 'Save changes' : 'Add customer'}
-								icon="check"
-								onPress={onSave}
-								style={styles.btnGrow}
+							<TextField
+								label="Name"
+								value={name}
+								onChangeText={setName}
+								placeholder="Grace Kim"
+								autoCapitalize="words"
 							/>
-							<OutlineButton label="Cancel" onPress={closeForm} style={styles.btnGrow} />
-						</View>
-						{editing ? (
-							<OutlineButton
-								label={deleting ? 'Deleting…' : 'Delete customer'}
-								onPress={onDelete}
-								style={styles.deleteBtn}
-							/>
-						) : null}
-					</Card>
-				) : null}
-
-				{loading ? (
-					<ActivityIndicator color={colors.brandPurple} style={styles.loading} />
-				) : error ? (
-					<Txt style={styles.errorTxt}>{error}</Txt>
-				) : list.length === 0 ? (
-					<Txt style={styles.empty}>
-						No customers yet. Add your first contact to start tracking jobs and balances.
-					</Txt>
-				) : (
-					<ScrollView horizontal showsHorizontalScrollIndicator={false}>
-						<View style={[styles.table, { width: tableWidth }]}>
-							<View style={styles.tableHead}>
-								<Txt style={[styles.th, { flex: COLS.customer }]}>Customer</Txt>
-								<Txt style={[styles.th, { flex: COLS.address }]}>Address</Txt>
-								<Txt style={[styles.th, styles.right, { flex: COLS.lifetime }]}>Lifetime</Txt>
-								<Txt style={[styles.th, styles.right, { flex: COLS.balance }]}>Balance</Txt>
+							<View style={styles.formRow}>
+								<View style={styles.formCol}>
+									<TextField
+										label="Email"
+										value={email}
+										onChangeText={setEmail}
+										placeholder="grace@example.com"
+										autoCapitalize="none"
+										keyboardType="email-address"
+									/>
+								</View>
+								<View style={styles.formCol}>
+									<TextField
+										label="Phone"
+										value={phone}
+										onChangeText={setPhone}
+										placeholder="(206) 555-0155"
+										keyboardType="phone-pad"
+									/>
+								</View>
 							</View>
-							{list.map((customer, index) => {
-								const isSelected = customer.id === selected?.id;
-								return (
-									<Pressable
-										key={customer.id}
-										onPress={() => {
-											setSelectedId(customer.id);
-											setPanelOpen(true);
-										}}
-										style={[
-											styles.tr,
-											index === list.length - 1 && styles.trLast,
-											isSelected && styles.trSelected,
-										]}
-									>
-										<View style={[styles.cell, styles.customerCell, { flex: COLS.customer }]}>
-											<Avatar initials={initialsOf(customer.name)} size={36} />
-											<Txt style={styles.customerName} numberOfLines={1}>
-												{customer.name}
+							<AddressAutocomplete
+								label="Address"
+								value={address}
+								onChangeText={setAddress}
+								placeholder="1 Main St, Seattle, WA"
+								apiKey={mapsApiKey}
+							/>
+							<View style={styles.formRow}>
+								<View style={styles.formCol}>
+									<TextField
+										label="Lifetime value ($)"
+										value={lifetime}
+										onChangeText={setLifetime}
+										placeholder="0.00"
+										keyboardType="decimal-pad"
+									/>
+								</View>
+								<View style={styles.formCol}>
+									<TextField
+										label="Balance ($)"
+										value={balance}
+										onChangeText={setBalance}
+										placeholder="0.00"
+										keyboardType="decimal-pad"
+									/>
+								</View>
+							</View>
+							<TextField
+								label="Notes"
+								value={notes}
+								onChangeText={setNotes}
+								placeholder="Repeat client · membership"
+								multiline
+								style={styles.notesInput}
+							/>
+
+							{formError ? <Txt style={styles.errorTxt}>{formError}</Txt> : null}
+
+							<View style={styles.btnRow}>
+								<GradientButton
+									label={saving ? 'Saving…' : editing ? 'Save changes' : 'Add customer'}
+									icon="check"
+									onPress={onSave}
+									style={styles.btnGrow}
+								/>
+								<OutlineButton label="Cancel" onPress={closeForm} style={styles.btnGrow} />
+							</View>
+							{editing ? (
+								<OutlineButton
+									label={deleting ? 'Deleting…' : 'Delete customer'}
+									onPress={onDelete}
+									style={styles.deleteBtn}
+								/>
+							) : null}
+						</Card>
+					) : null}
+
+					{loading ? (
+						<ActivityIndicator color={colors.brandPurple} style={styles.loading} />
+					) : error ? (
+						<Txt style={styles.errorTxt}>{error}</Txt>
+					) : list.length === 0 ? (
+						<Txt style={styles.empty}>
+							No customers yet. Add your first contact to start tracking jobs and balances.
+						</Txt>
+					) : (
+						<ScrollView horizontal showsHorizontalScrollIndicator={false}>
+							<View style={[styles.table, { width: tableWidth }]}>
+								<View style={styles.tableHead}>
+									<Txt style={[styles.th, { flex: COLS.customer }]}>Customer</Txt>
+									<Txt style={[styles.th, { flex: COLS.address }]}>Address</Txt>
+									<Txt style={[styles.th, styles.right, { flex: COLS.lifetime }]}>Lifetime</Txt>
+									<Txt style={[styles.th, styles.right, { flex: COLS.balance }]}>Balance</Txt>
+								</View>
+								{list.map((customer, index) => {
+									const isSelected = customer.id === selected?.id;
+									return (
+										<Pressable
+											key={customer.id}
+											onPress={() => {
+												setSelectedId(customer.id);
+												setPanelOpen(true);
+											}}
+											style={[
+												styles.tr,
+												index === list.length - 1 && styles.trLast,
+												isSelected && styles.trSelected,
+											]}
+										>
+											<View style={[styles.cell, styles.customerCell, { flex: COLS.customer }]}>
+												<Avatar initials={initialsOf(customer.name)} size={36} />
+												<Txt style={styles.customerName} numberOfLines={1}>
+													{customer.name}
+												</Txt>
+											</View>
+											<Txt style={[styles.td, { flex: COLS.address }]} numberOfLines={1}>
+												{customer.address || '—'}
 											</Txt>
-										</View>
-										<Txt style={[styles.td, { flex: COLS.address }]} numberOfLines={1}>
-											{customer.address || '—'}
-										</Txt>
-										<Txt style={[styles.td, styles.right, styles.tdMed, { flex: COLS.lifetime }]}>
-											{formatMoney(customer.lifetimeValue)}
-										</Txt>
-										<Txt style={[styles.td, styles.right, styles.tdBold, { flex: COLS.balance }]}>
-											{formatMoney(customer.balance)}
-										</Txt>
-									</Pressable>
-								);
-							})}
-						</View>
-					</ScrollView>
-				)}
-			</ScrollView>
+											<Txt style={[styles.td, styles.right, styles.tdMed, { flex: COLS.lifetime }]}>
+												{formatMoney(customer.lifetimeValue)}
+											</Txt>
+											<Txt style={[styles.td, styles.right, styles.tdBold, { flex: COLS.balance }]}>
+												{formatMoney(customer.balance)}
+											</Txt>
+										</Pressable>
+									);
+								})}
+							</View>
+						</ScrollView>
+					)}
+				</ScrollView>
+			</View>
 
 			{panelVisible ? (
 				<AccountPanel
@@ -534,14 +539,23 @@ function AccountPanel({
 
 const styles = StyleSheet.create({
 	row: { flex: 1, flexDirection: 'row' },
-	leftPad: { padding: 24, paddingBottom: 40 },
+	// The left pane stacks a fixed header over a scrollable body; `minWidth: 0`
+	// lets it shrink beside the detail panel instead of overflowing the row.
+	leftPane: { flex: 1, minWidth: 0 },
+	// `flex: 1` bounds the list to the space below the header so it scrolls
+	// internally; the padding that used to wrap the whole page now lives here
+	// (top spacing comes from the header) and on the header itself.
+	body: { flex: 1 },
+	bodyPad: { paddingHorizontal: 24, paddingBottom: 40 },
 	head: {
 		flexDirection: 'row',
 		alignItems: 'center',
 		justifyContent: 'space-between',
 		gap: 16,
 		flexWrap: 'wrap',
-		marginBottom: 20,
+		paddingHorizontal: 24,
+		paddingTop: 24,
+		paddingBottom: 20,
 	},
 	title: { fontFamily: font.semibold, fontSize: 20 },
 	subtitle: { fontFamily: font.regular, fontSize: 13, color: colors.textMuted, marginTop: 3 },
