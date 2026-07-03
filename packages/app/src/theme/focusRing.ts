@@ -20,13 +20,14 @@ const STYLE_ID = 'rivus-focus-ring';
 // every other Pressable carries a tabindex.
 const SELECTOR = ':where(button,a,input,select,textarea,[tabindex])';
 
-// The brand ring is only for controls without their own visible frame — buttons,
-// links, and other focusable Pressables. Text inputs already sit inside a bordered
-// field, so a ring there just draws a second box around the box; browsers also treat
-// text inputs as `:focus-visible` whenever focused, so it would show even on a click.
-// The purple highlight is therefore removed from every textbox view (input/textarea).
-const RING_TARGETS = ':where(button,a,select,[tabindex])';
-const TEXT_FIELDS = ':where(input,textarea)';
+// Text-entry fields only: real text inputs and textareas. These already sit inside a
+// bordered field, so the brand ring just draws a second box around the box — it's
+// removed from every textbox view. Non-text <input>s (checkbox, radio, range, file,
+// and the button-like submit/reset/image/button) are deliberately excluded: they have
+// no field of their own, so they keep a visible focus indicator (WCAG 2.4.7 — in
+// react-native-web a <Switch> renders as <input type="checkbox">, for instance).
+const TEXT_FIELDS =
+	':where(input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=image]):not([type=file]):not([type=range]):not([type=reset]),textarea)';
 
 export function installFocusRing(): void {
 	if (Platform.OS !== 'web' || typeof document === 'undefined') {
@@ -40,10 +41,11 @@ export function installFocusRing(): void {
 	style.textContent =
 		// Pointer focus (mouse/touch): no outline anywhere.
 		`${SELECTOR}:focus:not(:focus-visible){outline:none;}` +
-		// Keyboard focus: a 2px brand ring sitting just outside non-text controls.
-		`${RING_TARGETS}:focus-visible{outline:2px solid ${colors.brandPurple};outline-offset:2px;}` +
-		// Text inputs never get the ring. Appended after the ring rule so it wins at
-		// equal specificity for any input that also happens to carry a tabindex.
+		// Keyboard focus: a 2px brand ring sitting just outside the control.
+		`${SELECTOR}:focus-visible{outline:2px solid ${colors.brandPurple};outline-offset:2px;}` +
+		// Text inputs already have a bordered field, so suppress the ring for them only.
+		// Appended after the ring rule so it wins at equal specificity; non-text inputs
+		// (checkbox/radio/…) keep the ring drawn above.
 		`${TEXT_FIELDS}:focus,${TEXT_FIELDS}:focus-visible{outline:none;}` +
 		// Opt-out: any other control carrying data-no-focus-ring never gets the ring.
 		// Appended last so it wins over the ring rule above at equal specificity.
