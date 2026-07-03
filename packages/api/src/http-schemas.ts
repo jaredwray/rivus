@@ -76,9 +76,10 @@ export const authResponseSchema = z
 		role: roleSchema,
 		/**
 		 * Domain of the account's inbound agent address (`AGENT_EMAIL_DOMAIN`), so a
-		 * client can show/share the address customers email — `<account.slug>@<this>`
-		 * — without hardcoding the domain. Global config, not per-account data, so it
-		 * rides on the session rather than the account object.
+		 * client can show/share the address customers email — the local part is
+		 * `agentEmailLocalPart(account.slug, account.id)` (`<slug>-<hex>`), joined to
+		 * `@<this>` — without hardcoding the domain. Global config, not per-account
+		 * data, so it rides on the session rather than the account object.
 		 */
 		agentEmailDomain: z.string(),
 	})

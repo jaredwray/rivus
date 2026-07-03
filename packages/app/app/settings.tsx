@@ -1,3 +1,4 @@
+import { agentEmailLocalPart } from '@rivus/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
 	ActivityIndicator,
@@ -236,9 +237,10 @@ export default function SettingsScreen() {
 		}
 	}
 
-	// The inbound address customers email to reach Rivus. The domain comes from
-	// the session (`AGENT_EMAIL_DOMAIN`), so nothing is hardcoded here.
-	const agentEmail = `${session.account.slug}@${session.agentEmailDomain}`;
+	// The inbound address customers email to reach Rivus. The local part pairs the
+	// business slug with a stable per-account hex tag (so look-alike names never
+	// collide); the domain comes from the session (`AGENT_EMAIL_DOMAIN`).
+	const agentEmail = `${agentEmailLocalPart(session.account.slug, session.account.id)}@${session.agentEmailDomain}`;
 
 	return (
 		<ScrollView
