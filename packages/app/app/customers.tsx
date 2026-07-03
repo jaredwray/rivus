@@ -282,7 +282,11 @@ export default function CustomersScreen() {
 					<GradientButton label="Add customer" icon="plus" onPress={openCreate} />
 				</View>
 
-				<ScrollView style={styles.body} contentContainerStyle={styles.bodyPad}>
+				<ScrollView
+					style={styles.body}
+					contentContainerStyle={styles.bodyPad}
+					keyboardShouldPersistTaps="handled"
+				>
 					{formOpen ? (
 						<Card style={styles.form}>
 							<View style={styles.formHead}>
