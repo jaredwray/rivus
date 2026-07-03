@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { type ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
 import {
 	ActivityIndicator,
@@ -32,6 +32,10 @@ const COLS = {
 	lifetime: 1,
 	balance: 1.2,
 };
+
+// Expand the small (18px) icon close buttons to the ~44dp minimum tap target
+// (18 + 13*2 = 44) without changing their visual size — matches schedule.tsx.
+const CLOSE_HIT_SLOP = { top: 13, bottom: 13, left: 13, right: 13 };
 
 /** Format integer cents as a grouped dollar string (54000 → "$540.00"). */
 function formatMoney(cents: number): string {
@@ -71,14 +75,12 @@ export default function CustomersScreen() {
 	const { width } = useWindowDimensions();
 	const sidebar = width >= SIDEBAR_BREAKPOINT ? SIDEBAR_WIDTH : 0;
 	const showPanel = width >= 1040;
-	const panel = showPanel ? 340 : 0;
-	const avail = width - sidebar - panel - 48;
-	const tableWidth = Math.max(640, avail);
 
 	const [list, setList] = useState<Customer[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
+	const [panelOpen, setPanelOpen] = useState(true);
 
 	const [formOpen, setFormOpen] = useState(false);
 	const [editing, setEditing] = useState<Customer | null>(null);
@@ -149,12 +151,18 @@ export default function CustomersScreen() {
 
 	// Deep link from the global search: `?focus=<id>` selects (and, where the panel
 	// shows, opens) that customer once the list has loaded.
+	const router = useRouter();
 	const { focus } = useLocalSearchParams<{ focus?: string }>();
 	useEffect(() => {
 		if (typeof focus === 'string' && focus) {
 			setSelectedId(focus);
+			setPanelOpen(true);
+			// `focus` is a one-shot signal — clear it once consumed so re-selecting the
+			// same customer from global search pushes a changing param and re-runs this
+			// effect, reopening the panel even if it was manually closed.
+			router.setParams({ focus: '' });
 		}
-	}, [focus]);
+	}, [focus, router]);
 
 	function resetForm() {
 		setName('');
@@ -254,6 +262,12 @@ export default function CustomersScreen() {
 	const selected = list.find((customer) => customer.id === selectedId) ?? list[0] ?? null;
 	const countLabel = `${list.length} ${list.length === 1 ? 'contact' : 'contacts'}`;
 
+	// Only reserve the side panel's 340px when it's actually on screen (a customer
+	// is selected and the panel hasn't been closed); otherwise let the table reclaim
+	// that width so closing the panel doesn't leave a blank gap beside a cramped table.
+	const panelVisible = showPanel && selected !== null && panelOpen;
+	const tableWidth = Math.max(640, width - sidebar - (panelVisible ? 340 : 0) - 48);
+
 	return (
 		<View style={styles.row}>
 			<ScrollView style={{ flex: 1 }} contentContainerStyle={styles.leftPad}>
@@ -269,7 +283,12 @@ export default function CustomersScreen() {
 					<Card style={styles.form}>
 						<View style={styles.formHead}>
 							<Txt style={styles.formTitle}>{editing ? 'Edit customer' : 'New customer'}</Txt>
-							<Pressable onPress={closeForm} accessibilityRole="button">
+							<Pressable
+								onPress={closeForm}
+								accessibilityRole="button"
+								accessibilityLabel="Close"
+								hitSlop={CLOSE_HIT_SLOP}
+							>
 								<Icon name="x" size={18} color={colors.textMuted} />
 							</Pressable>
 						</View>
@@ -380,7 +399,10 @@ export default function CustomersScreen() {
 								return (
 									<Pressable
 										key={customer.id}
-										onPress={() => setSelectedId(customer.id)}
+										onPress={() => {
+											setSelectedId(customer.id);
+											setPanelOpen(true);
+										}}
 										style={[
 											styles.tr,
 											index === list.length - 1 && styles.trLast,
@@ -410,8 +432,12 @@ export default function CustomersScreen() {
 				)}
 			</ScrollView>
 
-			{showPanel && selected ? (
-				<AccountPanel customer={selected} onEdit={() => openEdit(selected)} />
+			{panelVisible ? (
+				<AccountPanel
+					customer={selected}
+					onEdit={() => openEdit(selected)}
+					onClose={() => setPanelOpen(false)}
+				/>
 			) : null}
 		</View>
 	);
@@ -437,11 +463,29 @@ function ContactRow({
 	);
 }
 
-function AccountPanel({ customer, onEdit }: { customer: Customer; onEdit: () => void }) {
+function AccountPanel({
+	customer,
+	onEdit,
+	onClose,
+}: {
+	customer: Customer;
+	onEdit: () => void;
+	onClose: () => void;
+}) {
 	const since = new Date(customer.createdAt).getFullYear();
 	return (
 		<ScrollView style={styles.panel} contentContainerStyle={styles.panelPad}>
-			<SectionLabel style={{ marginBottom: 14 }}>Account</SectionLabel>
+			<View style={styles.panelHead}>
+				<SectionLabel>Customer</SectionLabel>
+				<Pressable
+					onPress={onClose}
+					accessibilityRole="button"
+					accessibilityLabel="Close"
+					hitSlop={CLOSE_HIT_SLOP}
+				>
+					<Icon name="x" size={18} color={colors.textMuted} />
+				</Pressable>
+			</View>
 			<View style={styles.acctHead}>
 				<Avatar initials={initialsOf(customer.name)} size={50} />
 				<View style={{ flex: 1 }}>
@@ -571,6 +615,12 @@ const styles = StyleSheet.create({
 		backgroundColor: colors.surfaceAlt,
 	},
 	panelPad: { paddingVertical: 24, paddingHorizontal: 22 },
+	panelHead: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		marginBottom: 14,
+	},
 	acctHead: { flexDirection: 'row', alignItems: 'center', gap: 13, marginBottom: 14 },
 	acctName: { fontFamily: font.semibold, fontSize: 16 },
 	acctSub: { fontFamily: font.regular, fontSize: 12.5, color: colors.textMuted },
