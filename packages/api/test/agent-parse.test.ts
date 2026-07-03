@@ -274,6 +274,20 @@ describe('isAcknowledgement', () => {
 	])('does not read %j as an acknowledgement', (text) => {
 		expect(isAcknowledgement(text)).toBe(false);
 	});
+
+	it.each([
+		// Numeric scheduling content must survive normalization as an unrecognized
+		// token, so a reply proposing a (here unparseable) date/time stays a real
+		// scheduling turn rather than being discarded down to "works"/"ok".
+		'10 works',
+		'7/10 works',
+		'ok 7/10',
+		'2 works',
+		'9 or 10 works',
+		'how about the 10th',
+	])('does not read numeric scheduling content in %j as an acknowledgement', (text) => {
+		expect(isAcknowledgement(text)).toBe(false);
+	});
 });
 
 describe('parseProposedTime — negated times are not proposals', () => {

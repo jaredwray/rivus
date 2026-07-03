@@ -261,6 +261,13 @@ describe('decideScheduling — acknowledging a booking', () => {
 		expect(decision.kind).toBe('confirm_existing');
 	});
 
+	it('treats numeric scheduling content as a real turn, not an acknowledgement', () => {
+		// "7/10 works" carries a date the time parser can't resolve; it must still
+		// re-open scheduling rather than be swallowed into a booking reassurance.
+		const decision = decideBooked('7/10 works');
+		expect(decision.kind).toBe('offer_slots');
+	});
+
 	it('only reassures when a booking actually stands — a bare "ok" with no booking re-offers', () => {
 		// No bookedSlot (e.g. the thread is still `slots_offered`): there is nothing
 		// to confirm, so an unparseable reply keeps moving toward a booking.

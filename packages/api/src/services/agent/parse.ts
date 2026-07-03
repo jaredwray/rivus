@@ -393,10 +393,14 @@ const ACK_PHRASE_HEAD = new RegExp(`^(?:${ACK_PHRASES.join('|')})(?:\\s+|$)`);
 export function isAcknowledgement(text: string): boolean {
 	const normalized = text
 		.toLowerCase()
-		// Drop apostrophes so "that's"/"i'm" read as "thats"/"im", then map every
-		// other non-letter (digits, punctuation, emoji) to a space and collapse.
+		// Drop apostrophes so "that's"/"i'm" read as "thats"/"im", then map
+		// punctuation, symbols, and emoji to spaces. Digits are deliberately kept:
+		// a reply carrying numeric scheduling content ("10 works", "7/10", "ok
+		// 7/10") is a real turn, not a bare acknowledgement, so the stray number
+		// must survive as an unrecognized token and fail the whole-message check
+		// below rather than being discarded down to "works"/"ok".
 		.replace(/['’]/g, '')
-		.replace(/[^a-z\s]/g, ' ')
+		.replace(/[^a-z0-9\s]/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();
 	if (normalized === '') {
