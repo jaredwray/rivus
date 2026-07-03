@@ -26,12 +26,21 @@ const E164_MAX_DIGITS = 15;
  *   `(555) 123-4567` → `+15551234567`.
  * - Anything else (too short, too long, a non-US bare international number) → `''`.
  *
+ * A trailing extension (`ext`, `extension`, `x`, or a `#`/`,`/`;` separator
+ * followed by digits) is stripped first, so `(555) 123-4567 ext 89` matches the
+ * base line `+15551234567` instead of folding `89` into the subscriber number.
+ *
  * @example normalizePhone('(555) 123-4567') // '+15551234567'
+ * @example normalizePhone('(555) 123-4567 ext 89') // '+15551234567'
  * @example normalizePhone('+44 20 7946 0958') // '+442079460958'
  * @example normalizePhone('nope') // ''
  */
+// A trailing extension: an `ext`/`extension`/`x` word or a `#`/`,`/`;` separator,
+// then the extension digits, at the very end of the value.
+const EXTENSION_SUFFIX = /\s*(?:ext\.?|extension|x|[#,;])\s*\d{1,6}\s*$/i;
+
 export function normalizePhone(raw: string, options?: { defaultCountry?: 'US' }): string {
-	const trimmed = raw.trim();
+	const trimmed = raw.trim().replace(EXTENSION_SUFFIX, '').trim();
 	const hasPlus = trimmed.startsWith('+');
 	// `\D` drops the leading `+` too, leaving only the significant digits.
 	const digits = trimmed.replace(/\D/g, '');

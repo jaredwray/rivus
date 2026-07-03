@@ -14,6 +14,14 @@ describe('normalizePhone', () => {
 		expect(normalizePhone('+1 (555) 123-4567')).toBe('+15551234567');
 	});
 
+	it('strips a trailing extension so it matches the base line', () => {
+		expect(normalizePhone('(555) 123-4567 ext 89')).toBe('+15551234567');
+		expect(normalizePhone('(555) 123-4567 ext. 89')).toBe('+15551234567');
+		expect(normalizePhone('+1 555-123-4567 x89')).toBe('+15551234567');
+		expect(normalizePhone('555.123.4567 #12')).toBe('+15551234567');
+		expect(normalizePhone('5551234567, 89')).toBe('+15551234567');
+	});
+
 	it('treats 11 bare digits beginning with 1 as North American', () => {
 		expect(normalizePhone('15551234567')).toBe('+15551234567');
 		expect(normalizePhone('1 (555) 123-4567')).toBe('+15551234567');

@@ -1011,16 +1011,17 @@ export class MongoCustomerRepository implements CustomerRepository {
 		}
 		// Stored phones are free text, so E.164 matching can't be a query predicate:
 		// page the account's customers with a phone on file (newest-first, so the
-		// most recent record wins) and normalize each in app code. Bounded at
-		// MAX_PHONE_SCAN_PAGES × 100 — ample for a small business; the documented
-		// upgrade path is a normalized shadow field if an account ever outgrows it.
-		const PAGE_SIZE = 100;
-		const MAX_PHONE_SCAN_PAGES = 50;
+		// most recent record wins) and normalize each in app code. The scan runs to
+		// exhaustion — a hard page cap would silently miss a real match for a large
+		// account, which is worse than the extra reads; the documented upgrade path
+		// (a normalized shadow field + index for an O(1) lookup) is the answer if an
+		// account's phone-bearing customer count ever makes the scan measurable.
 		// `$gt: ''` (not `$ne: ''`) so only real non-empty string phones are scanned:
 		// `$ne: ''` would also match documents whose `phone` is null/missing, and
 		// `normalizePhone(null)` would throw. Legacy customers may lack the field.
+		const PAGE_SIZE = 100;
 		const filter = { accountId: new Types.ObjectId(accountId), phone: { $gt: '' } };
-		for (let page = 0; page < MAX_PHONE_SCAN_PAGES; page += 1) {
+		for (let page = 0; ; page += 1) {
 			const docs = await CustomerModel.find(filter)
 				.sort({ createdAt: -1, _id: -1 })
 				.skip(page * PAGE_SIZE)
@@ -1032,10 +1033,9 @@ export class MongoCustomerRepository implements CustomerRepository {
 				}
 			}
 			if (docs.length < PAGE_SIZE) {
-				break;
+				return null;
 			}
 		}
-		return null;
 	}
 
 	async update(
