@@ -44,6 +44,10 @@ export const EMAIL_COMPLAINED_EVENT = 'email.complained';
  * event (`email.bounced`/`email.complained`) is about mail Rivus *sent*, so the
  * account is identified by the `From` (`<slug>@domain`), not the recipient.
  * Returns the local part (slug or id), or null when the address isn't ours.
+ *
+ * The domain check is exact and anchored on `@`, so it never mistakes the other
+ * deployment's alias for ours: `riv.us` (production) does not match `dev.riv.us`
+ * (development), nor the reverse.
  */
 export function agentAddressLocalPart(address: string, agentDomain: string): string | null {
 	const suffix = `@${agentDomain.toLowerCase()}`;
@@ -87,6 +91,12 @@ export function parseAddress(raw: string): ParsedAddress | null {
  * then forwarded-for) at the agent domain. Returns its local part — the
  * account's slug or id — or null when the mail wasn't addressed to the agent
  * domain at all.
+ *
+ * The domain match is exact and anchored on `@` (not a loose suffix), so a
+ * deployment configured for `riv.us` throws away mail to the `dev.riv.us` alias
+ * — and one configured for `dev.riv.us` throws away mail to `riv.us`. That keeps
+ * the production and development agent inboxes isolated even though one domain is
+ * a subdomain of the other.
  */
 export function resolveAgentRecipient(
 	event: InboundEmailEvent,

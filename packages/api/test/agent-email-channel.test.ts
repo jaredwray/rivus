@@ -161,6 +161,19 @@ describe('resolveAgentRecipient', () => {
 		expect(resolveAgentRecipient(event(['someone@example.com']), 'riv.us')).toBeNull();
 		expect(resolveAgentRecipient(event([]), 'riv.us')).toBeNull();
 	});
+
+	it('throws away the other environment’s domain alias (keeps dev/prod isolated)', () => {
+		// Production runs AGENT_EMAIL_DOMAIN=riv.us and must ignore mail to the
+		// development alias — the `@`-anchored match means `@dev.riv.us` is not a
+		// match for `@riv.us`, even though `dev.riv.us` is a subdomain of `riv.us`.
+		expect(resolveAgentRecipient(event(['cascade-1a2b3c4d@dev.riv.us']), 'riv.us')).toBeNull();
+		// Development runs AGENT_EMAIL_DOMAIN=dev.riv.us: it serves its own subdomain
+		// and rejects the bare production domain.
+		expect(resolveAgentRecipient(event(['cascade-1a2b3c4d@dev.riv.us']), 'dev.riv.us')).toBe(
+			'cascade-1a2b3c4d',
+		);
+		expect(resolveAgentRecipient(event(['cascade-1a2b3c4d@riv.us']), 'dev.riv.us')).toBeNull();
+	});
 });
 
 describe('agentAddressLocalPart', () => {
@@ -171,6 +184,15 @@ describe('agentAddressLocalPart', () => {
 	it('returns null for an address at another domain, or with an empty local part', () => {
 		expect(agentAddressLocalPart('hello@rivus.ai', 'riv.us')).toBeNull();
 		expect(agentAddressLocalPart('@riv.us', 'riv.us')).toBeNull();
+	});
+
+	it('does not treat the other environment’s domain alias as ours', () => {
+		// The bounce/complaint path identifies the account from our own From address;
+		// a prod deployment must not read a `dev.riv.us` sender as one of its agent
+		// addresses (nor the reverse), so the two inboxes never cross over.
+		expect(agentAddressLocalPart('acme-1a2b3c4d@dev.riv.us', 'riv.us')).toBeNull();
+		expect(agentAddressLocalPart('acme-1a2b3c4d@dev.riv.us', 'dev.riv.us')).toBe('acme-1a2b3c4d');
+		expect(agentAddressLocalPart('acme-1a2b3c4d@riv.us', 'dev.riv.us')).toBeNull();
 	});
 });
 
