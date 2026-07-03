@@ -1,8 +1,15 @@
-import type { AccountId, ConversationId } from '@rivus/core';
+import { type AccountId, agentEmailLocalPart, type ConversationId } from '@rivus/core';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { InMemoryRepositories } from '../src/repositories/memory';
-import { addMember, authHeader, buildTestApp, buildTestAppWithRepos, signupOwner } from './helpers';
+import { createInMemoryRepositories, type InMemoryRepositories } from '../src/repositories/memory';
+import {
+	addMember,
+	authHeader,
+	buildTestApp,
+	buildTestAppWithRepos,
+	RecordingMailer,
+	signupOwner,
+} from './helpers';
 
 describe('conversation routes', () => {
 	let app: FastifyInstance;
@@ -592,5 +599,199 @@ describe('conversation list isolation', () => {
 			headers: authHeader(other.token),
 		});
 		expect(response.json().data).toHaveLength(0);
+	});
+});
+
+describe('inbox replies dispatch email on the email channel', () => {
+	let app: FastifyInstance;
+	let repos: InMemoryRepositories;
+	let token: string;
+	let accountId: AccountId;
+	let slug: string;
+
+	beforeEach(async () => {
+		({ app, repos } = await buildTestAppWithRepos());
+		const owner = await signupOwner(app);
+		token = owner.token;
+		accountId = owner.account.id as AccountId;
+		slug = owner.account.slug;
+	});
+
+	afterEach(async () => {
+		await app.close();
+	});
+
+	function outbox(instance: FastifyInstance = app): RecordingMailer {
+		return instance.deps.mailer as RecordingMailer;
+	}
+
+	/** Open an email conversation paired with an agent thread, the way the webhook does. */
+	async function seedEmailThread(
+		options: { subject?: string; lastMessageId?: string; address?: string } = {},
+	) {
+		const address = options.address ?? 'dana@example.com';
+		const conversation = await repos.conversations.create(accountId, {
+			contactName: 'Dana Fox',
+			channel: 'email',
+			customerId: '',
+			contactPhone: '',
+			status: 'rivus_handling',
+			tags: [],
+			lastInvoice: '',
+		});
+		const thread = await repos.agentThreads.create({
+			accountId,
+			channel: 'email',
+			contactAddress: address,
+			conversationId: conversation.id,
+			customerId: '',
+			subject: options.subject ?? 'Water heater',
+		});
+		if (options.lastMessageId) {
+			await repos.agentThreads.update(accountId, thread.id, {
+				lastExternalMessageId: options.lastMessageId,
+			});
+		}
+		return conversation;
+	}
+
+	it("emails a team member's reply to the customer, threaded into the conversation", async () => {
+		const conversation = await seedEmailThread({
+			subject: 'Water heater',
+			lastMessageId: '<m1@mail.example.com>',
+		});
+
+		const response = await app.inject({
+			method: 'POST',
+			url: `/v1/conversations/${conversation.id}/messages`,
+			headers: authHeader(token),
+			payload: { body: 'Hi this is Jared. We can book you then.' },
+		});
+
+		expect(response.statusCode).toBe(201);
+		// Recorded in the transcript as a human reply...
+		expect(response.json().messages.at(-1)).toMatchObject({
+			author: 'agent',
+			body: 'Hi this is Jared. We can book you then.',
+		});
+		// ...and actually sent as an email from the account's own agent address.
+		expect(outbox().agentEmails).toHaveLength(1);
+		const sent = outbox().agentEmails[0];
+		expect(sent?.to).toBe('dana@example.com');
+		expect(sent?.from).toContain(`<${agentEmailLocalPart(slug, accountId)}@riv.us>`);
+		expect(sent?.subject).toBe('Re: Water heater');
+		expect(sent?.text).toContain('We can book you then.');
+		expect(sent?.html).toContain('We can book you then.');
+		// Threaded under the customer's last inbound message.
+		expect(sent?.inReplyTo).toBe('<m1@mail.example.com>');
+		expect(sent?.references).toEqual(['<m1@mail.example.com>']);
+	});
+
+	it('emails the held draft when a flagged reply is approved', async () => {
+		const conversation = await seedEmailThread();
+		await repos.conversations.setReviewState(accountId, conversation.id as ConversationId, {
+			status: 'needs_attention',
+			pendingReply: "You're all set for Monday at 9.",
+			flagReason: 'billing',
+		});
+
+		const response = await app.inject({
+			method: 'POST',
+			url: `/v1/conversations/${conversation.id}/approve`,
+			headers: authHeader(token),
+			payload: {},
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(outbox().agentEmails).toHaveLength(1);
+		expect(outbox().agentEmails[0]?.text).toContain('all set for Monday');
+	});
+
+	it('emails a grounded answer when a human lets Rivus reply', async () => {
+		await repos.faqs.create(accountId, {
+			question: 'What are your hours?',
+			answer: 'We are open Monday to Friday, 9 AM to 6 PM.',
+			category: '',
+			status: 'published',
+		});
+		const conversation = await seedEmailThread();
+		await repos.conversations.addMessage(accountId, conversation.id as ConversationId, {
+			author: 'customer',
+			body: 'What are your hours?',
+		});
+
+		const response = await app.inject({
+			method: 'POST',
+			url: `/v1/conversations/${conversation.id}/reply`,
+			headers: authHeader(token),
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(outbox().agentEmails).toHaveLength(1);
+		expect(outbox().agentEmails[0]?.text).toContain('9 AM to 6 PM');
+	});
+
+	it('does not send email for a reply on a non-email channel', async () => {
+		const conversation = (
+			await app.inject({
+				method: 'POST',
+				url: '/v1/conversations',
+				headers: authHeader(token),
+				payload: { contactName: 'Dana Fox', channel: 'whatsapp' },
+			})
+		).json();
+
+		const response = await app.inject({
+			method: 'POST',
+			url: `/v1/conversations/${conversation.id}/messages`,
+			headers: authHeader(token),
+			payload: { body: 'Following up here.' },
+		});
+
+		expect(response.statusCode).toBe(201);
+		expect(outbox().agentEmails).toHaveLength(0);
+	});
+
+	it('surfaces a delivery failure and records nothing, so the reply can be retried', async () => {
+		class ThrowingMailer extends RecordingMailer {
+			override async sendAgentEmail(_email: Parameters<RecordingMailer['sendAgentEmail']>[0]) {
+				throw new Error('Resend rejected the email (status 500)');
+			}
+		}
+		const failingRepos = createInMemoryRepositories();
+		const failingApp = await buildTestApp({ ...failingRepos, mailer: new ThrowingMailer() });
+		const owner = await signupOwner(failingApp);
+		const failAccountId = owner.account.id as AccountId;
+		const conversation = await failingRepos.conversations.create(failAccountId, {
+			contactName: 'Dana Fox',
+			channel: 'email',
+			customerId: '',
+			contactPhone: '',
+			status: 'rivus_handling',
+			tags: [],
+			lastInvoice: '',
+		});
+		await failingRepos.agentThreads.create({
+			accountId: failAccountId,
+			channel: 'email',
+			contactAddress: 'dana@example.com',
+			conversationId: conversation.id,
+			customerId: '',
+			subject: 'Water heater',
+		});
+
+		const response = await failingApp.inject({
+			method: 'POST',
+			url: `/v1/conversations/${conversation.id}/messages`,
+			headers: authHeader(owner.token),
+			payload: { body: 'This should not be recorded if the email fails.' },
+		});
+
+		expect(response.statusCode).toBe(500);
+		// The transcript stayed empty — nothing recorded for an email that never sent.
+		const messages = await failingRepos.conversations.listMessages(failAccountId, conversation.id);
+		expect(messages).toEqual([]);
+
+		await failingApp.close();
 	});
 });

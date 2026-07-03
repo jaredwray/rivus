@@ -2,6 +2,7 @@ import {
 	type AccountId,
 	approveReplySchema,
 	buildPaginationMeta,
+	type Conversation,
 	type ConversationDetail,
 	type ConversationId,
 	type CustomerId,
@@ -11,7 +12,7 @@ import {
 	type UserId,
 	updateConversationSchema,
 } from '@rivus/core';
-import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import type { FastifyBaseLogger, FastifyInstance, FastifyPluginAsync } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
@@ -22,6 +23,8 @@ import {
 	idParamsSchema,
 	needsAttentionCountResponseSchema,
 } from '../http-schemas';
+import { agentFromHeader } from '../services/agent/email/outbound';
+import { renderReplyEmail } from '../services/agent/email/templates';
 import { awaitingRivusReply, decideRivusReply, latestCustomerMessage } from '../services/inbox';
 
 // The newest page of FAQs handed to Rivus as the knowledge base when drafting a
@@ -51,7 +54,17 @@ async function assertCustomerExists(
 
 export const conversationRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
-	const { conversations, faqs, faqAnswer, memberships, notifier } = app.deps;
+	const {
+		accounts,
+		agentThreads,
+		config,
+		conversations,
+		faqs,
+		faqAnswer,
+		mailer,
+		memberships,
+		notifier,
+	} = app.deps;
 
 	// Every conversation route requires a valid JWT.
 	app.addHook('onRequest', fastify.authenticate);
@@ -67,6 +80,61 @@ export const conversationRoutes: FastifyPluginAsync = async (fastify) => {
 		}
 		const messages = (await conversations.listMessages(accountId, id)) ?? [];
 		return { conversation, messages };
+	}
+
+	/**
+	 * Deliver a customer-facing reply to an email conversation as an actual email.
+	 *
+	 * The inbox transcript is only a record of the thread; on the `email` channel
+	 * a reply also has to leave the building, or the team believes they answered
+	 * while the customer heard nothing (the reported bug). The scheduling agent
+	 * opens every email conversation alongside an agent thread that holds the
+	 * customer's address and the last inbound message id, so we send from the
+	 * account's own agent address, threaded under the customer's latest message —
+	 * exactly like the agent's own replies. Conversations on other channels, or an
+	 * email conversation with no linked thread (no recipient on file), have no
+	 * transport, so this is a no-op for them.
+	 *
+	 * Sent *before* the message is recorded: a delivery failure then surfaces as
+	 * an error with nothing written — so the caller can retry — rather than
+	 * leaving a transcript line for an email that never sent.
+	 */
+	async function sendEmailReply(
+		conversation: Conversation,
+		body: string,
+		logger: FastifyBaseLogger,
+	): Promise<void> {
+		if (conversation.channel !== 'email') {
+			return;
+		}
+		const thread = await agentThreads.findByConversationId(conversation.accountId, conversation.id);
+		if (!thread || thread.contactAddress === '') {
+			logger.warn(
+				{ conversationId: conversation.id },
+				'email conversation has no linked agent thread; reply recorded but not emailed',
+			);
+			return;
+		}
+		const account = await accounts.findById(conversation.accountId);
+		if (!account) {
+			return;
+		}
+		const rendered = renderReplyEmail({
+			accountName: account.name,
+			inboundSubject: thread.subject,
+			body,
+		});
+		await mailer.sendAgentEmail({
+			to: thread.contactAddress,
+			from: agentFromHeader(account, config.AGENT_EMAIL_DOMAIN),
+			subject: rendered.subject,
+			html: rendered.html,
+			text: rendered.text,
+			// Thread under the customer's last inbound message so the reply lands in
+			// the same conversation in their mail client; empty when we never saw one.
+			inReplyTo: thread.lastExternalMessageId,
+			references: thread.lastExternalMessageId === '' ? [] : [thread.lastExternalMessageId],
+		});
 	}
 
 	app.get(
@@ -245,6 +313,10 @@ export const conversationRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!before) {
 				throw app.httpErrors.notFound('Conversation not found');
 			}
+			// On the email channel the reply is emailed to the customer before it's
+			// recorded, so a send failure surfaces instead of a transcript line for
+			// an email that never left.
+			await sendEmailReply(before, request.body.body, request.log);
 			const detail = await conversations.addMessage(accountId, id, {
 				author: 'agent',
 				body: request.body.body,
@@ -320,7 +392,9 @@ export const conversationRoutes: FastifyPluginAsync = async (fastify) => {
 			const decision = decideRivusReply({ customerMessage: question, answer });
 
 			if (!decision.pause) {
-				// Confident, everyday answer: Rivus sends it and keeps handling the thread.
+				// Confident, everyday answer: Rivus sends it and keeps handling the thread —
+				// over email, that means actually mailing it to the customer.
+				await sendEmailReply(conversation, decision.draft, request.log);
 				const detail = await conversations.addMessage(accountId, id, {
 					author: 'rivus',
 					body: decision.draft,
@@ -400,6 +474,8 @@ export const conversationRoutes: FastifyPluginAsync = async (fastify) => {
 			if (finalText.trim() === '') {
 				throw app.httpErrors.badRequest('There is nothing to send — write a reply first.');
 			}
+			// "Approve & send" has to actually send on the email channel.
+			await sendEmailReply(conversation, finalText, request.log);
 			const detail = await conversations.addMessage(accountId, id, {
 				author: 'rivus',
 				body: finalText,

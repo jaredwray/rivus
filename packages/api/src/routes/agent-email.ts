@@ -2,7 +2,6 @@ import {
 	type Account,
 	type AccountId,
 	type AgentSlot,
-	agentEmailLocalPart,
 	type JobId,
 	stripAgentEmailTag,
 	type UserId,
@@ -27,6 +26,7 @@ import {
 	parseAddress,
 	resolveAgentRecipient,
 } from '../services/agent/email/inbound';
+import { agentFromHeader } from '../services/agent/email/outbound';
 import { renderAgentEmail } from '../services/agent/email/templates';
 import { verifyWebhookSignature } from '../services/agent/email/webhook';
 import { type AgentDecision, decideScheduling } from '../services/agent/engine';
@@ -90,11 +90,6 @@ function headerValue(value: string | string[] | undefined): string {
 		return value[0] ?? '';
 	}
 	return value ?? '';
-}
-
-/** A display name safe to place before `<address>` in a From header. */
-function sanitizeDisplayName(name: string): string {
-	return name.replace(/[\r\n"<>]/g, '').trim();
 }
 
 export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
@@ -498,14 +493,10 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 			});
 			// Always reply from the account's canonical tagged address, regardless of
 			// which form (tagged or legacy bare slug) the customer happened to write to.
-			const agentAddress = `${agentEmailLocalPart(account.slug, account.id)}@${config.AGENT_EMAIL_DOMAIN}`;
-			const displayName = sanitizeDisplayName(account.name);
 			try {
 				await mailer.sendAgentEmail({
 					to: sender.address,
-					// Quoted so names with commas/periods ("Cascade Plumbing, Inc.")
-					// survive RFC 5322 parsing; sanitize already stripped any quotes.
-					from: displayName === '' ? agentAddress : `"${displayName}" <${agentAddress}>`,
+					from: agentFromHeader(account, config.AGENT_EMAIL_DOMAIN),
 					subject: rendered.subject,
 					html: rendered.html,
 					text: rendered.text,

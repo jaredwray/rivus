@@ -1521,6 +1521,22 @@ export class MongoAgentThreadRepository implements AgentThreadRepository {
 		return doc ? mapAgentThread(doc) : null;
 	}
 
+	async findByConversationId(
+		accountId: AccountId,
+		conversationId: ConversationId,
+	): Promise<AgentThread | null> {
+		if (!Types.ObjectId.isValid(accountId) || !Types.ObjectId.isValid(conversationId)) {
+			return null;
+		}
+		// The (account, channel, address) index already scopes to this account's
+		// threads; the extra conversationId predicate filters the handful within it.
+		const doc = await AgentThreadModel.findOne({
+			accountId: new Types.ObjectId(accountId),
+			conversationId: new Types.ObjectId(conversationId),
+		}).exec();
+		return doc ? mapAgentThread(doc) : null;
+	}
+
 	async update(
 		accountId: AccountId,
 		id: AgentThreadId,

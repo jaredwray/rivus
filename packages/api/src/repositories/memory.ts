@@ -1241,6 +1241,16 @@ export class InMemoryAgentThreadRepository implements AgentThreadRepository {
 		return match ? structuredClone(match) : null;
 	}
 
+	async findByConversationId(
+		accountId: AccountId,
+		conversationId: ConversationId,
+	): Promise<AgentThread | null> {
+		const match = [...this.data.agentThreads.values()].find(
+			(thread) => thread.accountId === accountId && thread.conversationId === conversationId,
+		);
+		return match ? structuredClone(match) : null;
+	}
+
 	async update(
 		accountId: AccountId,
 		id: AgentThreadId,
