@@ -272,12 +272,6 @@ export function htmlToText(html: string): string {
 	);
 }
 
-/** Strip `Re:`/`Fwd:` chains off a subject; '' stays ''. */
-export function cleanSubject(subject: string): string {
-	let cleaned = subject.trim();
-	const prefix = /^(?:re|fwd?|fw)\s*:\s*/i;
-	while (prefix.test(cleaned)) {
-		cleaned = cleaned.replace(prefix, '');
-	}
-	return cleaned.trim();
-}
+// `cleanSubject` is channel-agnostic (the shared orchestrator uses it too), so it
+// lives in `../subject`; re-exported here for the email channel's existing callers.
+export { cleanSubject } from '../subject';
