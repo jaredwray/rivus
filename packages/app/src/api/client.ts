@@ -44,6 +44,7 @@ import {
 	notificationTypeSchema,
 	type PaginationMeta,
 	type PaginationQuery,
+	type ProvisionedChannel,
 	paginationQuerySchema,
 	type Role,
 	roleSchema,
@@ -616,6 +617,10 @@ export interface RivusApiClient {
 	updateAccount(token: string, input: UpdateAccountInput): Promise<Account>;
 	/** Cancel (soft-delete) the account (owner only). */
 	cancelAccount(token: string): Promise<Account>;
+	/** Enable a messaging channel — the API provisions a number (owner only). */
+	enableChannel(token: string, channel: ProvisionedChannel): Promise<Account>;
+	/** Disable a messaging channel; its number is retained (owner only). */
+	disableChannel(token: string, channel: ProvisionedChannel): Promise<Account>;
 	/** Read the account's billing summary (owner only). */
 	getBilling(token: string): Promise<Billing>;
 	listItems(token: string, query?: Partial<PaginationQuery>): Promise<ItemListResponse>;
@@ -893,6 +898,22 @@ export function createApiClient(
 
 		cancelAccount(token: string) {
 			return request('/v1/account/cancel', accountResponseSchema, {
+				method: 'POST',
+				headers: authHeaders(token),
+			});
+		},
+
+		/** Enable a messaging channel — the API provisions a number (owner only). */
+		enableChannel(token: string, channel: ProvisionedChannel) {
+			return request(`/v1/account/channels/${channel}/enable`, accountResponseSchema, {
+				method: 'POST',
+				headers: authHeaders(token),
+			});
+		},
+
+		/** Disable a messaging channel; its number is retained for re-enabling (owner only). */
+		disableChannel(token: string, channel: ProvisionedChannel) {
+			return request(`/v1/account/channels/${channel}/disable`, accountResponseSchema, {
 				method: 'POST',
 				headers: authHeaders(token),
 			});

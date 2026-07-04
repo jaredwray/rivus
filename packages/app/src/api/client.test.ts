@@ -570,6 +570,32 @@ describe('createApiClient', () => {
 		});
 	});
 
+	describe('enableChannel / disableChannel', () => {
+		it('POSTs to the enable endpoint and returns the account with the provisioned number', async () => {
+			const account = makeAccount();
+			account.channels.whatsapp = { enabled: true, address: '+15551234567', providerRef: '' };
+			fetchMock.mockResolvedValueOnce(jsonResponse(account));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.enableChannel('owner-token', 'whatsapp');
+
+			expect(result.channels.whatsapp).toMatchObject({ enabled: true, address: '+15551234567' });
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/account/channels/whatsapp/enable`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer owner-token' });
+		});
+
+		it('POSTs to the disable endpoint with the bearer token', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(makeAccount()));
+			const client = createApiClient(BASE, fetchMock);
+			await client.disableChannel('owner-token', 'whatsapp');
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/account/channels/whatsapp/disable`);
+			expect(init.method).toBe('POST');
+		});
+	});
+
 	describe('cancelAccount', () => {
 		it('POSTs to the cancel endpoint and returns the canceled account', async () => {
 			const account = {

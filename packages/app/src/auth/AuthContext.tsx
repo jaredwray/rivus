@@ -2,6 +2,7 @@ import {
 	type AccountId,
 	isRivusStaffEmail,
 	type LoginInput,
+	type ProvisionedChannel,
 	type UpdateAccountInput,
 	type UpdateProfileInput,
 	type VerifyCodeInput,
@@ -50,6 +51,11 @@ export interface AuthContextValue {
 	acceptInvite: (token: string) => Promise<void>;
 	/** Update the account's business settings, keeping the session in sync (owner only). */
 	updateAccount: (input: UpdateAccountInput) => Promise<void>;
+	/**
+	 * Enable or disable a provisioned messaging channel (WhatsApp today), keeping the
+	 * session in sync (owner only). Enabling provisions a number the first time.
+	 */
+	setChannelEnabled: (channel: ProvisionedChannel, enabled: boolean) => Promise<void>;
 	/**
 	 * Update your own profile (name, phone, email, profile image), keeping the
 	 * session in sync. Changing the email stages it on `session.user.pendingEmail`
@@ -145,6 +151,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 					return;
 				}
 				const account = await client.updateAccount(session.token, input);
+				setSession({ ...session, account });
+			},
+			async setChannelEnabled(channel, enabled) {
+				if (!session) {
+					return;
+				}
+				const account = enabled
+					? await client.enableChannel(session.token, channel)
+					: await client.disableChannel(session.token, channel);
 				setSession({ ...session, account });
 			},
 			async verifyEmailChange(input) {
