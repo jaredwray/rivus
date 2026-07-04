@@ -17,10 +17,12 @@ import type {
 	VerificationCodeRepository,
 } from './repositories/types';
 import type { ReceivedEmailReader } from './services/agent/email/received';
+import type { ChannelProvisioner } from './services/channel-provisioning';
 import type { Mailer } from './services/email';
 import type { FaqAnswerService } from './services/faq-answer';
 import type { FaqSimilarityService } from './services/faq-similarity';
 import type { NotificationService } from './services/notifications';
+import type { WhatsappSender } from './services/whatsapp';
 
 /** Result of a readiness check: whether dependencies are usable, and why not. */
 export interface ReadinessResult {
@@ -54,6 +56,10 @@ export interface AppDeps {
 	mailer: Mailer;
 	/** Fetches inbound email bodies (Resend's webhook delivers metadata only). */
 	receivedEmails: ReceivedEmailReader;
+	/** Sends WhatsApp messages (the scheduling agent's replies and inbox reply-out). */
+	whatsappSender: WhatsappSender;
+	/** Provisions a WhatsApp business number when an owner enables the channel. */
+	whatsappProvisioner: ChannelProvisioner;
 	/** Turns domain events (job assigned, invite accepted, …) into notifications. */
 	notifier: NotificationService;
 	/** AI check for near-duplicate FAQs (a no-op when no provider key is set). */

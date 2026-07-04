@@ -55,6 +55,22 @@ const envSchema = z
 		// serve at all in production — never unauthenticated in prod, and never a
 		// hard boot failure for deployments that don't use the email channel.
 		RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
+		// --- WhatsApp channel (zernio) ---
+		// Base URL of the zernio API (WhatsApp Business provider). Overridable so a
+		// self-hosted/staging zernio can be targeted; the send + provision endpoints
+		// hang off it.
+		ZERNIO_API_URL: z.url().default('https://api.zernio.com'),
+		// API key for zernio. When unset, WhatsApp degrades to a no-op sender +
+		// provisioner (a deterministic fake number in development) so the API still
+		// runs and tests without zernio credentials — mirroring the Resend gate.
+		ZERNIO_API_KEY: z.string().min(1).optional(),
+		// Signing secret for zernio's inbound webhook. When set, every delivery must
+		// carry a valid signature; when unset, dev/test accept unsigned payloads but
+		// production refuses the webhook route (503) until it's configured.
+		ZERNIO_WEBHOOK_SECRET: z.string().min(1).optional(),
+		// Verify token for the GET webhook handshake some WhatsApp providers require
+		// to register a webhook URL. When unset, the handshake endpoint 404s.
+		ZERNIO_VERIFY_TOKEN: z.string().min(1).optional(),
 		// --- AI (duplicate-FAQ detection) ---
 		// The knowledge base's "is this a duplicate?" check runs through the AI SDK,
 		// so any provider whose key is set can serve it. OpenAI is the primary; the

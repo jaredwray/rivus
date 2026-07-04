@@ -7,9 +7,11 @@ import { createInMemoryRepositories } from '../src/repositories/memory';
 import type { ReceivedEmailContent } from '../src/services/agent/email/received';
 import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
 import { signWebhookPayload } from '../src/services/agent/email/webhook';
+import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
+import { NoopWhatsappSender } from '../src/services/whatsapp';
 import { buildTestApp, buildTestAppWithRepos, RecordingMailer, signupOwner } from './helpers';
 
 const WEBHOOK_URL = '/v1/channels/email/inbound';
@@ -616,6 +618,8 @@ describe('POST /v1/channels/email/inbound — signatures', () => {
 			...repos,
 			mailer: new RecordingMailer(),
 			receivedEmails: new NoopReceivedEmailReader(),
+			whatsappSender: new NoopWhatsappSender(),
+			whatsappProvisioner: new NoopChannelProvisioner(),
 			notifier: createNotificationService({ notifications: repos.notifications }),
 			faqSimilarity: new NoopFaqSimilarityService(),
 			faqAnswer: new NoopFaqAnswerService(),

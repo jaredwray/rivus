@@ -14,6 +14,7 @@ import { ConflictError, InviteNotPendingError, LastOwnerError } from './reposito
 import { accountRoutes } from './routes/account';
 import { adminRoutes } from './routes/admin';
 import { agentEmailRoutes } from './routes/agent-email';
+import { agentWhatsappRoutes } from './routes/agent-whatsapp';
 import { authRoutes } from './routes/auth';
 import { billingRoutes } from './routes/billing';
 import { conversationRoutes } from './routes/conversations';
@@ -194,6 +195,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 	// webhook feeding the agent's email channel.
 	app.register(publicRoutes, { prefix: '/v1/public' });
 	app.register(agentEmailRoutes, { prefix: '/v1/channels' });
+	app.register(agentWhatsappRoutes, { prefix: '/v1/channels' });
 
 	return app;
 }

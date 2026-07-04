@@ -4,10 +4,12 @@ import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createInMemoryRepositories } from './repositories/memory';
 import { NoopReceivedEmailReader } from './services/agent/email/received';
+import { NoopChannelProvisioner } from './services/channel-provisioning';
 import { NoopMailer } from './services/email';
 import { NoopFaqAnswerService } from './services/faq-answer';
 import { NoopFaqSimilarityService } from './services/faq-similarity';
 import { createNotificationService } from './services/notifications';
+import { NoopWhatsappSender } from './services/whatsapp';
 
 /**
  * Boot the app with in-memory repositories (no database needed) purely to read
@@ -48,6 +50,8 @@ async function main(): Promise<void> {
 		verificationCodes,
 		mailer: new NoopMailer(),
 		receivedEmails: new NoopReceivedEmailReader(),
+		whatsappSender: new NoopWhatsappSender(),
+		whatsappProvisioner: new NoopChannelProvisioner(),
 		notifier: createNotificationService({ notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
