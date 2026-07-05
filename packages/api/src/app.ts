@@ -16,6 +16,7 @@ import { accountChannelRoutes } from './routes/account-channels';
 import { adminRoutes } from './routes/admin';
 import { agentEmailRoutes } from './routes/agent-email';
 import { agentWhatsappRoutes } from './routes/agent-whatsapp';
+import { agentWhatsappPlivoRoutes } from './routes/agent-whatsapp-plivo';
 import { authRoutes } from './routes/auth';
 import { billingRoutes } from './routes/billing';
 import { conversationRoutes } from './routes/conversations';
@@ -198,6 +199,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 	app.register(publicRoutes, { prefix: '/v1/public' });
 	app.register(agentEmailRoutes, { prefix: '/v1/channels' });
 	app.register(agentWhatsappRoutes, { prefix: '/v1/channels' });
+	app.register(agentWhatsappPlivoRoutes, { prefix: '/v1/channels' });
 
 	return app;
 }

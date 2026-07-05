@@ -22,7 +22,7 @@ import { createFaqAnswerService } from './services/faq-answer';
 import { createFaqSimilarityService } from './services/faq-similarity';
 import { createNotificationService } from './services/notifications';
 import { createMailer } from './services/resend-mailer';
-import { createWhatsappProvisioner, createWhatsappSender } from './services/zernio-whatsapp';
+import { createWhatsappProvisioner, createWhatsappSender } from './services/whatsapp-provider';
 
 /** Connect to Mongo, build the app with Mongo-backed repositories, and listen. */
 export async function start(): Promise<void> {
