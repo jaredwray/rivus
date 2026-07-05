@@ -258,13 +258,24 @@ describe('PlivoProvisioner', () => {
 		await expect(provisioner(refused.fetchImpl).provision(INPUT)).rejects.toThrow(
 			/refused to rent 14154009186 \(status 403\)/,
 		);
-		const pending = fakeFetch([
+		const failed = fakeFetch([
 			search,
-			{ ok: true, status: 201, body: '{"numbers":[{"number":"14154009186","status":"pending"}]}' },
+			{ ok: true, status: 201, body: '{"numbers":[{"number":"14154009186","status":"failed"}]}' },
 		]);
-		await expect(provisioner(pending.fetchImpl).provision(INPUT)).rejects.toThrow(
+		await expect(provisioner(failed.fetchImpl).provision(INPUT)).rejects.toThrow(
 			/did not confirm the rental/,
 		);
+	});
+
+	it('keeps a compliance-pending rental — the number is placed, not free to re-buy', async () => {
+		const { fetchImpl } = fakeFetch([
+			{ ok: true, status: 200, body: '{"objects":[{"number":"4915123456789"}]}' },
+			{ ok: true, status: 201, body: '{"numbers":[{"number":"4915123456789","status":"pending"}]}' },
+		]);
+		await expect(provisioner(fetchImpl, 'de').provision(INPUT)).resolves.toEqual({
+			address: '+4915123456789',
+			providerRef: '4915123456789',
+		});
 	});
 
 	it('fails when Plivo offers a number that is not valid E.164', async () => {

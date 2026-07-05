@@ -16,6 +16,13 @@ import {
  * configured both factories degrade to no-ops, so the API still boots and
  * tests run without provider credentials. Each provider's webhook route is
  * always registered — inbound is gated by that route's own config, not here.
+ *
+ * Selection is deliberately global (config-level), not per account: zernio has
+ * never been live (its wire format is still `TODO(zernio)`), so no deployment
+ * holds numbers from two providers at once. If zernio is brought live alongside
+ * Plivo, selection must move to the account's stored channel identity
+ * (`providerRef`) so a reply always leaves through the provider that owns the
+ * number it is sent from.
  */
 
 type WhatsappProviderConfig = Pick<

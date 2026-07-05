@@ -350,6 +350,32 @@ describe('POST /v1/channels/whatsapp/plivo/inbound — signature', () => {
 		const res = await app.inject({ method: 'POST', url: WEBHOOK_URL, payload: inbound() });
 		expect(res.statusCode).toBe(503);
 	});
+
+	it('503s in production on a partial credential pair (token without auth id)', async () => {
+		// The sender would be a no-op: verifying and "handling" deliveries would
+		// acknowledge messages into a black hole, so the route must refuse instead.
+		app = buildPlivoApp({
+			NODE_ENV: 'production',
+			JWT_SECRET: 'x'.repeat(32),
+			RESEND_API_KEY: 're_test_key',
+			LOG_LEVEL: 'silent',
+			CORS_ORIGIN: 'https://app.rivus.ai',
+			PLIVO_AUTH_TOKEN: AUTH_TOKEN,
+		});
+		const nonce = '31337';
+		const res = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: inbound(),
+			headers: {
+				'x-forwarded-proto': 'https',
+				'x-forwarded-host': 'api.rivus.ai',
+				'x-plivo-signature-v2-nonce': nonce,
+				'x-plivo-signature-v2': signPlivoUrl({ authToken: AUTH_TOKEN, url: PINNED_URL, nonce }),
+			},
+		});
+		expect(res.statusCode).toBe(503);
+	});
 });
 
 // --- Payload mapping edges the route tests don't reach ------------------------

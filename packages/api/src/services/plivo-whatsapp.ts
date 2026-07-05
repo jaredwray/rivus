@@ -243,8 +243,12 @@ export class PlivoProvisioner implements ChannelProvisioner {
 			);
 		}
 		const parsed = buyResponseSchema.safeParse(JSON.parse(await response.text()));
-		const status = parsed.success ? (parsed.data.numbers[0]?.status ?? '') : '';
-		if (status.toLowerCase() !== 'success') {
+		const status = (parsed.success ? (parsed.data.numbers[0]?.status ?? '') : '').toLowerCase();
+		// Countries that require verification documents answer `pending`: the rental
+		// HAS been placed and activates when compliance clears. Treat it as rented —
+		// throwing here would drop the providerRef after money moved, and the next
+		// enable attempt would buy a second number.
+		if (status !== 'success' && status !== 'pending') {
 			throw new Error(`Plivo did not confirm the rental of ${number} (status "${status}").`);
 		}
 	}
