@@ -92,12 +92,34 @@ Tests are an inventory of failure modes, not a coverage ritual.
 - **api** — Routes depend on repository interfaces (`repositories/types.ts`).
   Add a feature by extending the interface, both implementations
   (`memory.ts`, `mongo.ts`), and the route. Regenerate the OpenAPI doc with
-  `pnpm --filter @rivus/api openapi`. The customer-facing scheduling agent
-  lives in `src/services/agent/`: the policy (`engine.ts`), availability
-  (`slots.ts`), and reply parsing (`parse.ts`) are pure and channel-agnostic;
-  each messaging channel (email today, under `services/agent/email/` +
-  `routes/agent-email.ts`) supplies only transport, parsing-in, and rendering-
-  out. Add a new channel by reusing the engine, never by forking it.
+  `pnpm --filter @rivus/api openapi`.
+
+  The customer-facing agent is **unified across channels** (email, WhatsApp,
+  and — later — SMS/voice), and the layering is what keeps it that way:
+  - **Core (`src/services/agent/`) owns all behavior** — the pure policy
+    (`engine.ts`), availability (`slots.ts`), reply parsing (`parse.ts`), the
+    capability registry (`capabilities.ts`), the `AgentDecision → AgentResponse`
+    composer (`response.ts`), and the one shared orchestrator
+    (`orchestrator.ts`) every channel's inbound route calls.
+  - **Channels (`services/agent/<channel>/` + `routes/agent-<channel>.ts`) are
+    dumb adapters** — a `ChannelAdapter` (`channel.ts`) does only three
+    feature-blind things: normalize an inbound provider payload, generically
+    render an `AgentResponse`, and transport. A channel module must **never**
+    import `engine.ts`, `capabilities.ts`, or `AgentDecision`; if it needs to,
+    the seam is wrong.
+  - **Adding a core feature** = a new `AgentCapability` (or a new
+    `AgentDecision→AgentResponse` case) composed from the existing
+    `AgentResponseBlock` kinds, registered in `defaultCapabilities()`. It ships
+    on **every** channel with zero channel edits. Only a genuinely new *block*
+    kind touches renderers — and then the compiler (exhaustive switches) and
+    `test/agent-response-matrix.test.ts` (channels × decisions) flag every one.
+  - **Adding a channel** = a provider seam (sender/inbound-parse/webhook, all
+    Noop-able), a `ChannelCapabilities` + one generic renderer, a
+    `createXChannelAdapter`, and a thin `routes/agent-x.ts` that resolves the
+    account and hands an `InboundAgentMessage` to `handleInboundAgentMessage`.
+    Register its adapter in `services/agent/channels.ts` and it inherits inbox
+    reply-out automatically. Provider wire details stay behind config +
+    `TODO(<provider>)` markers (see `services/zernio-whatsapp.ts`).
 - **website** — `type-check` runs `next typegen` first; `next-env.d.ts` is
   generated, not committed. All UI follows [`DESIGN_SYSTEM.md`](./DESIGN_SYSTEM.md).
 - **docs** — `scripts/sync-openapi.mjs` copies the API spec into the site on

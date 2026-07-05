@@ -1,20 +1,13 @@
-import {
-	type Account,
-	type AccountId,
-	type AgentSlot,
-	type JobId,
-	stripAgentEmailTag,
-	type UserId,
-} from '@rivus/core';
+import { type Account, type AccountId, stripAgentEmailTag } from '@rivus/core';
 import type { FastifyBaseLogger, FastifyError, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { errorResponseSchema } from '../http-schemas';
-import { ConflictError } from '../repositories/errors';
-import type { UpdateAgentThread } from '../repositories/types';
+import { defaultCapabilities } from '../services/agent/capabilities';
+import type { InboundAgentMessage } from '../services/agent/channel';
+import { createEmailChannelAdapter } from '../services/agent/email/adapter';
 import {
 	agentAddressLocalPart,
-	cleanSubject,
 	EMAIL_BOUNCED_EVENT,
 	EMAIL_COMPLAINED_EVENT,
 	extractReplyText,
@@ -26,32 +19,21 @@ import {
 	parseAddress,
 	resolveAgentRecipient,
 } from '../services/agent/email/inbound';
-import { agentFromHeader } from '../services/agent/email/outbound';
-import { renderAgentEmail } from '../services/agent/email/templates';
 import { verifyWebhookSignature } from '../services/agent/email/webhook';
-import { type AgentDecision, decideScheduling } from '../services/agent/engine';
-import { buildCustomerSignupUrl } from '../services/agent/signup';
-import {
-	BOOKING_HORIZON_DAYS,
-	type BusyInterval,
-	formatSlotLabel,
-	safeTimeZone,
-	zonedParts,
-} from '../services/agent/slots';
-import { DELIVERY_FAILED_REASON } from '../services/inbox';
+import { flagDeliveryFailure, handleInboundAgentMessage } from '../services/agent/orchestrator';
 
 /**
  * The email channel of the scheduling agent: Resend posts every email received
- * at `*@AGENT_EMAIL_DOMAIN` here, and the agent answers by mail — validating
- * the sender against the account's CRM, offering open slots, and booking the
- * job once a time is agreed. The multi-turn state lives on an `AgentThread`;
- * the human-readable exchange is recorded on an inbox `Conversation`.
+ * at `*@AGENT_EMAIL_DOMAIN` here. This route owns only the email edges —
+ * signature verification, the Resend event schema, resolving the account from the
+ * recipient address, fetching the body, and the auto-responder loop guard — then
+ * hands a normalized {@link InboundAgentMessage} to the channel-agnostic
+ * {@link handleInboundAgentMessage}, which runs the same flow (and the same
+ * capabilities) as every other channel.
  *
- * Everything unactionable (an event type we don't handle, mail to an unknown
- * account, auto-responders) answers `200 {handled:false}` rather than an
- * error: the sender is Resend, not the customer, and a non-2xx only makes it
- * redeliver something that will never become actionable. Bouncing is avoided
- * entirely — replying to arbitrary inbound mail is how backscatter happens.
+ * Everything unactionable answers `200 {handled:false}` rather than an error: the
+ * sender is Resend, not the customer, and a non-2xx only makes it redeliver
+ * something that will never become actionable.
  */
 
 const webhookResponseSchema = z
@@ -62,27 +44,6 @@ const webhookResponseSchema = z
 		outcome: z.string(),
 	})
 	.meta({ id: 'AgentEmailWebhookResult' });
-
-/**
- * How far ahead booked jobs are loaded when computing availability — the whole
- * booking horizon (the engine declines proposals past it precisely because
- * nothing beyond this window was fetched), plus slack for timezone edges.
- */
-const BUSY_WINDOW_DAYS = BOOKING_HORIZON_DAYS + 2;
-/**
- * How far back the busy window reaches. Jobs cap at 24h, so anything that
- * started earlier than a day ago can no longer overlap a future slot — and
- * without this reach-back an in-progress job would be invisible to the
- * conflict check (its startAt is in the past) and same-day proposals could
- * double-book over it.
- */
-const BUSY_LOOKBACK_MINUTES = 24 * 60;
-/**
- * Backstop on calendar pages fetched per webhook (100 jobs each). Far above
- * any real account's bookings for a ~9-week window; if it is ever hit the
- * handler fails the delivery rather than silently booking over unseen jobs.
- */
-const MAX_BUSY_PAGES = 100;
 
 /** First value of a possibly-repeated header, as a string. */
 function headerValue(value: string | string[] | undefined): string {
@@ -98,21 +59,23 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 		config,
 		accounts,
 		customers,
-		jobs,
 		conversations,
 		agentThreads,
 		memberships,
 		mailer,
 		notifier,
 		receivedEmails,
+		jobs,
 	} = app.deps;
+
+	const adapter = createEmailChannelAdapter({ config, customers, mailer });
+	const capabilities = defaultCapabilities();
+	const orchestratorDeps = { config, jobs, conversations, agentThreads };
 
 	/**
 	 * Resolve the account an agent-domain local part addresses. New addresses are
-	 * `${slug}-${tag}` (see {@link agentEmailLocalPart}); older mail may carry the
-	 * bare slug or the raw account id. Try the local part verbatim first (bare
-	 * slug / id), then peel the hex tag and resolve by slug — so every form maps
-	 * back to the same account.
+	 * `${slug}-${tag}`; older mail may carry the bare slug or the raw account id.
+	 * Try the local part verbatim first, then peel the hex tag and resolve by slug.
 	 */
 	async function resolveAccountByLocalPart(localPart: string): Promise<Account | null> {
 		const direct =
@@ -125,11 +88,10 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 	}
 
 	/**
-	 * A reply Rivus sent bounced or was marked as spam: the customer never got
-	 * it, so flag the thread's conversation for a human and drop an inline note.
-	 * The account is resolved from the delivery event's `From` (our own agent
-	 * address), the thread from the failed recipient. Idempotent — a redelivered
-	 * failure finds the conversation already flagged and no-ops.
+	 * A reply Rivus sent bounced or was marked as spam: the customer never got it,
+	 * so flag the thread's conversation for a human. The account is resolved from
+	 * the delivery event's `From` (our own agent address), the contact from the
+	 * failed recipient.
 	 */
 	async function handleDeliveryFailure(event: InboundEmailEvent, logger: FastifyBaseLogger) {
 		const bounced = event.type === EMAIL_BOUNCED_EVENT;
@@ -149,49 +111,22 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 		if (!recipient) {
 			return { handled: false, outcome: 'unparseable_recipient' };
 		}
-		const thread = await agentThreads.findByContact(account.id, 'email', recipient.address);
-		if (!thread) {
-			return { handled: false, outcome: 'no_thread' };
-		}
-		const conversation = await conversations.findById(account.id, thread.conversationId);
-		if (!conversation) {
-			return { handled: false, outcome: 'no_conversation' };
-		}
-		// Idempotency: an agent-email conversation only ever reaches
-		// `needs_attention` via a delivery failure, so the flag itself dedupes a
-		// redelivered webhook (or a second failure before the team clears it).
-		if (conversation.status === 'needs_attention') {
-			return { handled: false, outcome: 'already_flagged' };
-		}
-		await conversations.addMessage(account.id, thread.conversationId, {
-			author: 'note',
-			body: bounced
-				? `Rivus's last email to ${recipient.address} bounced — they didn't receive it. Follow up another way.`
-				: `${recipient.address} marked Rivus's last email as spam — reach out another way before emailing again.`,
-		});
-		await conversations.setReviewState(account.id, thread.conversationId, {
-			status: 'needs_attention',
-			pendingReply: '',
-			flagReason: DELIVERY_FAILED_REASON,
-		});
-		// No human actor for a webhook — notify the whole team.
-		const memberIds = (await memberships.listByAccount(account.id)).map(
-			(membership) => membership.userId,
-		);
-		await notifier.conversationNeedsReview({
-			accountId: account.id,
-			actorId: '' as UserId,
-			memberIds,
-			contactName: conversation.contactName,
+		const noteBody = bounced
+			? `Rivus's last email to ${recipient.address} bounced — they didn't receive it. Follow up another way.`
+			: `${recipient.address} marked Rivus's last email as spam — reach out another way before emailing again.`;
+		return flagDeliveryFailure({
+			deps: { conversations, agentThreads, memberships, notifier },
+			account,
+			channel: 'email',
+			contactAddress: recipient.address,
+			noteBody,
+			outcome: bounced ? 'delivery_bounced' : 'delivery_complained',
 			logger,
 		});
-		return { handled: true, outcome: bounced ? 'delivery_bounced' : 'delivery_complained' };
 	}
 
 	// Webhook signatures cover the exact bytes Resend sent, so this plugin scope
 	// re-parses JSON from a string and keeps the raw payload for verification.
-	// Content-type parsers are encapsulated per plugin, so the rest of the API
-	// keeps Fastify's stock parser.
 	const rawBodies = new WeakMap<FastifyRequest, string>();
 	app.addContentTypeParser('application/json', { parseAs: 'string' }, (request, payload, done) => {
 		rawBodies.set(request as FastifyRequest, payload as string);
@@ -211,8 +146,6 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 		const secret = config.RESEND_WEBHOOK_SECRET;
 		if (!secret) {
 			if (config.NODE_ENV === 'production') {
-				// Sent directly (not thrown): the central error handler flattens
-				// thrown 5xx into a generic 500, and 503 is the honest status here.
 				return reply.code(503).send({
 					error: 'Service Unavailable',
 					message: 'The email channel is not configured (RESEND_WEBHOOK_SECRET is unset).',
@@ -235,32 +168,6 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 			throw app.httpErrors.unauthorized('Invalid webhook signature');
 		}
 	});
-
-	/** Booked (non-canceled) windows that could collide with a slot, paged out of the jobs repo. */
-	async function loadBusyIntervals(accountId: AccountId, now: Date): Promise<BusyInterval[]> {
-		const from = new Date(now.getTime() - BUSY_LOOKBACK_MINUTES * 60_000).toISOString();
-		const to = new Date(now.getTime() + BUSY_WINDOW_DAYS * 24 * 60 * 60_000).toISOString();
-		const busy: BusyInterval[] = [];
-		for (let page = 1; ; page += 1) {
-			const { jobs: batch, total } = await jobs.list({ accountId, page, pageSize: 100, from, to });
-			for (const job of batch) {
-				if (job.status !== 'canceled') {
-					busy.push({ startAt: job.startAt, durationMinutes: job.durationMinutes });
-				}
-			}
-			if (page * 100 >= total || batch.length === 0) {
-				break;
-			}
-			if (page >= MAX_BUSY_PAGES) {
-				// An incomplete calendar must not look like an open one — offering or
-				// booking against it could double-book. Fail the delivery instead.
-				throw app.httpErrors.internalServerError(
-					'Calendar too large to load for availability; the delivery will be retried.',
-				);
-			}
-		}
-		return busy;
-	}
 
 	app.post(
 		'/email/inbound',
@@ -299,8 +206,7 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 				return { handled: false, outcome: 'ignored_event_type' };
 			}
 
-			// Which account was written to? The local part of the agent-domain
-			// recipient is the account's slug (or raw id — Rivus's "customer id").
+			// Which account was written to? The local part of the agent-domain recipient.
 			const localPart = resolveAgentRecipient(event, config.AGENT_EMAIL_DOMAIN);
 			if (!localPart) {
 				return { handled: false, outcome: 'no_agent_recipient' };
@@ -315,8 +221,8 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 				return { handled: false, outcome: 'unparseable_sender' };
 			}
 
-			// The webhook carries metadata only; pull the body/headers/Message-ID
-			// from the received-emails API unless the payload embedded them.
+			// The webhook carries metadata only; pull the body/headers/Message-ID from
+			// the received-emails API unless the payload embedded them.
 			let text = event.data.text ?? '';
 			let html = event.data.html ?? '';
 			let headers = event.data.headers ?? {};
@@ -324,10 +230,8 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 			if (text === '' && html === '' && event.data.email_id !== '') {
 				const fetched = await receivedEmails.get(event.data.email_id);
 				if (!fetched) {
-					// The reader failing (rate limit, transient 5xx, or no API key
-					// configured) must not be mistaken for an empty email — a 2xx here
-					// would permanently drop the customer's words, since Resend never
-					// redelivers an acknowledged event. A 5xx makes it retry later.
+					// A 2xx here would permanently drop the customer's words (Resend never
+					// redelivers an acknowledged event); a 5xx makes it retry later.
 					throw app.httpErrors.internalServerError(
 						'Could not fetch the inbound email body; the delivery will be retried.',
 					);
@@ -350,210 +254,20 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 			}
 
 			const rawText = text !== '' ? text : htmlToText(html);
-			const messageText = extractReplyText(rawText) || rawText.trim();
-			const subject = event.data.subject;
-
-			const customer = await customers.findByEmail(account.id, sender.address);
-
-			// One thread per (account, email, sender): find it or open it together
-			// with the inbox conversation that carries the transcript.
-			let thread = await agentThreads.findByContact(account.id, 'email', sender.address);
-			if (!thread) {
-				const conversation = await conversations.create(account.id, {
-					contactName: customer?.name || sender.name || sender.address,
-					channel: 'email',
-					customerId: customer?.id ?? '',
-					contactPhone: customer?.phone ?? '',
-					status: 'rivus_handling',
-					tags: [],
-					lastInvoice: '',
-				});
-				try {
-					thread = await agentThreads.create({
-						accountId: account.id,
-						channel: 'email',
-						contactAddress: sender.address,
-						conversationId: conversation.id,
-						customerId: customer?.id ?? '',
-						subject,
-					});
-				} catch (error) {
-					if (!(error instanceof ConflictError)) {
-						throw error;
-					}
-					// A concurrent delivery from the same brand-new contact won the
-					// create. Drop the conversation this loser opened and continue on
-					// the winner's thread instead of surfacing a 409 for Resend to retry.
-					await conversations.delete(account.id, conversation.id);
-					thread = await agentThreads.findByContact(account.id, 'email', sender.address);
-					if (!thread) {
-						throw error;
-					}
-				}
-			} else if (messageId !== '' && thread.lastExternalMessageId === messageId) {
-				// Webhook delivery is at-least-once: an email we already answered
-				// (same Message-ID as the thread's last processed inbound) is a
-				// redelivery, not a new customer turn.
-				return { handled: false, outcome: 'duplicate_delivery' };
-			}
-
-			// Record the customer's turn. If the team deleted the conversation since
-			// the thread opened, recreate it so the exchange stays visible.
-			const transcriptBody = messageText || cleanSubject(subject) || '(empty message)';
-			const appended = await conversations.addMessage(account.id, thread.conversationId, {
-				author: 'customer',
-				body: transcriptBody,
+			const message: InboundAgentMessage = {
+				sender: { address: sender.address, name: sender.name },
+				text: extractReplyText(rawText) || rawText.trim(),
+				subject: event.data.subject,
+				externalMessageId: messageId,
+			};
+			return handleInboundAgentMessage({
+				deps: orchestratorDeps,
+				adapter,
+				capabilities,
+				account,
+				message,
+				logger: request.log,
 			});
-			if (!appended) {
-				const conversation = await conversations.create(account.id, {
-					contactName: customer?.name || sender.name || sender.address,
-					channel: 'email',
-					customerId: customer?.id ?? '',
-					contactPhone: customer?.phone ?? '',
-					status: 'rivus_handling',
-					tags: [],
-					lastInvoice: '',
-				});
-				await conversations.addMessage(account.id, conversation.id, {
-					author: 'customer',
-					body: transcriptBody,
-				});
-				thread =
-					(await agentThreads.update(account.id, thread.id, {
-						conversationId: conversation.id,
-					})) ?? thread;
-			}
-
-			// A sender who just self-signed-up gets linked to the thread and the
-			// conversation the first time they write after registering.
-			if (customer && thread.customerId === '') {
-				await conversations.update(account.id, thread.conversationId, {
-					customerId: customer.id,
-					contactName: customer.name,
-					...(customer.phone !== '' ? { contactPhone: customer.phone } : {}),
-				});
-			}
-
-			const timeZone = safeTimeZone(account.timezone);
-			const now = new Date();
-			const busy = await loadBusyIntervals(account.id, now);
-			// The job already booked on this thread (while still upcoming and not
-			// called off), so "see you Tuesday at 9!" confirms it instead of
-			// colliding with it.
-			let bookedSlot: AgentSlot | null = null;
-			if (thread.state === 'booked' && thread.bookedJobId !== '') {
-				const bookedJob = await jobs.findById(account.id, thread.bookedJobId as JobId);
-				if (
-					bookedJob &&
-					bookedJob.status !== 'canceled' &&
-					Date.parse(bookedJob.startAt) + bookedJob.durationMinutes * 60_000 > now.getTime()
-				) {
-					bookedSlot = { startAt: bookedJob.startAt, durationMinutes: bookedJob.durationMinutes };
-				}
-			}
-			const decision = decideScheduling({
-				customerKnown: customer !== null,
-				text: messageText,
-				offeredSlots: thread.state === 'slots_offered' ? thread.offeredSlots : [],
-				busy,
-				timeZone,
-				now,
-				bookedSlot,
-			});
-
-			// The job carries the customer's own words as its title when they wrote a
-			// subject ("Water heater is leaking"), so the calendar reads like the ask.
-			const jobTitle = cleanSubject(subject) || cleanSubject(thread.subject) || 'Appointment';
-			let bookedJobId = '';
-			if (decision.kind === 'book' && customer) {
-				const job = await jobs.create(account.id, {
-					title: jobTitle,
-					customerId: customer.id,
-					assignedUserId: '',
-					startAt: decision.slot.startAt,
-					durationMinutes: decision.slot.durationMinutes,
-					status: 'confirmed',
-					address: customer.address,
-					notes: `Booked by Rivus over email with ${customer.name}.`,
-					estimatedValue: 0,
-				});
-				bookedJobId = job.id;
-			}
-
-			// Reply as the account's own agent address, threaded into the customer's
-			// email client via In-Reply-To/References.
-			const rendered = renderAgentEmail(decision, {
-				accountName: account.name,
-				customerName: customer?.name ?? sender.name,
-				timeZone,
-				signupUrl: buildCustomerSignupUrl(config.WEBSITE_URL, account.slug, sender.address),
-				jobTitle,
-				inboundSubject: subject !== '' ? subject : thread.subject,
-				now,
-			});
-			// Always reply from the account's canonical tagged address, regardless of
-			// which form (tagged or legacy bare slug) the customer happened to write to.
-			try {
-				await mailer.sendAgentEmail({
-					to: sender.address,
-					from: agentFromHeader(account, config.AGENT_EMAIL_DOMAIN),
-					subject: rendered.subject,
-					html: rendered.html,
-					text: rendered.text,
-					inReplyTo: messageId,
-					references: messageId === '' ? [] : [messageId],
-				});
-			} catch (error) {
-				// The confirmation never reached the customer, so the booking must not
-				// stand: an unconfirmed job would make the redelivered webhook see its
-				// own slot as taken. Undo it and let the 500 trigger a redelivery
-				// (thread state hasn't advanced, so the retry reprocesses cleanly).
-				if (bookedJobId !== '') {
-					await jobs.delete(account.id, bookedJobId as JobId).catch(() => false);
-				}
-				throw error;
-			}
-
-			await conversations.addMessage(account.id, thread.conversationId, {
-				author: 'rivus',
-				body: rendered.text,
-			});
-			if (decision.kind === 'book') {
-				await conversations.addMessage(account.id, thread.conversationId, {
-					author: 'note',
-					body: `Rivus booked ${jobTitle} for ${formatSlotLabel(decision.slot.startAt, timeZone, zonedParts(now, timeZone).year)}.`,
-				});
-			}
-
-			await agentThreads.update(account.id, thread.id, {
-				...threadPatchFor(decision, bookedJobId),
-				customerId: customer?.id ?? thread.customerId,
-				lastExternalMessageId: messageId,
-				subject: subject !== '' ? subject : thread.subject,
-			});
-
-			return { handled: true, outcome: decision.kind };
 		},
 	);
 };
-
-/** How each decision advances the thread's machine state. */
-function threadPatchFor(decision: AgentDecision, bookedJobId: string): UpdateAgentThread {
-	switch (decision.kind) {
-		case 'send_signup_link':
-			return { state: 'awaiting_signup', offeredSlots: [] };
-		case 'offer_slots':
-			return { state: 'slots_offered', offeredSlots: decision.slots };
-		case 'confirm_existing':
-			// The thread stays booked exactly as it was.
-			return {};
-		case 'propose_unavailable':
-			return decision.alternatives.length > 0
-				? { state: 'slots_offered', offeredSlots: decision.alternatives }
-				: { state: 'new', offeredSlots: [] };
-		case 'no_availability':
-			return { state: 'new', offeredSlots: [] };
-		case 'book':
-			return { state: 'booked', offeredSlots: [], bookedJobId };
-	}
-}

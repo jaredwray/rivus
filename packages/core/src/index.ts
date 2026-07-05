@@ -1,6 +1,7 @@
 export * from './agent-email';
 export * from './gravatar';
 export * from './pagination';
+export * from './phone';
 export * from './regex';
 export * from './schemas';
 export * from './slug';

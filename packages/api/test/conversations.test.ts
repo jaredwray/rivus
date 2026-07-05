@@ -8,6 +8,7 @@ import {
 	buildTestApp,
 	buildTestAppWithRepos,
 	RecordingMailer,
+	type RecordingWhatsappSender,
 	signupOwner,
 } from './helpers';
 
@@ -830,5 +831,80 @@ describe('inbox replies dispatch email on the email channel', () => {
 		expect(messages).toEqual([]);
 
 		await failingApp.close();
+	});
+});
+
+describe('conversation reply-out over WhatsApp', () => {
+	const BIZ = '+15550001111';
+	const SENDER = '+15559990000';
+
+	async function openWhatsappConversation() {
+		const { app, repos } = await buildTestAppWithRepos();
+		const owner = await signupOwner(app);
+		const accountId = owner.account.id as AccountId;
+		await repos.accounts.setChannelConfig(accountId, 'whatsapp', {
+			enabled: true,
+			address: BIZ,
+			providerRef: 'zwa_1',
+		});
+		// An inbound WhatsApp message opens the conversation + agent thread.
+		await app.inject({
+			method: 'POST',
+			url: '/v1/channels/whatsapp/inbound',
+			payload: {
+				type: 'whatsapp.message.received',
+				data: { to: BIZ, from: SENDER, text: 'Hi', messageId: 'wamid.1', profileName: 'Dana' },
+			},
+		});
+		const list = await app.inject({
+			method: 'GET',
+			url: '/v1/conversations',
+			headers: authHeader(owner.token),
+		});
+		const convo = (list.json().data as Array<{ id: string; channel: string }>).find(
+			(c) => c.channel === 'whatsapp',
+		);
+		const sender = app.deps.whatsappSender as RecordingWhatsappSender;
+		return { app, repos, owner, accountId, convo, sender };
+	}
+
+	it('sends a human reply out over WhatsApp', async () => {
+		const { app, owner, convo, sender } = await openWhatsappConversation();
+		expect(convo).toBeDefined();
+		const before = sender.messages.length;
+		const res = await app.inject({
+			method: 'POST',
+			url: `/v1/conversations/${convo?.id}/messages`,
+			headers: authHeader(owner.token),
+			payload: { body: 'See you then!' },
+		});
+		expect(res.statusCode).toBe(201);
+		expect(sender.messages.length).toBe(before + 1);
+		expect(sender.messages.at(-1)).toMatchObject({ from: BIZ, to: SENDER, text: 'See you then!' });
+		await app.close();
+	});
+
+	it('records but does not send when the channel is disabled', async () => {
+		const { app, repos, owner, accountId, convo, sender } = await openWhatsappConversation();
+		await repos.accounts.setChannelConfig(accountId, 'whatsapp', {
+			enabled: false,
+			address: BIZ,
+			providerRef: 'zwa_1',
+		});
+		const before = sender.messages.length;
+		const res = await app.inject({
+			method: 'POST',
+			url: `/v1/conversations/${convo?.id}/messages`,
+			headers: authHeader(owner.token),
+			payload: { body: 'See you then!' },
+		});
+		expect(res.statusCode).toBe(201);
+		// Recorded in the transcript, but nothing left the building.
+		expect(sender.messages.length).toBe(before);
+		const detail = res.json() as { messages: Array<{ author: string; body: string }> };
+		expect(detail.messages.some((m) => m.author === 'agent' && m.body === 'See you then!')).toBe(
+			true,
+		);
+		await app.close();
 	});
 });

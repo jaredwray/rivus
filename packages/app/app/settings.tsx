@@ -20,6 +20,7 @@ import {
 	OutlineButton,
 	Pill,
 	SectionLabel,
+	Segmented,
 	Select,
 	TextField,
 	Txt,
@@ -105,7 +106,7 @@ function DevSeedCard() {
 
 export default function SettingsScreen() {
 	useDocumentTitle('Settings');
-	const { session, client, updateAccount, cancelAccount } = useAuth();
+	const { session, client, updateAccount, cancelAccount, setChannelEnabled } = useAuth();
 	const account = session?.account;
 	const isOwner = session?.role === 'owner';
 	// Stack the danger-zone buttons once the row is too narrow to hold both
@@ -122,6 +123,9 @@ export default function SettingsScreen() {
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+
+	const [whatsappBusy, setWhatsappBusy] = useState(false);
+	const [whatsappError, setWhatsappError] = useState<string | null>(null);
 
 	const [confirmingCancel, setConfirmingCancel] = useState(false);
 	const [canceling, setCanceling] = useState(false);
@@ -237,6 +241,25 @@ export default function SettingsScreen() {
 		}
 	}
 
+	const whatsapp = session.account.channels.whatsapp;
+
+	async function onToggleWhatsapp(next: string) {
+		const enabled = next === 'on';
+		if (whatsappBusy || enabled === whatsapp.enabled) {
+			return;
+		}
+		setWhatsappError(null);
+		setWhatsappBusy(true);
+		try {
+			// Enabling provisions a number on the first call; the session updates in place.
+			await setChannelEnabled('whatsapp', enabled);
+		} catch (caught) {
+			setWhatsappError(messageFor(caught, `Could not ${enabled ? 'enable' : 'disable'} WhatsApp.`));
+		} finally {
+			setWhatsappBusy(false);
+		}
+	}
+
 	// The inbound address customers email to reach Rivus. The local part pairs the
 	// business slug with a stable per-account hex tag (so look-alike names never
 	// collide); the domain comes from the session (`AGENT_EMAIL_DOMAIN`).
@@ -311,6 +334,29 @@ export default function SettingsScreen() {
 					them automatically. Share it, or add it to your website.
 				</Txt>
 				<CopyField label="Your agent address" value={agentEmail} />
+			</Card>
+
+			<Card style={styles.card}>
+				<SectionLabel>WhatsApp Business</SectionLabel>
+				<Txt style={styles.agentEmailHint}>
+					Customers can message this number on WhatsApp — Rivus books them the same way it does over
+					email. Turn it on to get a number.
+				</Txt>
+				<View style={styles.whatsappRow}>
+					<Segmented
+						options={[
+							{ label: 'Off', value: 'off' },
+							{ label: 'On', value: 'on' },
+						]}
+						value={whatsapp.enabled ? 'on' : 'off'}
+						onChange={onToggleWhatsapp}
+					/>
+					{whatsappBusy ? <ActivityIndicator color={colors.brandPurple} /> : null}
+				</View>
+				{whatsapp.enabled && whatsapp.address ? (
+					<CopyField label="Your WhatsApp number" value={whatsapp.address} />
+				) : null}
+				{whatsappError ? <Txt style={styles.errorTxt}>{whatsappError}</Txt> : null}
 			</Card>
 
 			<Card style={styles.card}>
@@ -410,6 +456,12 @@ const styles = StyleSheet.create({
 		color: colors.textMuted,
 		marginTop: -2,
 		marginBottom: 4,
+	},
+	whatsappRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 12,
+		marginBottom: 12,
 	},
 	errorTxt: {
 		fontFamily: font.medium,

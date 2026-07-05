@@ -5,9 +5,11 @@ import { loadConfig } from '../src/config';
 import { SESSION_COOKIE } from '../src/plugins/auth';
 import { createInMemoryRepositories } from '../src/repositories/memory';
 import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
+import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
+import { NoopWhatsappSender } from '../src/services/whatsapp';
 import { authHeader, RecordingMailer, signupOwner } from './helpers';
 
 /** Build an app with a specific CORS_ORIGIN so we can exercise both origin branches. */
@@ -22,6 +24,8 @@ function buildAppWithCors(corsOrigin: string): FastifyInstance {
 		...repos,
 		mailer: new RecordingMailer(),
 		receivedEmails: new NoopReceivedEmailReader(),
+		whatsappSender: new NoopWhatsappSender(),
+		whatsappProvisioner: new NoopChannelProvisioner(),
 		notifier: createNotificationService({ notifications: repos.notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
@@ -43,6 +47,8 @@ function buildProdApp(corsOrigin: string): FastifyInstance {
 		...repos,
 		mailer: new RecordingMailer(),
 		receivedEmails: new NoopReceivedEmailReader(),
+		whatsappSender: new NoopWhatsappSender(),
+		whatsappProvisioner: new NoopChannelProvisioner(),
 		notifier: createNotificationService({ notifications: repos.notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),

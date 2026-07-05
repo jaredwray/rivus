@@ -50,6 +50,16 @@ export const userResponseSchema = z
 	})
 	.meta({ id: 'User' });
 
+/** A provisioned channel's public config — the provider reference stays server-side. */
+export const channelConfigResponseSchema = z
+	.object({
+		/** Whether the channel is turned on. */
+		enabled: z.boolean(),
+		/** The provisioned E.164 identifier customers reach; '' until provisioned. */
+		address: z.string(),
+	})
+	.meta({ id: 'ChannelConfig' });
+
 /** A business account. */
 export const accountResponseSchema = z
 	.object({
@@ -60,6 +70,16 @@ export const accountResponseSchema = z
 		address: z.string(),
 		website: z.string(),
 		timezone: z.string(),
+		/**
+		 * Provisioned messaging channels (WhatsApp today; SMS and voice reserved).
+		 * Email isn't here — its address is derived from `slug`+`id` (joined to
+		 * `agentEmailDomain`), always on, and never provisioned.
+		 */
+		channels: z.object({
+			whatsapp: channelConfigResponseSchema,
+			sms: channelConfigResponseSchema,
+			voice: channelConfigResponseSchema,
+		}),
 		status: accountStatusSchema,
 		canceledAt: z.string().nullable(),
 		createdAt: z.string(),

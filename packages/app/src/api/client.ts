@@ -44,6 +44,7 @@ import {
 	notificationTypeSchema,
 	type PaginationMeta,
 	type PaginationQuery,
+	type ProvisionedChannel,
 	paginationQuerySchema,
 	type Role,
 	roleSchema,
@@ -194,6 +195,15 @@ const userResponseSchema = z.object({
 /** The signed-in user as returned by the API (id is a plain string on the wire). */
 export type ProfileUser = z.infer<typeof userResponseSchema>;
 
+// The API omits `providerRef` (a server-only handle) from channel configs, so it
+// defaults to '' here — keeping the parsed shape assignable to the full `Account`
+// type. Channels default as a whole so a session from an older API still parses.
+const channelConfigResponseSchema = z.object({
+	enabled: z.boolean(),
+	address: z.string(),
+	providerRef: z.string().default(''),
+});
+
 const accountResponseSchema = z.object({
 	id: accountId(),
 	name: z.string(),
@@ -202,6 +212,17 @@ const accountResponseSchema = z.object({
 	address: z.string(),
 	website: z.string(),
 	timezone: z.string(),
+	channels: z
+		.object({
+			whatsapp: channelConfigResponseSchema,
+			sms: channelConfigResponseSchema,
+			voice: channelConfigResponseSchema,
+		})
+		.default({
+			whatsapp: { enabled: false, address: '', providerRef: '' },
+			sms: { enabled: false, address: '', providerRef: '' },
+			voice: { enabled: false, address: '', providerRef: '' },
+		}),
 	status: accountStatusSchema,
 	canceledAt: z.string().nullable(),
 	createdAt: z.string(),
@@ -596,6 +617,10 @@ export interface RivusApiClient {
 	updateAccount(token: string, input: UpdateAccountInput): Promise<Account>;
 	/** Cancel (soft-delete) the account (owner only). */
 	cancelAccount(token: string): Promise<Account>;
+	/** Enable a messaging channel — the API provisions a number (owner only). */
+	enableChannel(token: string, channel: ProvisionedChannel): Promise<Account>;
+	/** Disable a messaging channel; its number is retained (owner only). */
+	disableChannel(token: string, channel: ProvisionedChannel): Promise<Account>;
 	/** Read the account's billing summary (owner only). */
 	getBilling(token: string): Promise<Billing>;
 	listItems(token: string, query?: Partial<PaginationQuery>): Promise<ItemListResponse>;
@@ -873,6 +898,22 @@ export function createApiClient(
 
 		cancelAccount(token: string) {
 			return request('/v1/account/cancel', accountResponseSchema, {
+				method: 'POST',
+				headers: authHeaders(token),
+			});
+		},
+
+		/** Enable a messaging channel — the API provisions a number (owner only). */
+		enableChannel(token: string, channel: ProvisionedChannel) {
+			return request(`/v1/account/channels/${channel}/enable`, accountResponseSchema, {
+				method: 'POST',
+				headers: authHeaders(token),
+			});
+		},
+
+		/** Disable a messaging channel; its number is retained for re-enabling (owner only). */
+		disableChannel(token: string, channel: ProvisionedChannel) {
+			return request(`/v1/account/channels/${channel}/disable`, accountResponseSchema, {
 				method: 'POST',
 				headers: authHeaders(token),
 			});

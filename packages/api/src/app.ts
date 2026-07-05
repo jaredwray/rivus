@@ -12,8 +12,10 @@ import authPlugin, { SESSION_COOKIE } from './plugins/auth';
 import swaggerPlugin from './plugins/swagger';
 import { ConflictError, InviteNotPendingError, LastOwnerError } from './repositories/errors';
 import { accountRoutes } from './routes/account';
+import { accountChannelRoutes } from './routes/account-channels';
 import { adminRoutes } from './routes/admin';
 import { agentEmailRoutes } from './routes/agent-email';
+import { agentWhatsappRoutes } from './routes/agent-whatsapp';
 import { authRoutes } from './routes/auth';
 import { billingRoutes } from './routes/billing';
 import { conversationRoutes } from './routes/conversations';
@@ -181,6 +183,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 	app.register(authRoutes, { prefix: '/v1/auth' });
 	app.register(memberRoutes, { prefix: '/v1/members' });
 	app.register(accountRoutes, { prefix: '/v1/account' });
+	app.register(accountChannelRoutes, { prefix: '/v1/account' });
 	app.register(adminRoutes, { prefix: '/v1/admin' });
 	app.register(billingRoutes, { prefix: '/v1/billing' });
 	app.register(itemRoutes, { prefix: '/v1/items' });
@@ -194,6 +197,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 	// webhook feeding the agent's email channel.
 	app.register(publicRoutes, { prefix: '/v1/public' });
 	app.register(agentEmailRoutes, { prefix: '/v1/channels' });
+	app.register(agentWhatsappRoutes, { prefix: '/v1/channels' });
 
 	return app;
 }
