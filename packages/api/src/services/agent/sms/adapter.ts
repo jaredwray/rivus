@@ -24,9 +24,11 @@ const SMS_CAPABILITIES: ChannelCapabilities = {
 	supportsRichText: false,
 	supportsInteractiveOptions: false,
 	supportsHyperlinkButtons: false,
-	// Ten concatenated GSM segments — the practical carrier budget for one
-	// long-code message; the chat renderer truncates beyond it.
-	maxTextLength: 1600,
+	// Plivo caps one message at 1600 GSM characters but only 737 Unicode ones,
+	// and a single non-GSM character (smart quotes, emoji — or the renderer's
+	// own truncation ellipsis) switches the whole body to Unicode. One static
+	// Unicode-safe budget beats charset detection; agent texts are short anyway.
+	maxTextLength: 737,
 	hasSubjects: false,
 	threadingModel: 'session',
 	isRealtimeVoice: false,

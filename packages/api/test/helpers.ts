@@ -122,9 +122,10 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 
 /**
  * Build an app whose repositories are exposed, so a test can seed data directly
- * (e.g. a user with no membership) to exercise edge cases.
+ * (e.g. a user with no membership) to exercise edge cases. `overrides` swaps
+ * individual deps (e.g. a fake provisioner) on top of the defaults.
  */
-export async function buildTestAppWithRepos(): Promise<{
+export async function buildTestAppWithRepos(overrides: Partial<AppDeps> = {}): Promise<{
 	app: FastifyInstance;
 	repos: InMemoryRepositories;
 }> {
@@ -169,6 +170,7 @@ export async function buildTestAppWithRepos(): Promise<{
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
 		ping: async () => ({ ready: true }),
+		...overrides,
 	});
 	await app.ready();
 	return { app, repos };
