@@ -63,6 +63,8 @@ in 10 minutes, and lock after 5 wrong attempts.
 | PATCH  | `/v1/members/:userId/role`      | Owner          | Change a member's role              |
 | DELETE | `/v1/members/:userId`           | Owner/Manager  | Remove a member                     |
 | PATCH  | `/v1/account`                   | Owner          | Update account business settings    |
+| POST   | `/v1/account/channels/:channel/enable`  | Owner  | Enable a channel — provisions a number |
+| POST   | `/v1/account/channels/:channel/disable` | Owner  | Disable a channel — retains the number |
 | POST   | `/v1/account/cancel`            | Owner          | Cancel (soft-delete) the account    |
 | GET    | `/v1/billing`                   | Owner          | Billing summary (free-plan placeholder) |
 | GET    | `/v1/items`                     | JWT            | List your account's items (paged)   |
@@ -199,5 +201,62 @@ flow with `curl` against a dev API. The scheduling policy itself is pure
 (`src/services/agent/`): deterministic parsing of replies ("option 2",
 "Tuesday at 2pm"), business-hours availability (Mon–Fri 9–5 account-local,
 60-minute slots, 24 h notice), and a channel-agnostic decision the email
-templates render — an SMS or WhatsApp channel can reuse everything but the
-templates.
+renderer renders — a new channel reuses everything but the renderer, which is
+exactly how the WhatsApp channel below is built.
+
+### WhatsApp channel (zernio)
+
+The same scheduling agent also answers over **WhatsApp Business**, via the
+[zernio](https://zernio.com) provider. Rivus assigns the account a WhatsApp
+number when an owner enables the channel, then customers who message that number
+get the identical experience to email — sender validation against the account's
+customers (unknown senders get the self-signup link), open-slot offers in the
+account's timezone, booking a confirmed `Job`, multi-turn state on an
+`AgentThread`, FAQ drafts, and the exchange mirrored into the inbox as a
+`whatsapp` conversation. None of that is re-implemented per channel: the WhatsApp
+route only owns the provider edges (signature check, the zernio payload shape,
+resolving the account from the business number, and the loop/unsupported guards)
+and hands a normalized message to the same `handleInboundAgentMessage` the email
+channel uses. See the "unified across channels" note in
+[AGENTS.md](../../AGENTS.md) for the layering.
+
+The inbound webhook also handles **outbound delivery status**: when a message
+Rivus sent fails to reach the customer, the conversation is flagged
+`needs_attention` with an inline note, so it surfaces in the inbox's "Needs you"
+filter and a human can follow up another way — the same treatment as an email
+bounce.
+
+Wiring it up:
+
+1. Set `ZERNIO_API_KEY` (and `ZERNIO_API_URL` if it isn't the default). **Without
+   a key the channel still works end-to-end locally**: the sender and provisioner
+   degrade to no-ops, so enabling the channel assigns a deterministic fake number
+   and outbound messages are dropped — enough to drive the inbound flow with
+   `curl` and no credentials.
+2. In zernio, point an inbound webhook at `POST /v1/channels/whatsapp/inbound` and
+   set its signing secret as `ZERNIO_WEBHOOK_SECRET`. That one endpoint takes both
+   inbound customer messages and delivery-status events; it branches on the event
+   type. If zernio uses a Meta-style registration handshake, also set
+   `ZERNIO_VERIFY_TOKEN` to the token it echoes on the `GET` of that path.
+3. An account **owner** enables the channel — in the app (Settings → WhatsApp
+   Business → On) or via `POST /v1/account/channels/whatsapp/enable`. Rivus
+   provisions the number and starts answering; `…/disable` turns it off but
+   retains the number, so re-enabling restores the same one. Both are idempotent.
+
+| Variable                | Default                  | Notes                                                                                                                   |
+| ----------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `ZERNIO_API_URL`        | `https://api.zernio.com` | Base URL of the zernio API.                                                                                             |
+| `ZERNIO_API_KEY`        | _(unset)_                | Unset: WhatsApp degrades to a no-op sender + provisioner (a deterministic fake number in dev) so the API runs without credentials. |
+| `ZERNIO_WEBHOOK_SECRET` | _(unset)_                | HMAC signing secret (`whsec_…`). Unset: dev/test accept unsigned deliveries; **production refuses the route (503)**.    |
+| `ZERNIO_VERIFY_TOKEN`   | _(unset)_                | Verify token for the `GET` registration handshake. Unset: that handshake endpoint 404s.                               |
+
+v1 is **WhatsApp only** (SMS and voice are schema-ready but not yet
+provisionable) and **text only** (media/location/voice messages get no reply).
+
+> **Note — zernio wire format is not yet finalized.** The exact endpoint paths
+> (`/v1/messages`, `/v1/numbers`), request/response field names, signature header
+> names, and whether zernio uses the Meta-style `GET` handshake are assumptions
+> marked `TODO(zernio)` and confined to `src/services/zernio-whatsapp.ts` and
+> `src/routes/agent-whatsapp.ts`. Confirming them against zernio's API docs
+> touches only those two files; until then, the no-op path (no `ZERNIO_API_KEY`)
+> is the supported way to exercise the flow.
