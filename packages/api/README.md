@@ -263,7 +263,8 @@ built, the same Plivo account and the same per-account number will carry them.
 | `PLIVO_AUTH_ID`        | _(unset)_                  | Plivo account auth ID. Both credentials set ⇒ Plivo is the active WhatsApp provider.                                   |
 | `PLIVO_AUTH_TOKEN`     | _(unset)_                  | Plivo auth token — API auth **and** the webhook signing key. Unset: dev/test accept unsigned deliveries; **production refuses the Plivo route (503)**. |
 | `PLIVO_API_URL`        | `https://api.plivo.com/v1` | Base URL of Plivo's REST API.                                                                                          |
-| `PLIVO_WEBHOOK_URL`    | _(unset)_                  | The public URL of the Plivo webhook route. Pins signature verification behind proxies and rides along on sends as the status callback. Unset: the URL is derived per-request and sends carry no callback. |
+| `PLIVO_WEBHOOK_URL`    | _(unset)_                  | The public URL of the Plivo WhatsApp webhook route. Pins signature verification behind proxies and rides along on sends as the status callback. Unset: the URL is derived per-request and sends carry no callback. |
+| `PLIVO_SMS_WEBHOOK_URL` | _(unset)_                 | The SMS counterpart: public URL of the Plivo SMS webhook route, with the same two roles.                               |
 | `PLIVO_NUMBER_COUNTRY` | `US`                       | ISO 3166-1 alpha-2 country whose numbers the provisioner rents.                                                        |
 
 #### zernio (alternative provider)
@@ -287,8 +288,8 @@ Used when `ZERNIO_API_KEY` is set and the Plivo credentials are not.
 | `ZERNIO_WEBHOOK_SECRET` | _(unset)_                | zernio webhook signing secret; the route verifies the `X-Zernio-Signature` (raw-body HMAC-SHA256) header. Unset: dev/test accept unsigned deliveries; **production refuses the route (503)**. |
 | `ZERNIO_VERIFY_TOKEN`   | _(unset)_                | Verify token for the `GET` registration handshake. Unset: that handshake endpoint 404s.                               |
 
-v1 is **WhatsApp only** (SMS and voice are schema-ready but not yet
-provisionable) and **text only** (media/location/voice messages get no reply).
+Provisionable channels are **WhatsApp and SMS** (voice is schema-ready but not
+yet built), both **text only** (media/location/voice messages get no reply).
 
 > **Note — the zernio provider is not yet fully wired to zernio's live API**
 > (the Plivo path above is built against Plivo's documented wire formats). The
@@ -315,3 +316,26 @@ provisionable) and **text only** (media/location/voice messages get no reply).
 >   so `ZernioProvisioner` may need rethinking, not just endpoint tweaks.
 >
 > Until then, use Plivo (or the no-op path) to exercise the flow end-to-end.
+
+### SMS channel (Plivo)
+
+The same scheduling agent also answers over **SMS**, through the same Plivo
+account, adapters, and — when both channels are on — the same number as
+WhatsApp. Everything about the WhatsApp channel above applies unchanged: the
+shared webhook dispatch, the inbox mirroring (an `sms` conversation), delivery
+reports flagging failures, and the no-op degradation without credentials.
+
+1. Same credentials as WhatsApp (`PLIVO_AUTH_ID` + `PLIVO_AUTH_TOKEN`).
+2. Point the number's message webhook at `POST /v1/channels/sms/plivo/inbound`
+   (in the Plivo console, the application attached to the number) and set
+   `PLIVO_SMS_WEBHOOK_URL` to that exact public URL.
+3. An owner enables the channel (app: Settings → Text messages, or
+   `POST /v1/account/channels/sms/enable`). **If the account already holds a
+   Plivo-owned WhatsApp number, SMS adopts that same number** instead of
+   renting a second one (and vice versa — whichever channel is enabled first
+   rents, the other shares). Numbers Plivo doesn't own (zernio's, dev fakes)
+   are never shared.
+4. US A2P traffic requires the number to be registered for **10DLC** in the
+   Plivo console before carriers accept application-originated texts — a
+   one-time compliance step per brand/campaign, like the WABA registration for
+   WhatsApp.

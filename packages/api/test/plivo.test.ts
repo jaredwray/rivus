@@ -4,16 +4,25 @@ import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config';
 import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
 import {
+	createSmsProvisioner,
+	createSmsSender,
+	createWhatsappProvisioner,
+	createWhatsappSender,
+} from '../src/services/messaging-provider';
+import {
 	createPlivoProvisioner,
+	createPlivoSmsSender,
 	createPlivoWhatsappSender,
 	PlivoProvisioner,
+	PlivoSmsSender,
 	PlivoWhatsappSender,
+	plivoOwnedIdentifier,
 	signPlivoUrl,
 	verifyPlivoSignature,
-} from '../src/services/plivo-whatsapp';
+} from '../src/services/plivo';
 import type { FetchLike } from '../src/services/resend-mailer';
+import { NoopSmsSender } from '../src/services/sms';
 import { NoopWhatsappSender } from '../src/services/whatsapp';
-import { createWhatsappProvisioner, createWhatsappSender } from '../src/services/whatsapp-provider';
 import { ZernioProvisioner, ZernioWhatsappSender } from '../src/services/zernio-whatsapp';
 
 const AUTH_ID = 'MA_TEST_AUTH_ID';
@@ -198,6 +207,64 @@ describe('PlivoWhatsappSender', () => {
 	});
 });
 
+describe('PlivoSmsSender', () => {
+	const MESSAGE = { from: '+15550001111', to: '+15559990000', text: 'See you at 2pm.' };
+
+	it('POSTs an sms-typed message with the SMS status callback attached', async () => {
+		const { fetchImpl, calls } = fakeFetch([{ ok: true, status: 202, body: '{}' }]);
+		const sender = new PlivoSmsSender({
+			authId: AUTH_ID,
+			authToken: AUTH_TOKEN,
+			apiUrl: API_URL,
+			statusCallbackUrl: 'https://api.rivus.ai/v1/channels/sms/plivo/inbound',
+			fetchImpl,
+		});
+		await sender.sendMessage(MESSAGE);
+		expect(calls[0]?.url).toBe(`${API_URL}/Account/${AUTH_ID}/Message/`);
+		expect(JSON.parse(calls[0]?.init.body ?? '{}')).toEqual({
+			src: MESSAGE.from,
+			dst: MESSAGE.to,
+			type: 'sms',
+			text: MESSAGE.text,
+			url: 'https://api.rivus.ai/v1/channels/sms/plivo/inbound',
+		});
+	});
+
+	it('rejects with the status and response detail when Plivo refuses the send', async () => {
+		const { fetchImpl } = fakeFetch([{ ok: false, status: 402, body: 'insufficient credit' }]);
+		const sender = new PlivoSmsSender({
+			authId: AUTH_ID,
+			authToken: AUTH_TOKEN,
+			apiUrl: API_URL,
+			fetchImpl,
+		});
+		await expect(sender.sendMessage(MESSAGE)).rejects.toThrow(
+			/SMS message \(status 402\).*insufficient credit/,
+		);
+	});
+});
+
+describe('plivoOwnedIdentifier', () => {
+	it('recognizes a Plivo-provisioned config (providerRef = bare digits of the address)', () => {
+		expect(
+			plivoOwnedIdentifier({ enabled: true, address: '+14154009186', providerRef: '14154009186' }),
+		).toEqual({ address: '+14154009186', providerRef: '14154009186' });
+	});
+
+	it('rejects configs Plivo does not own (zernio ids, dev fakes, empties)', () => {
+		expect(
+			plivoOwnedIdentifier({ enabled: true, address: '+14154009186', providerRef: 'zwa_1' }),
+		).toBeNull();
+		expect(
+			plivoOwnedIdentifier({ enabled: true, address: '+15551234567', providerRef: 'noop' }),
+		).toBeNull();
+		expect(plivoOwnedIdentifier({ enabled: false, address: '', providerRef: '' })).toBeNull();
+		expect(
+			plivoOwnedIdentifier({ enabled: true, address: '+14154009186', providerRef: '' }),
+		).toBeNull();
+	});
+});
+
 describe('PlivoProvisioner', () => {
 	const INPUT = {
 		accountId: 'acc_1' as AccountId,
@@ -270,7 +337,11 @@ describe('PlivoProvisioner', () => {
 	it('keeps a compliance-pending rental — the number is placed, not free to re-buy', async () => {
 		const { fetchImpl } = fakeFetch([
 			{ ok: true, status: 200, body: '{"objects":[{"number":"4915123456789"}]}' },
-			{ ok: true, status: 201, body: '{"numbers":[{"number":"4915123456789","status":"pending"}]}' },
+			{
+				ok: true,
+				status: 201,
+				body: '{"numbers":[{"number":"4915123456789","status":"pending"}]}',
+			},
 		]);
 		await expect(provisioner(fetchImpl, 'de').provision(INPUT)).resolves.toEqual({
 			address: '+4915123456789',
@@ -317,5 +388,17 @@ describe('provider factories', () => {
 		const partial = testConfig({ PLIVO_AUTH_ID: AUTH_ID });
 		expect(createWhatsappSender(partial)).toBeInstanceOf(NoopWhatsappSender);
 		expect(createWhatsappProvisioner(partial)).toBeInstanceOf(NoopChannelProvisioner);
+	});
+
+	it('SMS is Plivo or a no-op — zernio never serves it', () => {
+		const plivo = testConfig({ PLIVO_AUTH_ID: AUTH_ID, PLIVO_AUTH_TOKEN: AUTH_TOKEN });
+		expect(createSmsSender(plivo)).toBeInstanceOf(PlivoSmsSender);
+		expect(createSmsProvisioner(plivo)).toBeInstanceOf(PlivoProvisioner);
+
+		const zernioOnly = testConfig({ ZERNIO_API_KEY: 'zk_1' });
+		expect(createSmsSender(zernioOnly)).toBeInstanceOf(NoopSmsSender);
+		expect(createSmsProvisioner(zernioOnly)).toBeInstanceOf(NoopChannelProvisioner);
+
+		expect(createPlivoSmsSender(testConfig())).toBeInstanceOf(NoopSmsSender);
 	});
 });

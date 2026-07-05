@@ -4,17 +4,28 @@ import {
 	WHATSAPP_FAILED_EVENT,
 	WHATSAPP_MESSAGE_EVENT,
 	type WhatsappInboundEvent,
-} from './inbound';
+} from './whatsapp/inbound';
 
 /**
- * Parsing of Plivo's WhatsApp webhook into the same canonical channel event the
- * zernio parser produces, so the two provider routes share every downstream
- * step. All knowledge of Plivo's field names lives here. Plivo posts two kinds
- * of deliveries to the webhook: inbound customer messages (`From`/`To`/
- * `MessageUUID` plus `Text`, or `ContentType` + `Body` on WhatsApp-flavored
- * payloads) and delivery reports for our own sends (`Status`), which arrive on
- * the callback URL the sender attaches to every message.
+ * Parsing of Plivo's message webhooks into the canonical channel event. Plivo
+ * uses one payload family for every channel its Messages API fronts, so this
+ * one mapper serves both the WhatsApp and SMS routes — each passes the channel
+ * its hook is configured for, and cross-channel deliveries are recognized and
+ * ignored rather than misrouted. All knowledge of Plivo's field names lives
+ * here. Plivo posts two kinds of deliveries: inbound customer messages
+ * (`From`/`To`/`MessageUUID` plus `Text`, or `ContentType` + `Body` on
+ * WhatsApp-flavored payloads) and delivery reports for our own sends
+ * (`Status`), which arrive on the callback URL the senders attach to every
+ * message.
+ *
+ * The canonical event type is {@link WhatsappInboundEvent} — named for the
+ * channel that introduced it (its literal event-type strings are part of the
+ * zernio wire contract), but structurally channel-neutral: numbers, text, and
+ * a message id. The dispatcher supplies the actual channel.
  */
+
+/** The channels a Plivo hook can be configured for. */
+export type PlivoChannel = 'whatsapp' | 'sms';
 
 /** How a Plivo delivery was classified. */
 export type PlivoInboundResult =
@@ -61,11 +72,13 @@ function plivoNumber(value: string | undefined): string {
 
 /**
  * Map a Plivo webhook payload (JSON- or form-encoded, already parsed to an
- * object) into a canonical {@link WhatsappInboundEvent}. Delivery reports for
- * still-in-flight or successful sends are recognized-but-ignored; only
- * `failed`/`undelivered` become the canonical failure event.
+ * object) into a canonical {@link WhatsappInboundEvent} for the given channel.
+ * Delivery reports for still-in-flight or successful sends are
+ * recognized-but-ignored; only `failed`/`undelivered` become the canonical
+ * failure event. An inbound message typed for a different channel (an SMS on
+ * the WhatsApp hook, or vice versa) is likewise ignored, never misrouted.
  */
-export function parsePlivoInbound(body: unknown): PlivoInboundResult {
+export function parsePlivoInbound(body: unknown, channel: PlivoChannel): PlivoInboundResult {
 	const parsed = plivoPayloadSchema.safeParse(body);
 	if (!parsed.success) {
 		return { kind: 'unrecognized' };
@@ -92,9 +105,9 @@ export function parsePlivoInbound(body: unknown): PlivoInboundResult {
 		};
 	}
 
-	// An inbound message. The same Plivo application can also front SMS; a
-	// non-WhatsApp message on this hook is recognized and ignored, not an error.
-	if (payload.Type !== undefined && payload.Type.trim().toLowerCase() !== 'whatsapp') {
+	// An inbound message. A hook only handles its own channel; when `Type` is
+	// absent the delivery is trusted to be what the hook was configured for.
+	if (payload.Type !== undefined && payload.Type.trim().toLowerCase() !== channel) {
 		return { kind: 'ignored' };
 	}
 	const from = plivoNumber(payload.From);
@@ -104,7 +117,7 @@ export function parsePlivoInbound(body: unknown): PlivoInboundResult {
 	}
 	// Text lives in `Body` on WhatsApp-shaped payloads and `Text` on SMS-shaped
 	// ones; a non-text ContentType (media/location/button) yields '' so the route
-	// declines it as unsupported, exactly like the zernio path.
+	// declines it as unsupported.
 	const contentType = (payload.ContentType ?? 'text').trim().toLowerCase();
 	const text = contentType === 'text' ? (payload.Body ?? payload.Text ?? '') : '';
 	return {

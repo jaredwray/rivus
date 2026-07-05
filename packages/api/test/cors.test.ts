@@ -9,6 +9,7 @@ import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
+import { NoopSmsSender } from '../src/services/sms';
 import { NoopWhatsappSender } from '../src/services/whatsapp';
 import { authHeader, RecordingMailer, signupOwner } from './helpers';
 
@@ -26,6 +27,8 @@ function buildAppWithCors(corsOrigin: string): FastifyInstance {
 		receivedEmails: new NoopReceivedEmailReader(),
 		whatsappSender: new NoopWhatsappSender(),
 		whatsappProvisioner: new NoopChannelProvisioner(),
+		smsSender: new NoopSmsSender(),
+		smsProvisioner: new NoopChannelProvisioner(),
 		notifier: createNotificationService({ notifications: repos.notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
@@ -49,6 +52,8 @@ function buildProdApp(corsOrigin: string): FastifyInstance {
 		receivedEmails: new NoopReceivedEmailReader(),
 		whatsappSender: new NoopWhatsappSender(),
 		whatsappProvisioner: new NoopChannelProvisioner(),
+		smsSender: new NoopSmsSender(),
+		smsProvisioner: new NoopChannelProvisioner(),
 		notifier: createNotificationService({ notifications: repos.notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),

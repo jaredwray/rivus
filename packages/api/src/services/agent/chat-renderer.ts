@@ -1,8 +1,8 @@
-import type { ChannelCapabilities } from '../channel';
-import { type AgentResponse, renderResponseText } from '../response';
+import type { ChannelCapabilities } from './channel';
+import { type AgentResponse, renderResponseText } from './response';
 
 /**
- * The chat-family generic renderer (WhatsApp today; SMS will reuse it): any
+ * The chat-family generic renderer (WhatsApp and SMS): any
  * {@link AgentResponse} → one plain-text message. It leans on the neutral
  * `renderResponseText`, which already flattens an `options` block to a numbered
  * list and an `action` block to a URL line, so it needs no per-decision logic —

@@ -1,9 +1,9 @@
 import type { AccountId } from '@rivus/core';
 import { describe, expect, it, vi } from 'vitest';
 import type { ChannelCapabilities } from '../src/services/agent/channel';
+import { renderChatResponse } from '../src/services/agent/chat-renderer';
 import { composeAgentResponse } from '../src/services/agent/response';
 import { parseZernioInbound, WHATSAPP_MESSAGE_EVENT } from '../src/services/agent/whatsapp/inbound';
-import { renderChatResponse } from '../src/services/agent/whatsapp/renderer';
 import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
 import type { FetchLike } from '../src/services/resend-mailer';
 import {

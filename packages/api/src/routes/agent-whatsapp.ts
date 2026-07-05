@@ -6,14 +6,14 @@ import { defaultCapabilities } from '../services/agent/capabilities';
 import { createWhatsappChannelAdapter } from '../services/agent/whatsapp/adapter';
 import { parseZernioInbound } from '../services/agent/whatsapp/inbound';
 import { verifyZernioSignature } from '../services/zernio-whatsapp';
-import { dispatchWhatsappEvent, whatsappWebhookResponseSchema } from './agent-whatsapp-shared';
+import { channelWebhookResponseSchema, dispatchPhoneChannelEvent } from './agent-phone-shared';
 
 /**
  * The zernio edge of the scheduling agent's WhatsApp channel: zernio posts every
  * message to the account's provisioned business number here. This route owns
  * only the zernio-specific edges — signature verification, the verify-token
  * handshake, and the zernio payload shape — then hands the canonical event to
- * {@link dispatchWhatsappEvent}, the same shared body the Plivo route uses, so
+ * {@link dispatchPhoneChannelEvent}, the same shared body the Plivo route uses, so
  * WhatsApp inherits scheduling, the inbox, FAQ drafts, and delivery-failure
  * handling with no channel-specific feature code.
  *
@@ -143,7 +143,7 @@ export const agentWhatsappRoutes: FastifyPluginAsync = async (fastify) => {
 					'header when ZERNIO_WEBHOOK_SECRET is configured.',
 				body: z.unknown(),
 				response: {
-					200: whatsappWebhookResponseSchema,
+					200: channelWebhookResponseSchema,
 					401: errorResponseSchema,
 					503: errorResponseSchema,
 				},
@@ -154,8 +154,9 @@ export const agentWhatsappRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!event) {
 				return { handled: false, outcome: 'unrecognized_payload' };
 			}
-			return dispatchWhatsappEvent({
+			return dispatchPhoneChannelEvent({
 				deps: dispatchDeps,
+				channel: 'whatsapp',
 				adapter,
 				capabilities,
 				event,

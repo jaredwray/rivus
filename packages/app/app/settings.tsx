@@ -127,6 +127,9 @@ export default function SettingsScreen() {
 	const [whatsappBusy, setWhatsappBusy] = useState(false);
 	const [whatsappError, setWhatsappError] = useState<string | null>(null);
 
+	const [smsBusy, setSmsBusy] = useState(false);
+	const [smsError, setSmsError] = useState<string | null>(null);
+
 	const [confirmingCancel, setConfirmingCancel] = useState(false);
 	const [canceling, setCanceling] = useState(false);
 	const [cancelError, setCancelError] = useState<string | null>(null);
@@ -242,6 +245,7 @@ export default function SettingsScreen() {
 	}
 
 	const whatsapp = session.account.channels.whatsapp;
+	const sms = session.account.channels.sms;
 
 	async function onToggleWhatsapp(next: string) {
 		const enabled = next === 'on';
@@ -257,6 +261,24 @@ export default function SettingsScreen() {
 			setWhatsappError(messageFor(caught, `Could not ${enabled ? 'enable' : 'disable'} WhatsApp.`));
 		} finally {
 			setWhatsappBusy(false);
+		}
+	}
+
+	async function onToggleSms(next: string) {
+		const enabled = next === 'on';
+		if (smsBusy || enabled === sms.enabled) {
+			return;
+		}
+		setSmsError(null);
+		setSmsBusy(true);
+		try {
+			// Enabling provisions a number on the first call (reusing the WhatsApp
+			// number when both channels share one); the session updates in place.
+			await setChannelEnabled('sms', enabled);
+		} catch (caught) {
+			setSmsError(messageFor(caught, `Could not ${enabled ? 'enable' : 'disable'} texting.`));
+		} finally {
+			setSmsBusy(false);
 		}
 	}
 
@@ -357,6 +379,29 @@ export default function SettingsScreen() {
 					<CopyField label="Your WhatsApp number" value={whatsapp.address} />
 				) : null}
 				{whatsappError ? <Txt style={styles.errorTxt}>{whatsappError}</Txt> : null}
+			</Card>
+
+			<Card style={styles.card}>
+				<SectionLabel>Text messages (SMS)</SectionLabel>
+				<Txt style={styles.agentEmailHint}>
+					Customers can text this number — Rivus books them the same way it does over email. Turn it
+					on to get a number; WhatsApp and texting share one number when both are on.
+				</Txt>
+				<View style={styles.whatsappRow}>
+					<Segmented
+						options={[
+							{ label: 'Off', value: 'off' },
+							{ label: 'On', value: 'on' },
+						]}
+						value={sms.enabled ? 'on' : 'off'}
+						onChange={onToggleSms}
+					/>
+					{smsBusy ? <ActivityIndicator color={colors.brandPurple} /> : null}
+				</View>
+				{sms.enabled && sms.address ? (
+					<CopyField label="Your SMS number" value={sms.address} />
+				) : null}
+				{smsError ? <Txt style={styles.errorTxt}>{smsError}</Txt> : null}
 			</Card>
 
 			<Card style={styles.card}>

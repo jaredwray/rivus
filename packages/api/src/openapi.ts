@@ -9,6 +9,7 @@ import { NoopMailer } from './services/email';
 import { NoopFaqAnswerService } from './services/faq-answer';
 import { NoopFaqSimilarityService } from './services/faq-similarity';
 import { createNotificationService } from './services/notifications';
+import { NoopSmsSender } from './services/sms';
 import { NoopWhatsappSender } from './services/whatsapp';
 
 /**
@@ -52,6 +53,8 @@ async function main(): Promise<void> {
 		receivedEmails: new NoopReceivedEmailReader(),
 		whatsappSender: new NoopWhatsappSender(),
 		whatsappProvisioner: new NoopChannelProvisioner(),
+		smsSender: new NoopSmsSender(),
+		smsProvisioner: new NoopChannelProvisioner(),
 		notifier: createNotificationService({ notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),

@@ -4569,7 +4569,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentWhatsappWebhookResult"
+                  "$ref": "#/components/schemas/AgentChannelWebhookResult"
                 }
               }
             }
@@ -4618,7 +4618,56 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentWhatsappWebhookResult"
+                  "$ref": "#/components/schemas/AgentChannelWebhookResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/channels/sms/plivo/inbound": {
+      "post": {
+        "summary": "Plivo SMS webhook (inbound customer texts + delivery status)",
+        "tags": [
+          "channels"
+        ],
+        "description": "Plivo delivers SMS events for the account’s provisioned number here: inbound customer texts, and delivery reports for messages Rivus sent (the sender passes this URL as the status callback). On an inbound text Rivus validates the sender against the account’s customers (by phone), keeps the multi-turn scheduling state on the thread, and replies over SMS. On a failed delivery it flags the conversation for a human. Deliveries are authenticated with Plivo’s V2 signature headers when PLIVO_AUTH_TOKEN is configured.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChannelWebhookResult"
                 }
               }
             }
