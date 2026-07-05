@@ -204,35 +204,73 @@ flow with `curl` against a dev API. The scheduling policy itself is pure
 renderer renders — a new channel reuses everything but the renderer, which is
 exactly how the WhatsApp channel below is built.
 
-### WhatsApp channel (zernio)
+### WhatsApp channel
 
-The same scheduling agent also answers over **WhatsApp Business**, via the
-[zernio](https://zernio.com) provider. Rivus assigns the account a WhatsApp
-number when an owner enables the channel, then customers who message that number
-get the identical experience to email — sender validation against the account's
-customers (unknown senders get the self-signup link), open-slot offers in the
-account's timezone, booking a confirmed `Job`, multi-turn state on an
-`AgentThread`, FAQ drafts, and the exchange mirrored into the inbox as a
-`whatsapp` conversation. None of that is re-implemented per channel: the WhatsApp
-route only owns the provider edges (signature check, the zernio payload shape,
-resolving the account from the business number, and the loop/unsupported guards)
-and hands a normalized message to the same `handleInboundAgentMessage` the email
-channel uses. See the "unified across channels" note in
+The same scheduling agent also answers over **WhatsApp Business**. Rivus assigns
+the account a WhatsApp number when an owner enables the channel, then customers
+who message that number get the identical experience to email — sender
+validation against the account's customers (unknown senders get the self-signup
+link), open-slot offers in the account's timezone, booking a confirmed `Job`,
+multi-turn state on an `AgentThread`, FAQ drafts, and the exchange mirrored into
+the inbox as a `whatsapp` conversation. None of that is re-implemented per
+channel — or per provider: each provider route owns only its edges (signature
+check and payload shape) and hands a canonical event to the shared dispatch
+(`routes/agent-whatsapp-shared.ts`), which resolves the account, applies the
+loop/unsupported guards, and calls the same `handleInboundAgentMessage` the
+email channel uses. See the "unified across channels" note in
 [AGENTS.md](../../AGENTS.md) for the layering.
 
-The inbound webhook also handles **outbound delivery status**: when a message
+The inbound webhooks also handle **outbound delivery status**: when a message
 Rivus sent fails to reach the customer, the conversation is flagged
 `needs_attention` with an inline note, so it surfaces in the inbox's "Needs you"
 filter and a human can follow up another way — the same treatment as an email
 bounce.
 
-Wiring it up:
+Two providers are wired behind the same seams (`WhatsappSender`,
+`ChannelProvisioner`): **Plivo** is the primary — chosen whenever its
+credentials are set — and **zernio** the alternative, used when only its key is
+set. With neither configured, both degrade to no-ops (a deterministic fake
+number in dev, sends dropped), so the whole flow still runs locally with `curl`
+and no credentials.
 
-1. Set `ZERNIO_API_KEY` (and `ZERNIO_API_URL` if it isn't the default). **Without
-   a key the channel still works end-to-end locally**: the sender and provisioner
-   degrade to no-ops, so enabling the channel assigns a deterministic fake number
-   and outbound messages are dropped — enough to drive the inbound flow with
-   `curl` and no credentials.
+#### Plivo (primary provider)
+
+Plivo fronts SMS, MMS, and WhatsApp through one Messages API and one rented
+number, which is why it's the primary: when the SMS and voice channels are
+built, the same Plivo account and the same per-account number will carry them.
+
+1. Set `PLIVO_AUTH_ID` + `PLIVO_AUTH_TOKEN` (Console → API keys), and
+   `PLIVO_API_URL` if it isn't the default.
+2. Point the WhatsApp webhook at `POST /v1/channels/whatsapp/plivo/inbound` in
+   the Plivo console. Deliveries are verified with Plivo's V2 signature scheme,
+   which signs **URL + nonce with the auth token** (there is no separate webhook
+   secret). Set `PLIVO_WEBHOOK_URL` to the exact public URL you configured so a
+   rewriting proxy can't break verification; the sender also attaches it to every
+   message as the delivery-status callback, which is what feeds the
+   `needs_attention` flow above.
+3. Numbers: enabling the channel rents a voice+SMS-capable number through
+   Plivo's Numbers API. Registering that number to the WhatsApp Business Account
+   (Meta's Embedded Signup in the Plivo console) is a one-time step per number
+   that Plivo does not yet expose over the API — see `TODO(plivo)` in
+   `src/services/plivo-whatsapp.ts`.
+4. An account **owner** enables the channel — in the app (Settings → WhatsApp
+   Business → On) or via `POST /v1/account/channels/whatsapp/enable`. Rivus
+   provisions the number and starts answering; `…/disable` turns it off but
+   retains the number, so re-enabling restores the same one. Both are idempotent.
+
+| Variable               | Default                    | Notes                                                                                                                 |
+| ---------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `PLIVO_AUTH_ID`        | _(unset)_                  | Plivo account auth ID. Both credentials set ⇒ Plivo is the active WhatsApp provider.                                   |
+| `PLIVO_AUTH_TOKEN`     | _(unset)_                  | Plivo auth token — API auth **and** the webhook signing key. Unset: dev/test accept unsigned deliveries; **production refuses the Plivo route (503)**. |
+| `PLIVO_API_URL`        | `https://api.plivo.com/v1` | Base URL of Plivo's REST API.                                                                                          |
+| `PLIVO_WEBHOOK_URL`    | _(unset)_                  | The public URL of the Plivo webhook route. Pins signature verification behind proxies and rides along on sends as the status callback. Unset: the URL is derived per-request and sends carry no callback. |
+| `PLIVO_NUMBER_COUNTRY` | `US`                       | ISO 3166-1 alpha-2 country whose numbers the provisioner rents.                                                        |
+
+#### zernio (alternative provider)
+
+Used when `ZERNIO_API_KEY` is set and the Plivo credentials are not.
+
+1. Set `ZERNIO_API_KEY` (and `ZERNIO_API_URL` if it isn't the default).
 2. In zernio, point an inbound webhook at `POST /v1/channels/whatsapp/inbound` and
    set its signing secret as `ZERNIO_WEBHOOK_SECRET`. Subscribe it to zernio's
    `message.received` (inbound customer messages) and `message.failed` (undelivered
@@ -240,23 +278,21 @@ Wiring it up:
    type. `ZERNIO_VERIFY_TOKEN` applies only if zernio requires a `GET` registration
    handshake (still unconfirmed — the handshake endpoint stays inert, 404, until
    the token is set).
-3. An account **owner** enables the channel — in the app (Settings → WhatsApp
-   Business → On) or via `POST /v1/account/channels/whatsapp/enable`. Rivus
-   provisions the number and starts answering; `…/disable` turns it off but
-   retains the number, so re-enabling restores the same one. Both are idempotent.
+3. Enable the channel exactly as in the Plivo step 4 above.
 
 | Variable                | Default                  | Notes                                                                                                                   |
 | ----------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
 | `ZERNIO_API_URL`        | `https://zernio.com/api/v1` | Base URL of the zernio API (per zernio's docs).                                                                     |
-| `ZERNIO_API_KEY`        | _(unset)_                | Unset: WhatsApp degrades to a no-op sender + provisioner (a deterministic fake number in dev) so the API runs without credentials. |
+| `ZERNIO_API_KEY`        | _(unset)_                | Unset: WhatsApp falls back as described above (Plivo when configured, else the no-ops).                                |
 | `ZERNIO_WEBHOOK_SECRET` | _(unset)_                | zernio webhook signing secret; the route verifies the `X-Zernio-Signature` (raw-body HMAC-SHA256) header. Unset: dev/test accept unsigned deliveries; **production refuses the route (503)**. |
 | `ZERNIO_VERIFY_TOKEN`   | _(unset)_                | Verify token for the `GET` registration handshake. Unset: that handshake endpoint 404s.                               |
 
 v1 is **WhatsApp only** (SMS and voice are schema-ready but not yet
 provisionable) and **text only** (media/location/voice messages get no reply).
 
-> **Note — the WhatsApp channel is not yet fully wired to zernio's live API.** The
-> remaining provider specifics are marked `TODO(zernio)` and confined to two files:
+> **Note — the zernio provider is not yet fully wired to zernio's live API**
+> (the Plivo path above is built against Plivo's documented wire formats). The
+> remaining zernio specifics are marked `TODO(zernio)` and confined to two files:
 >
 > - `src/services/zernio-whatsapp.ts` — send + provision leaf paths/payloads
 > - `src/services/agent/whatsapp/inbound.ts` — `parseZernioInbound`, the payload→event mapping
@@ -278,5 +314,4 @@ provisionable) and **text only** (media/location/voice messages get no reply).
 >   *connect credentials + select a number* rather than *provision a new number* —
 >   so `ZernioProvisioner` may need rethinking, not just endpoint tweaks.
 >
-> Until then, the no-op path (no `ZERNIO_API_KEY`) is the supported way to exercise
-> the flow.
+> Until then, use Plivo (or the no-op path) to exercise the flow end-to-end.

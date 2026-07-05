@@ -71,6 +71,26 @@ const envSchema = z
 		// Verify token for the GET webhook handshake some WhatsApp providers require
 		// to register a webhook URL. When unset, the handshake endpoint 404s.
 		ZERNIO_VERIFY_TOKEN: z.string().min(1).optional(),
+		// --- WhatsApp channel (Plivo, the primary provider) ---
+		// Plivo account credentials (Console → API keys). When both are set, Plivo is
+		// the active WhatsApp provider — sender and number provisioner — and the Plivo
+		// webhook verifies deliveries with the auth token (Plivo signs URL + nonce
+		// with it; there is no separate webhook secret). When unset, WhatsApp falls
+		// back to zernio (above), else to a no-op — mirroring the Resend gate.
+		PLIVO_AUTH_ID: z.string().min(1).optional(),
+		PLIVO_AUTH_TOKEN: z.string().min(1).optional(),
+		// Base URL of Plivo's REST API; the account-scoped resource paths hang off it.
+		PLIVO_API_URL: z.url().default('https://api.plivo.com/v1'),
+		// The public URL of this API's Plivo webhook (…/v1/channels/whatsapp/plivo/inbound
+		// as reachable from the internet), i.e. the exact URL configured in the Plivo
+		// console. Used two ways: it pins the URL signature validation recomputes
+		// (Plivo signs the URL it calls, so a rewriting proxy in front of the API
+		// would otherwise break verification), and it rides along on every send as
+		// the delivery-status callback so failures flag the conversation. When unset,
+		// verification derives the URL from the request and sends carry no callback.
+		PLIVO_WEBHOOK_URL: z.url().optional(),
+		// ISO 3166-1 alpha-2 country whose numbers the provisioner rents.
+		PLIVO_NUMBER_COUNTRY: z.string().length(2).default('US'),
 		// --- AI (duplicate-FAQ detection) ---
 		// The knowledge base's "is this a duplicate?" check runs through the AI SDK,
 		// so any provider whose key is set can serve it. OpenAI is the primary; the

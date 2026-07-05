@@ -4596,6 +4596,55 @@
           }
         }
       }
+    },
+    "/v1/channels/whatsapp/plivo/inbound": {
+      "post": {
+        "summary": "Plivo WhatsApp webhook (inbound customer messages + delivery status)",
+        "tags": [
+          "channels"
+        ],
+        "description": "Plivo delivers WhatsApp events for the account’s provisioned business number here: inbound customer messages, and delivery reports for messages Rivus sent (the sender passes this URL as the status callback). On an inbound message Rivus validates the sender against the account’s customers (by phone), keeps the multi-turn scheduling state on the thread, and replies over WhatsApp. On a failed delivery it flags the conversation for a human. Deliveries are authenticated with Plivo’s V2 signature headers when PLIVO_AUTH_TOKEN is configured.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentWhatsappWebhookResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [

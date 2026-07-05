@@ -1,39 +1,25 @@
-import { normalizePhone } from '@rivus/core';
 import type { FastifyError, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { errorResponseSchema } from '../http-schemas';
 import { defaultCapabilities } from '../services/agent/capabilities';
-import type { InboundAgentMessage } from '../services/agent/channel';
-import { flagDeliveryFailure, handleInboundAgentMessage } from '../services/agent/orchestrator';
 import { createWhatsappChannelAdapter } from '../services/agent/whatsapp/adapter';
-import {
-	parseZernioInbound,
-	WHATSAPP_FAILED_EVENT,
-	WHATSAPP_MESSAGE_EVENT,
-} from '../services/agent/whatsapp/inbound';
+import { parseZernioInbound } from '../services/agent/whatsapp/inbound';
 import { verifyZernioSignature } from '../services/zernio-whatsapp';
+import { dispatchWhatsappEvent, whatsappWebhookResponseSchema } from './agent-whatsapp-shared';
 
 /**
- * The WhatsApp channel of the scheduling agent: zernio posts every message to the
- * account's provisioned business number here. This route owns only the WhatsApp
- * edges — signature verification, the verify-token handshake, the zernio payload
- * shape, resolving the account from the business number, and the loop/unsupported
- * guards — then hands a normalized {@link InboundAgentMessage} to the same
- * channel-agnostic {@link handleInboundAgentMessage} the email channel uses, so
+ * The zernio edge of the scheduling agent's WhatsApp channel: zernio posts every
+ * message to the account's provisioned business number here. This route owns
+ * only the zernio-specific edges — signature verification, the verify-token
+ * handshake, and the zernio payload shape — then hands the canonical event to
+ * {@link dispatchWhatsappEvent}, the same shared body the Plivo route uses, so
  * WhatsApp inherits scheduling, the inbox, FAQ drafts, and delivery-failure
  * handling with no channel-specific feature code.
  *
  * Everything unactionable answers `200 {handled:false}` (never a non-2xx that
  * would make zernio redeliver something that will never become actionable).
  */
-
-const webhookResponseSchema = z
-	.object({
-		handled: z.boolean(),
-		outcome: z.string(),
-	})
-	.meta({ id: 'AgentWhatsappWebhookResult' });
 
 const verifyQuerySchema = z.object({
 	'hub.mode': z.string().optional(),
@@ -65,7 +51,15 @@ export const agentWhatsappRoutes: FastifyPluginAsync = async (fastify) => {
 
 	const adapter = createWhatsappChannelAdapter({ customers, sender: whatsappSender });
 	const capabilities = defaultCapabilities();
-	const orchestratorDeps = { config, jobs, conversations, agentThreads };
+	const dispatchDeps = {
+		config,
+		accounts,
+		conversations,
+		agentThreads,
+		memberships,
+		notifier,
+		jobs,
+	};
 
 	// Raw body kept byte-for-byte for signature verification (see the email route).
 	const rawBodies = new WeakMap<FastifyRequest, string>();
@@ -149,7 +143,7 @@ export const agentWhatsappRoutes: FastifyPluginAsync = async (fastify) => {
 					'header when ZERNIO_WEBHOOK_SECRET is configured.',
 				body: z.unknown(),
 				response: {
-					200: webhookResponseSchema,
+					200: whatsappWebhookResponseSchema,
 					401: errorResponseSchema,
 					503: errorResponseSchema,
 				},
@@ -160,70 +154,11 @@ export const agentWhatsappRoutes: FastifyPluginAsync = async (fastify) => {
 			if (!event) {
 				return { handled: false, outcome: 'unrecognized_payload' };
 			}
-
-			// Delivery failure: a message Rivus sent never reached the customer.
-			if (event.type === WHATSAPP_FAILED_EVENT) {
-				const businessNumber = normalizePhone(event.data.from);
-				const account = await accounts.findByChannelAddress('whatsapp', businessNumber);
-				if (!account || account.status === 'canceled') {
-					return { handled: false, outcome: 'unknown_account' };
-				}
-				const customerNumber = normalizePhone(event.data.to);
-				if (customerNumber === '') {
-					return { handled: false, outcome: 'unparseable_recipient' };
-				}
-				return flagDeliveryFailure({
-					deps: { conversations, agentThreads, memberships, notifier },
-					account,
-					channel: 'whatsapp',
-					contactAddress: customerNumber,
-					noteBody: `Rivus's last WhatsApp message to ${customerNumber} couldn't be delivered — follow up another way.`,
-					outcome: 'delivery_failed',
-					logger: request.log,
-				});
-			}
-
-			if (event.type !== WHATSAPP_MESSAGE_EVENT) {
-				return { handled: false, outcome: 'ignored_event_type' };
-			}
-
-			// Which account owns the business number this was sent to?
-			const businessNumber = normalizePhone(event.data.to);
-			const account = await accounts.findByChannelAddress('whatsapp', businessNumber);
-			if (!account || account.status === 'canceled') {
-				return { handled: false, outcome: 'unknown_account' };
-			}
-			// A disabled channel is off: acknowledge without replying (never a retry).
-			if (!account.channels.whatsapp.enabled) {
-				return { handled: false, outcome: 'channel_disabled' };
-			}
-
-			const senderNumber = normalizePhone(event.data.from);
-			if (senderNumber === '') {
-				return { handled: false, outcome: 'unparseable_sender' };
-			}
-			// Loop guard: never converse with any account's own business number, so two
-			// Rivus accounts can't schedule each other forever.
-			if (await accounts.findByChannelAddress('whatsapp', senderNumber)) {
-				return { handled: false, outcome: 'own_number' };
-			}
-			// v1 handles text only; a media/location/voice message gets no reply.
-			if (event.data.text.trim() === '') {
-				return { handled: false, outcome: 'unsupported_message_type' };
-			}
-
-			const message: InboundAgentMessage = {
-				sender: { address: senderNumber, name: event.data.profileName },
-				text: event.data.text,
-				subject: '',
-				externalMessageId: event.data.messageId,
-			};
-			return handleInboundAgentMessage({
-				deps: orchestratorDeps,
+			return dispatchWhatsappEvent({
+				deps: dispatchDeps,
 				adapter,
 				capabilities,
-				account,
-				message,
+				event,
 				logger: request.log,
 			});
 		},
