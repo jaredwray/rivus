@@ -6,13 +6,13 @@ import { errorResponseSchema } from '../http-schemas';
 import { defaultCapabilities } from '../services/agent/capabilities';
 import type { InboundAgentMessage } from '../services/agent/channel';
 import { flagDeliveryFailure, handleInboundAgentMessage } from '../services/agent/orchestrator';
-import { verifyWebhookSignature } from '../services/agent/webhook';
 import { createWhatsappChannelAdapter } from '../services/agent/whatsapp/adapter';
 import {
 	parseZernioInbound,
 	WHATSAPP_FAILED_EVENT,
 	WHATSAPP_MESSAGE_EVENT,
 } from '../services/agent/whatsapp/inbound';
+import { verifyZernioSignature } from '../services/zernio-whatsapp';
 
 /**
  * The WhatsApp channel of the scheduling agent: zernio posts every message to the
@@ -96,16 +96,15 @@ export const agentWhatsappRoutes: FastifyPluginAsync = async (fastify) => {
 			}
 			return;
 		}
-		// TODO(zernio): confirm zernio's signature header names.
-		const verified = verifyWebhookSignature({
+		// zernio signs the raw body with HMAC-SHA256 and sends the lowercase hex
+		// digest in X-Zernio-Signature (legacy deliveries: X-Late-Signature).
+		const signature =
+			headerValue(request.headers['x-zernio-signature']) ||
+			headerValue(request.headers['x-late-signature']);
+		const verified = verifyZernioSignature({
 			secret,
-			headers: {
-				id: headerValue(request.headers['zernio-id']),
-				timestamp: headerValue(request.headers['zernio-timestamp']),
-				signature: headerValue(request.headers['zernio-signature']),
-			},
+			signature,
 			payload: rawBodies.get(request) ?? '',
-			now: new Date(),
 		});
 		if (!verified) {
 			throw app.httpErrors.unauthorized('Invalid webhook signature');

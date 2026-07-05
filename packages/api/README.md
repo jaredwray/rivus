@@ -238,7 +238,8 @@ Wiring it up:
    `message.received` (inbound customer messages) and `message.failed` (undelivered
    WhatsApp replies) events — the one endpoint handles both and branches on the
    type. `ZERNIO_VERIFY_TOKEN` applies only if zernio requires a `GET` registration
-   handshake (see the reconciliation note below).
+   handshake (still unconfirmed — the handshake endpoint stays inert, 404, until
+   the token is set).
 3. An account **owner** enables the channel — in the app (Settings → WhatsApp
    Business → On) or via `POST /v1/account/channels/whatsapp/enable`. Rivus
    provisions the number and starts answering; `…/disable` turns it off but
@@ -246,33 +247,36 @@ Wiring it up:
 
 | Variable                | Default                  | Notes                                                                                                                   |
 | ----------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `ZERNIO_API_URL`        | `https://api.zernio.com` | Base URL of the zernio API.                                                                                             |
+| `ZERNIO_API_URL`        | `https://zernio.com/api/v1` | Base URL of the zernio API (per zernio's docs).                                                                     |
 | `ZERNIO_API_KEY`        | _(unset)_                | Unset: WhatsApp degrades to a no-op sender + provisioner (a deterministic fake number in dev) so the API runs without credentials. |
-| `ZERNIO_WEBHOOK_SECRET` | _(unset)_                | zernio webhook signing secret. Unset: dev/test accept unsigned deliveries; **production refuses the route (503)**. See the signature-scheme delta in the note below. |
+| `ZERNIO_WEBHOOK_SECRET` | _(unset)_                | zernio webhook signing secret; the route verifies the `X-Zernio-Signature` (raw-body HMAC-SHA256) header. Unset: dev/test accept unsigned deliveries; **production refuses the route (503)**. |
 | `ZERNIO_VERIFY_TOKEN`   | _(unset)_                | Verify token for the `GET` registration handshake. Unset: that handshake endpoint 404s.                               |
 
 v1 is **WhatsApp only** (SMS and voice are schema-ready but not yet
 provisionable) and **text only** (media/location/voice messages get no reply).
 
-> **Note — the current zernio wire-format placeholders don't match zernio's live
-> API, so enabling the channel with a real `ZERNIO_API_KEY` / `ZERNIO_WEBHOOK_SECRET`
-> will not work until the code is reconciled.** The provider specifics are marked
-> `TODO(zernio)` and confined to three files:
+> **Note — the WhatsApp channel is not yet fully wired to zernio's live API.** The
+> remaining provider specifics are marked `TODO(zernio)` and confined to two files:
 >
-> - `src/services/zernio-whatsapp.ts` — send + provision endpoints/payloads
-> - `src/routes/agent-whatsapp.ts` — webhook signature + verify handshake
+> - `src/services/zernio-whatsapp.ts` — send + provision leaf paths/payloads
 > - `src/services/agent/whatsapp/inbound.ts` — `parseZernioInbound`, the payload→event mapping
 >
-> Reconciling against [zernio's docs](https://docs.zernio.com/) touches only those
-> three files. The known deltas, from zernio's published API:
+> **Resolved** (verified against [zernio's docs](https://docs.zernio.com/webhooks)):
+> the webhook signature is now the real scheme — `X-Zernio-Signature` (legacy
+> `X-Late-Signature`) = lowercase hex HMAC-SHA256 of the raw body — and the API base
+> URL default is `https://zernio.com/api/v1`.
 >
-> - **Signature:** the code checks Svix-style `zernio-id` / `zernio-timestamp` /
->   `zernio-signature`; zernio signs with a single `X-Zernio-Signature` = lowercase
->   hex HMAC-SHA256 of the raw request body, keyed by the secret.
-> - **Events:** `parseZernioInbound` expects `whatsapp.message.received` /
->   `whatsapp.message.failed`; zernio fires `message.received` / `message.failed`.
-> - **Base URL:** the default is `https://api.zernio.com` with `/v1/…` paths
->   appended; zernio documents the base as `https://zernio.com/api/v1`.
+> **Still open**, so enabling the channel with a real `ZERNIO_API_KEY` won't work
+> end-to-end until reconciled:
 >
-> Until these are reconciled, the no-op path (no `ZERNIO_API_KEY`) is the supported
-> way to exercise the flow.
+> - **Inbound payload mapping:** `parseZernioInbound` still expects a canonical
+>   `whatsapp.message.received` / `whatsapp.message.failed` shape; zernio's real
+>   events are `message.received` / `message.failed` with the message in a nested
+>   `message` object whose schema must be mapped in.
+> - **Send + provision endpoints:** the leaf paths (`/messages`, `/numbers`) and
+>   their payloads are still assumptions, and zernio's WhatsApp model looks like
+>   *connect credentials + select a number* rather than *provision a new number* —
+>   so `ZernioProvisioner` may need rethinking, not just endpoint tweaks.
+>
+> Until then, the no-op path (no `ZERNIO_API_KEY`) is the supported way to exercise
+> the flow.
