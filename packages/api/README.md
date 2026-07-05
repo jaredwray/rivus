@@ -234,10 +234,11 @@ Wiring it up:
    and outbound messages are dropped — enough to drive the inbound flow with
    `curl` and no credentials.
 2. In zernio, point an inbound webhook at `POST /v1/channels/whatsapp/inbound` and
-   set its signing secret as `ZERNIO_WEBHOOK_SECRET`. That one endpoint takes both
-   inbound customer messages and delivery-status events; it branches on the event
-   type. If zernio uses a Meta-style registration handshake, also set
-   `ZERNIO_VERIFY_TOKEN` to the token it echoes on the `GET` of that path.
+   set its signing secret as `ZERNIO_WEBHOOK_SECRET`. Subscribe it to zernio's
+   `message.received` (inbound customer messages) and `message.failed` (undelivered
+   WhatsApp replies) events — the one endpoint handles both and branches on the
+   type. `ZERNIO_VERIFY_TOKEN` applies only if zernio requires a `GET` registration
+   handshake (see the reconciliation note below).
 3. An account **owner** enables the channel — in the app (Settings → WhatsApp
    Business → On) or via `POST /v1/account/channels/whatsapp/enable`. Rivus
    provisions the number and starts answering; `…/disable` turns it off but
@@ -247,16 +248,31 @@ Wiring it up:
 | ----------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
 | `ZERNIO_API_URL`        | `https://api.zernio.com` | Base URL of the zernio API.                                                                                             |
 | `ZERNIO_API_KEY`        | _(unset)_                | Unset: WhatsApp degrades to a no-op sender + provisioner (a deterministic fake number in dev) so the API runs without credentials. |
-| `ZERNIO_WEBHOOK_SECRET` | _(unset)_                | HMAC signing secret (`whsec_…`). Unset: dev/test accept unsigned deliveries; **production refuses the route (503)**.    |
+| `ZERNIO_WEBHOOK_SECRET` | _(unset)_                | zernio webhook signing secret. Unset: dev/test accept unsigned deliveries; **production refuses the route (503)**. See the signature-scheme delta in the note below. |
 | `ZERNIO_VERIFY_TOKEN`   | _(unset)_                | Verify token for the `GET` registration handshake. Unset: that handshake endpoint 404s.                               |
 
 v1 is **WhatsApp only** (SMS and voice are schema-ready but not yet
 provisionable) and **text only** (media/location/voice messages get no reply).
 
-> **Note — zernio wire format is not yet finalized.** The exact endpoint paths
-> (`/v1/messages`, `/v1/numbers`), request/response field names, signature header
-> names, and whether zernio uses the Meta-style `GET` handshake are assumptions
-> marked `TODO(zernio)` and confined to `src/services/zernio-whatsapp.ts` and
-> `src/routes/agent-whatsapp.ts`. Confirming them against zernio's API docs
-> touches only those two files; until then, the no-op path (no `ZERNIO_API_KEY`)
-> is the supported way to exercise the flow.
+> **Note — the current zernio wire-format placeholders don't match zernio's live
+> API, so enabling the channel with a real `ZERNIO_API_KEY` / `ZERNIO_WEBHOOK_SECRET`
+> will not work until the code is reconciled.** The provider specifics are marked
+> `TODO(zernio)` and confined to three files:
+>
+> - `src/services/zernio-whatsapp.ts` — send + provision endpoints/payloads
+> - `src/routes/agent-whatsapp.ts` — webhook signature + verify handshake
+> - `src/services/agent/whatsapp/inbound.ts` — `parseZernioInbound`, the payload→event mapping
+>
+> Reconciling against [zernio's docs](https://docs.zernio.com/) touches only those
+> three files. The known deltas, from zernio's published API:
+>
+> - **Signature:** the code checks Svix-style `zernio-id` / `zernio-timestamp` /
+>   `zernio-signature`; zernio signs with a single `X-Zernio-Signature` = lowercase
+>   hex HMAC-SHA256 of the raw request body, keyed by the secret.
+> - **Events:** `parseZernioInbound` expects `whatsapp.message.received` /
+>   `whatsapp.message.failed`; zernio fires `message.received` / `message.failed`.
+> - **Base URL:** the default is `https://api.zernio.com` with `/v1/…` paths
+>   appended; zernio documents the base as `https://zernio.com/api/v1`.
+>
+> Until these are reconciled, the no-op path (no `ZERNIO_API_KEY`) is the supported
+> way to exercise the flow.
