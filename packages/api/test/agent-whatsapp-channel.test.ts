@@ -9,6 +9,8 @@ import type { FetchLike } from '../src/services/resend-mailer';
 import {
 	createWhatsappProvisioner,
 	createWhatsappSender,
+	signZernioPayload,
+	verifyZernioSignature,
 	ZernioProvisioner,
 	ZernioWhatsappSender,
 } from '../src/services/zernio-whatsapp';
@@ -80,7 +82,7 @@ describe('ZernioWhatsappSender', () => {
 			string,
 			{ headers: Record<string, string>; body: string },
 		];
-		expect(url).toBe('https://api.zernio.com/v1/messages');
+		expect(url).toBe('https://api.zernio.com/messages');
 		expect(init.headers.authorization).toBe('Bearer zk_1');
 		expect(JSON.parse(init.body)).toMatchObject({ from: '+15550001111', to: '+15559990000' });
 	});
@@ -210,6 +212,38 @@ describe('createWhatsappSender / createWhatsappProvisioner', () => {
 			ZERNIO_API_URL: 'https://api.zernio.com',
 		});
 		expect(provisioner).toBeInstanceOf(ZernioProvisioner);
+	});
+});
+
+describe('verifyZernioSignature / signZernioPayload', () => {
+	const SECRET = 'zwh_secret';
+	const BODY = '{"event":"message.received"}';
+
+	it('accepts a signature it produced and rejects a tampered body', () => {
+		const signature = signZernioPayload(SECRET, BODY);
+		expect(verifyZernioSignature({ secret: SECRET, signature, payload: BODY })).toBe(true);
+		expect(verifyZernioSignature({ secret: SECRET, signature, payload: `${BODY} ` })).toBe(false);
+	});
+
+	it('is case-insensitive on the hex digest and tolerant of surrounding space', () => {
+		const signature = signZernioPayload(SECRET, BODY).toUpperCase();
+		expect(
+			verifyZernioSignature({ secret: SECRET, signature: `  ${signature}  `, payload: BODY }),
+		).toBe(true);
+	});
+
+	it('rejects an empty secret, empty signature, or wrong-length digest', () => {
+		const signature = signZernioPayload(SECRET, BODY);
+		expect(verifyZernioSignature({ secret: '', signature, payload: BODY })).toBe(false);
+		expect(verifyZernioSignature({ secret: SECRET, signature: '', payload: BODY })).toBe(false);
+		expect(verifyZernioSignature({ secret: SECRET, signature: 'abc123', payload: BODY })).toBe(
+			false,
+		);
+	});
+
+	it('rejects a signature made with a different secret', () => {
+		const signature = signZernioPayload('other-secret', BODY);
+		expect(verifyZernioSignature({ secret: SECRET, signature, payload: BODY })).toBe(false);
 	});
 });
 

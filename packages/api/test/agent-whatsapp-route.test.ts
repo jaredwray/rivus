@@ -5,11 +5,11 @@ import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
 import { createInMemoryRepositories } from '../src/repositories/memory';
 import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
-import { signWebhookPayload } from '../src/services/agent/webhook';
 import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
+import { signZernioPayload } from '../src/services/zernio-whatsapp';
 import {
 	buildTestAppWithRepos,
 	RecordingMailer,
@@ -254,7 +254,7 @@ describe('POST /v1/channels/whatsapp/inbound', () => {
 
 // --- Signature + handshake (separate config) --------------------------------
 
-const SECRET = 'whsec_dGVzdHNlY3JldA==';
+const SECRET = 'zwh_test_secret';
 
 function buildWhatsappApp(extraConfig: Record<string, string> = {}): FastifyInstance {
 	const repos = createInMemoryRepositories();
@@ -286,14 +286,9 @@ describe('POST /v1/channels/whatsapp/inbound — signature + handshake', () => {
 	it('accepts a validly signed delivery and rejects a tampered one', async () => {
 		app = buildWhatsappApp({ ZERNIO_WEBHOOK_SECRET: SECRET });
 		const body = JSON.stringify(inbound({ to: '+19998887777' }));
-		const id = 'msg_1';
-		const timestamp = String(Math.floor(Date.now() / 1000));
-		const signature = signWebhookPayload({ secret: SECRET, id, timestamp, payload: body });
 		const headers = {
 			'content-type': 'application/json',
-			'zernio-id': id,
-			'zernio-timestamp': timestamp,
-			'zernio-signature': signature,
+			'x-zernio-signature': signZernioPayload(SECRET, body),
 		};
 		const ok = await app.inject({ method: 'POST', url: WEBHOOK_URL, payload: body, headers });
 		// Unknown account, but the signature passed (a 401 would mean it didn't).
@@ -306,6 +301,32 @@ describe('POST /v1/channels/whatsapp/inbound — signature + handshake', () => {
 			headers,
 		});
 		expect(tampered.statusCode).toBe(401);
+	});
+
+	it('accepts the legacy X-Late-Signature header', async () => {
+		app = buildWhatsappApp({ ZERNIO_WEBHOOK_SECRET: SECRET });
+		const body = JSON.stringify(inbound({ to: '+19998887777' }));
+		const res = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: body,
+			headers: {
+				'content-type': 'application/json',
+				'x-late-signature': signZernioPayload(SECRET, body),
+			},
+		});
+		expect(res.json()).toEqual({ handled: false, outcome: 'unknown_account' });
+	});
+
+	it('rejects a delivery with no signature header (401)', async () => {
+		app = buildWhatsappApp({ ZERNIO_WEBHOOK_SECRET: SECRET });
+		const res = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: JSON.stringify(inbound()),
+			headers: { 'content-type': 'application/json' },
+		});
+		expect(res.statusCode).toBe(401);
 	});
 
 	it('refuses to serve unsigned in production (503, fail closed)', async () => {

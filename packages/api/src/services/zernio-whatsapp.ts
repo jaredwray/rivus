@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { type AccountId, normalizePhone } from '@rivus/core';
 import { z } from 'zod';
 import type { Config } from '../config';
@@ -18,9 +19,13 @@ import { NoopWhatsappSender, type WhatsappMessage, type WhatsappSender } from '.
  * finalizing against the real docs touches only this file.
  */
 
-// TODO(zernio): confirm the send + provision endpoint paths against zernio's docs.
-const SEND_PATH = '/v1/messages';
-const NUMBERS_PATH = '/v1/numbers';
+// The API base is `https://zernio.com/api/v1` (see `ZERNIO_API_URL` in config), so
+// these are the leaf resource paths under it.
+// TODO(zernio): confirm the send + provision leaf paths and their payloads against
+// zernio's docs — the base URL is confirmed, but these exact endpoints (and whether
+// WhatsApp numbers are "provisioned" here at all vs. connected/selected) are not.
+const SEND_PATH = '/messages';
+const NUMBERS_PATH = '/numbers';
 
 interface ZernioOptions {
 	apiKey: string;
@@ -30,6 +35,44 @@ interface ZernioOptions {
 
 function bearer(apiKey: string): Record<string, string> {
 	return { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' };
+}
+
+/**
+ * Compute a zernio webhook signature — the lowercase hex HMAC-SHA256 of the raw
+ * request body keyed by the webhook secret. The counterpart of
+ * {@link verifyZernioSignature}, used by tests (and handy for local `curl`s).
+ */
+export function signZernioPayload(secret: string, payload: string): string {
+	return createHmac('sha256', secret).update(payload).digest('hex');
+}
+
+/**
+ * Verify a zernio webhook delivery. zernio signs the **raw request body** with
+ * HMAC-SHA256 keyed by the webhook secret and sends the lowercase hex digest in
+ * the `X-Zernio-Signature` header (legacy deliveries use `X-Late-Signature`; the
+ * route passes whichever is present). Unlike the Svix scheme in
+ * `services/agent/webhook.ts` that the email channel uses, there is no id or
+ * timestamp envelope and no replay window — the body alone is signed — so this is
+ * a distinct verifier. See https://docs.zernio.com/webhooks.
+ */
+export function verifyZernioSignature(options: {
+	secret: string;
+	/** The `X-Zernio-Signature` (or legacy `X-Late-Signature`) header value. */
+	signature: string;
+	/** The raw request body, byte-for-byte as received. */
+	payload: string;
+}): boolean {
+	const provided = options.signature.trim().toLowerCase();
+	if (!options.secret || !provided) {
+		return false;
+	}
+	const expected = signZernioPayload(options.secret, options.payload);
+	// Compare the fixed-width hex digests as byte strings, in constant time.
+	const providedBytes = Buffer.from(provided, 'utf8');
+	const expectedBytes = Buffer.from(expected, 'utf8');
+	return (
+		providedBytes.length === expectedBytes.length && timingSafeEqual(providedBytes, expectedBytes)
+	);
 }
 
 export class ZernioWhatsappSender implements WhatsappSender {

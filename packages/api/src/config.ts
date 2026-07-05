@@ -56,10 +56,10 @@ const envSchema = z
 		// hard boot failure for deployments that don't use the email channel.
 		RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
 		// --- WhatsApp channel (zernio) ---
-		// Base URL of the zernio API (WhatsApp Business provider). Overridable so a
-		// self-hosted/staging zernio can be targeted; the send + provision endpoints
-		// hang off it.
-		ZERNIO_API_URL: z.url().default('https://api.zernio.com'),
+		// Base URL of the zernio API (WhatsApp Business provider), per zernio's docs.
+		// Overridable so a self-hosted/staging zernio can be targeted; the send +
+		// provision leaf paths hang off it.
+		ZERNIO_API_URL: z.url().default('https://zernio.com/api/v1'),
 		// API key for zernio. When unset, WhatsApp degrades to a no-op sender +
 		// provisioner (a deterministic fake number in development) so the API still
 		// runs and tests without zernio credentials — mirroring the Resend gate.
