@@ -288,8 +288,8 @@ Used when `ZERNIO_API_KEY` is set and the Plivo credentials are not.
 | `ZERNIO_WEBHOOK_SECRET` | _(unset)_                | zernio webhook signing secret; the route verifies the `X-Zernio-Signature` (raw-body HMAC-SHA256) header. Unset: dev/test accept unsigned deliveries; **production refuses the route (503)**. |
 | `ZERNIO_VERIFY_TOKEN`   | _(unset)_                | Verify token for the `GET` registration handshake. Unset: that handshake endpoint 404s.                               |
 
-Provisionable channels are **WhatsApp and SMS** (voice is schema-ready but not
-yet built), both **text only** (media/location/voice messages get no reply).
+Provisionable channels are **WhatsApp, SMS, and voice**; the messaging channels
+are **text only** (media/location messages get no reply).
 
 > **Note — the zernio provider is not yet fully wired to zernio's live API**
 > (the Plivo path above is built against Plivo's documented wire formats). The
@@ -339,3 +339,34 @@ reports flagging failures, and the no-op degradation without credentials.
    Plivo console before carriers accept application-originated texts — a
    one-time compliance step per brand/campaign, like the WABA registration for
    WhatsApp.
+
+### Voice channel (Plivo)
+
+The same scheduling agent also **answers phone calls** on the same number,
+turn-based on Plivo's Voice API: the call hits the answer webhook, Rivus greets
+and listens (`<GetInput inputType="speech">`), and each transcribed utterance
+runs through the identical channel-agnostic orchestrator — thread state, inbox
+mirroring (a `phone` conversation with a full transcript), booking — with the
+reply spoken back in the response XML. The call ends after a terminal outcome
+(booked, confirmed, or directed to self-signup); anything else loops the
+listen. Unknown callers are recognized by phone exactly like SMS/WhatsApp.
+
+1. Same credentials as the other channels (`PLIVO_AUTH_ID` + `PLIVO_AUTH_TOKEN`);
+   deliveries are verified with the same V2 signature scheme (no extra config —
+   the signed URL is reconstructed per request).
+2. In the Plivo console, create an **Application** with `answer_url` =
+   `POST /v1/channels/voice/plivo/answer` (public URL) and attach it to the
+   account's number. The same application's `message_url` can point at the SMS
+   webhook — one application wires both. TODO(plivo): automate the application
+   attach via the Numbers API when the channel is enabled.
+3. An owner enables the channel (app: Settings → Phone calls, or
+   `POST /v1/account/channels/voice/enable`). The account's existing
+   Plivo-owned WhatsApp/SMS number is adopted — calls, texts, and WhatsApp all
+   share one number — or a fresh voice+SMS number is rented.
+4. No extra registration: unlike WhatsApp (WABA) and US SMS (10DLC), inbound
+   voice works as soon as the application is attached to the number.
+
+Voice replies record in the inbox like every channel, but `phone`
+conversations have no reply-out transport (there is no live call to push a
+human reply into), so inbox replies on them record without sending — the
+pre-existing behavior for phone conversations.

@@ -20,6 +20,18 @@ function headerValue(value: string | string[] | undefined): string {
 }
 
 /**
+ * The public origin of a request (`https://api.rivus.ai`), honoring the
+ * forwarding headers the front-door proxy sets. Used to reconstruct signed
+ * webhook URLs and to build absolute callback URLs (the voice route's
+ * `GetInput action`).
+ */
+export function requestOrigin(request: FastifyRequest): string {
+	const proto = headerValue(request.headers['x-forwarded-proto']) || request.protocol;
+	const host = headerValue(request.headers['x-forwarded-host']) || request.headers.host || '';
+	return `${proto}://${host}`;
+}
+
+/**
  * The URL Plivo signed. The pinned URL (the exact URL configured in the Plivo
  * console for this channel) wins; otherwise it is derived from the request,
  * honoring the forwarding headers the front-door proxy sets.
@@ -28,9 +40,7 @@ function requestUrl(request: FastifyRequest, pinned: string | undefined): string
 	if (pinned) {
 		return pinned;
 	}
-	const proto = headerValue(request.headers['x-forwarded-proto']) || request.protocol;
-	const host = headerValue(request.headers['x-forwarded-host']) || request.headers.host || '';
-	return `${proto}://${host}${request.raw.url ?? request.url}`;
+	return `${requestOrigin(request)}${request.raw.url ?? request.url}`;
 }
 
 /**

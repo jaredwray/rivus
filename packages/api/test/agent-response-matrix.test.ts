@@ -7,6 +7,7 @@ import { createEmailChannelAdapter } from '../src/services/agent/email/adapter';
 import type { AgentDecision } from '../src/services/agent/engine';
 import { type AgentReplyContext, composeAgentResponse } from '../src/services/agent/response';
 import { createSmsChannelAdapter } from '../src/services/agent/sms/adapter';
+import { createVoiceChannelAdapter } from '../src/services/agent/voice/adapter';
 import { createWhatsappChannelAdapter } from '../src/services/agent/whatsapp/adapter';
 import type { AgentEmail, Mailer } from '../src/services/email';
 import { RecordingSmsSender, RecordingWhatsappSender } from './helpers';
@@ -137,8 +138,20 @@ function smsChannel(): ChannelUnderTest {
 	return { name: 'sms', adapter, lastRendered: () => sender.messages.at(-1)?.text ?? '' };
 }
 
+function voiceChannel(): ChannelUnderTest {
+	const capture = { text: '' };
+	const { customers } = createInMemoryRepositories();
+	const adapter = createVoiceChannelAdapter({ customers, capture });
+	return { name: 'voice', adapter, lastRendered: () => capture.text };
+}
+
 // Every channel with an outbound transport. Adding one here covers it for all decisions.
-const CHANNELS: Array<() => ChannelUnderTest> = [emailChannel, whatsappChannel, smsChannel];
+const CHANNELS: Array<() => ChannelUnderTest> = [
+	emailChannel,
+	whatsappChannel,
+	smsChannel,
+	voiceChannel,
+];
 
 describe('agent response render matrix (channels × decisions)', () => {
 	for (const makeChannel of CHANNELS) {

@@ -93,7 +93,17 @@ function reasonSentence(
 
 /** How a contact is told to reply, worded for the medium. */
 function replyHere(medium: ChannelMedium): string {
-	return medium === 'email' ? 'reply to this email' : 'reply here';
+	if (medium === 'email') {
+		return 'reply to this email';
+	}
+	return medium === 'voice' ? 'call back' : 'reply here';
+}
+
+/** How a contact picks an offered slot, worded for the medium. */
+function pickAnOption(medium: ChannelMedium): string {
+	return medium === 'voice'
+		? 'Say the number that works for you, or suggest another time.'
+		: 'Reply with the number that works for you, or suggest another time.';
 }
 
 /** The intermediate shape of a decision's content, before it becomes blocks. */
@@ -113,7 +123,10 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 			return {
 				lead: [
 					`Thanks for reaching out to ${context.accountName}! I'm Rivus, their scheduling assistant.`,
-					`I don't see this email address in ${context.accountName}'s customer list yet. Add yourself in a minute at the link below, then ${replyHere(context.medium)} and I'll get you booked in.`,
+					`I don't see this ${context.medium === 'email' ? 'email address' : 'phone number'} in ${context.accountName}'s customer list yet. ` +
+						(context.medium === 'voice'
+							? `Add yourself in a minute at the web link I'll read out, then call back and I'll get you booked in.`
+							: `Add yourself in a minute at the link below, then ${replyHere(context.medium)} and I'll get you booked in.`),
 				],
 				slots: [],
 				action: { label: `Join ${context.accountName} as a customer`, url: context.signupUrl },
@@ -124,7 +137,7 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 				lead: [`Great to hear from you! Here are ${context.accountName}'s next openings:`],
 				slots: decision.slots,
 				action: null,
-				trail: ['Reply with the number that works for you, or suggest another time.'],
+				trail: [pickAnOption(context.medium)],
 			};
 		case 'book':
 			return {
@@ -134,7 +147,9 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 				],
 				...none,
 				trail: [
-					`Need to change or cancel? Reply here and the ${context.accountName} team will take care of it.`,
+					context.medium === 'voice'
+						? `Need to change or cancel? Just call back and the ${context.accountName} team will take care of it.`
+						: `Need to change or cancel? Reply here and the ${context.accountName} team will take care of it.`,
 				],
 			};
 		case 'confirm_existing':
@@ -143,7 +158,11 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 					`You're all set — you're already booked for ${formatSlotLabel(decision.slot.startAt, context.timeZone, year)}.`,
 				],
 				...none,
-				trail: ['If you need to change or cancel, just reply and let me know.'],
+				trail: [
+					context.medium === 'voice'
+						? 'If you need to change or cancel, just call back anytime.'
+						: 'If you need to change or cancel, just reply and let me know.',
+				],
 			};
 		case 'propose_unavailable': {
 			const requestedLabel = formatSlotLabel(decision.requestedStartAt, context.timeZone, year);
@@ -152,7 +171,9 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 					lead: [reasonSentence(decision.reason, requestedLabel)],
 					...none,
 					trail: [
-						`I couldn't find another opening in the next two weeks — reply with a few times that work for you and I'll check them against ${context.accountName}'s calendar.`,
+						context.medium === 'voice'
+							? `I couldn't find another opening in the next two weeks. Tell me a few times that work for you and I'll check them against ${context.accountName}'s calendar.`
+							: `I couldn't find another opening in the next two weeks — reply with a few times that work for you and I'll check them against ${context.accountName}'s calendar.`,
 					],
 				};
 			}
@@ -160,7 +181,7 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 				lead: [reasonSentence(decision.reason, requestedLabel), 'Here is what we do have open:'],
 				slots: decision.alternatives,
 				action: null,
-				trail: ['Reply with the number that works for you, or suggest another time.'],
+				trail: [pickAnOption(context.medium)],
 			};
 		}
 		case 'no_availability':
@@ -170,7 +191,9 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 				],
 				...none,
 				trail: [
-					"Reply with a few times that work for you and I'll check them against the calendar.",
+					context.medium === 'voice'
+						? "Tell me a few times that work for you and I'll check them against the calendar."
+						: "Reply with a few times that work for you and I'll check them against the calendar.",
 				],
 			};
 	}
