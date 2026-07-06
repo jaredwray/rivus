@@ -37,7 +37,13 @@ const NO_INPUT = "I didn't catch anything — call back anytime. Goodbye!";
 const NOT_IN_SERVICE = "Sorry, this number isn't in service. Goodbye!";
 const ANONYMOUS =
 	"Sorry, we can't take calls from restricted or anonymous numbers. Please call back with caller I D enabled. Goodbye!";
-// Spoken instead of a JSON 500: Plivo drops the call abruptly on non-XML.
+// Spoken with HTTP 200 instead of erroring — deliberately. These webhooks are
+// call-flow ACTION URLs, not async status callbacks: the response XML drives a
+// live call, so a non-200 buys no durable retry (Plivo's retry-on-non-200
+// applies to status callbacks like hangup_url; a live caller can't be parked
+// while the service recovers). Erroring would replace this polite goodbye with
+// Plivo's generic mid-call failure handling; "call back in a few minutes" IS
+// the retry path for a human on the phone.
 const APOLOGY =
 	'Sorry, something went wrong on our end. Please call back in a few minutes. Goodbye!';
 
