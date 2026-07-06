@@ -14,19 +14,18 @@ import { plivoOwnedIdentifier } from '../services/plivo';
  * assign a customer-facing number and stores it on the account (idempotent — a
  * re-enable never re-provisions); disabling turns the channel off but retains the
  * number so re-enabling restores the same one. Email isn't here (its address is
- * derived, always on); WhatsApp and SMS are provisionable, voice is reserved.
+ * derived, always on); WhatsApp, SMS, and voice are all provisionable.
  *
- * One number, every channel: when a channel is enabled and its sibling already
+ * One number, every channel: when a channel is enabled and a sibling already
  * holds a Plivo-owned number, that number is adopted instead of renting a
- * second one — Plivo fronts WhatsApp and SMS (and later voice) on the same
- * number. Numbers Plivo does not own (zernio's, the dev fakes) are never
+ * second one — Plivo fronts WhatsApp, SMS, and voice on the same number. Numbers Plivo does not own (zernio's, the dev fakes) are never
  * shared onto a channel Plivo would have to send from.
  */
 
 const channelParamsSchema = z.object({ channel: provisionedChannelSchema });
 
-/** The channels an owner can provision today (voice is schema-ready, not built). */
-const PROVISIONABLE = ['whatsapp', 'sms'] as const;
+/** The channels an owner can provision today. */
+const PROVISIONABLE = ['whatsapp', 'sms', 'voice'] as const;
 type ProvisionableChannel = (typeof PROVISIONABLE)[number];
 
 function isProvisionable(channel: string): channel is ProvisionableChannel {
@@ -39,10 +38,8 @@ function isProvisionable(channel: string): channel is ProvisionableChannel {
  */
 function providerConfigured(config: Config, channel: ProvisionableChannel): boolean {
 	const plivo = Boolean(config.PLIVO_AUTH_ID && config.PLIVO_AUTH_TOKEN);
-	if (channel === 'sms') {
-		return plivo;
-	}
-	return plivo || Boolean(config.ZERNIO_API_KEY);
+	// Only WhatsApp has an alternative provider (zernio); SMS and voice are Plivo-only.
+	return channel === 'whatsapp' ? plivo || Boolean(config.ZERNIO_API_KEY) : plivo;
 }
 
 /**
@@ -78,9 +75,12 @@ export const accountChannelRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
 	const { accounts, config, whatsappProvisioner, smsProvisioner } = app.deps;
 
+	// Voice rides the same Plivo (or no-op) provisioner as SMS: both are
+	// plain rented numbers; only WhatsApp can route to an alternative provider.
 	const provisioners: Record<ProvisionableChannel, ChannelProvisioner> = {
 		whatsapp: whatsappProvisioner,
 		sms: smsProvisioner,
+		voice: smsProvisioner,
 	};
 
 	app.post(

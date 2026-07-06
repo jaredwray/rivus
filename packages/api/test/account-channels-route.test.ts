@@ -104,7 +104,7 @@ describe('account channel provisioning', () => {
 		expect(me.json().account.channels.whatsapp.enabled).toBe(false);
 	});
 
-	it('rejects an unknown channel (400) and a not-yet-available one (400)', async () => {
+	it('rejects an unknown channel (400)', async () => {
 		app = await buildTestApp();
 		const owner = await signupOwner(app);
 		const unknown = await app.inject({
@@ -113,12 +113,19 @@ describe('account channel provisioning', () => {
 			headers: authHeader(owner.token),
 		});
 		expect(unknown.statusCode).toBe(400);
-		const notYet = await app.inject({
+	});
+
+	it('provisions voice like the other channels', async () => {
+		app = await buildTestApp();
+		const owner = await signupOwner(app);
+		const enabled = await app.inject({
 			method: 'POST',
 			url: '/v1/account/channels/voice/enable',
 			headers: authHeader(owner.token),
 		});
-		expect(notYet.statusCode).toBe(400);
+		expect(enabled.statusCode).toBe(200);
+		expect(enabled.json().channels.voice.enabled).toBe(true);
+		expect(enabled.json().channels.voice.address).toMatch(/^\+1555\d{7}$/);
 	});
 
 	it('provisions, disables, and restores an SMS number like WhatsApp', async () => {
@@ -221,6 +228,24 @@ describe('one Plivo number shared across channels', () => {
 			headers: authHeader(accountB.token),
 		});
 		expect(me.json().account.channels.sms.enabled).toBe(false);
+	});
+
+	it('enabling voice adopts the account’s Plivo-owned messaging number', async () => {
+		const { app: built, repos } = await buildTestAppWithRepos();
+		app = built;
+		const owner = await signupOwner(app);
+		await repos.accounts.setChannelConfig(owner.account.id as AccountId, 'sms', {
+			enabled: true,
+			address: '+14155550103',
+			providerRef: '14155550103',
+		});
+		const res = await app.inject({
+			method: 'POST',
+			url: '/v1/account/channels/voice/enable',
+			headers: authHeader(owner.token),
+		});
+		expect(res.statusCode).toBe(200);
+		expect(res.json().channels.voice).toMatchObject({ enabled: true, address: '+14155550103' });
 	});
 
 	it('never shares a number Plivo does not own (zernio ids, dev fakes)', async () => {

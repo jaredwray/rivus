@@ -130,6 +130,9 @@ export default function SettingsScreen() {
 	const [smsBusy, setSmsBusy] = useState(false);
 	const [smsError, setSmsError] = useState<string | null>(null);
 
+	const [voiceBusy, setVoiceBusy] = useState(false);
+	const [voiceError, setVoiceError] = useState<string | null>(null);
+
 	const [confirmingCancel, setConfirmingCancel] = useState(false);
 	const [canceling, setCanceling] = useState(false);
 	const [cancelError, setCancelError] = useState<string | null>(null);
@@ -246,6 +249,7 @@ export default function SettingsScreen() {
 
 	const whatsapp = session.account.channels.whatsapp;
 	const sms = session.account.channels.sms;
+	const voice = session.account.channels.voice;
 
 	async function onToggleWhatsapp(next: string) {
 		const enabled = next === 'on';
@@ -279,6 +283,24 @@ export default function SettingsScreen() {
 			setSmsError(messageFor(caught, `Could not ${enabled ? 'enable' : 'disable'} texting.`));
 		} finally {
 			setSmsBusy(false);
+		}
+	}
+
+	async function onToggleVoice(next: string) {
+		const enabled = next === 'on';
+		if (voiceBusy || enabled === voice.enabled) {
+			return;
+		}
+		setVoiceError(null);
+		setVoiceBusy(true);
+		try {
+			// Enabling provisions a number on the first call (reusing the WhatsApp/SMS
+			// number when the channels share one); the session updates in place.
+			await setChannelEnabled('voice', enabled);
+		} catch (caught) {
+			setVoiceError(messageFor(caught, `Could not ${enabled ? 'enable' : 'disable'} phone calls.`));
+		} finally {
+			setVoiceBusy(false);
 		}
 	}
 
@@ -402,6 +424,29 @@ export default function SettingsScreen() {
 					<CopyField label="Your SMS number" value={sms.address} />
 				) : null}
 				{smsError ? <Txt style={styles.errorTxt}>{smsError}</Txt> : null}
+			</Card>
+
+			<Card style={styles.card}>
+				<SectionLabel>Phone calls</SectionLabel>
+				<Txt style={styles.agentEmailHint}>
+					Customers can call this number — Rivus answers, offers open times, and books them. Turn it
+					on to get a number; calls share one number with WhatsApp and texting.
+				</Txt>
+				<View style={styles.whatsappRow}>
+					<Segmented
+						options={[
+							{ label: 'Off', value: 'off' },
+							{ label: 'On', value: 'on' },
+						]}
+						value={voice.enabled ? 'on' : 'off'}
+						onChange={onToggleVoice}
+					/>
+					{voiceBusy ? <ActivityIndicator color={colors.brandPurple} /> : null}
+				</View>
+				{voice.enabled && voice.address ? (
+					<CopyField label="Your phone number" value={voice.address} />
+				) : null}
+				{voiceError ? <Txt style={styles.errorTxt}>{voiceError}</Txt> : null}
 			</Card>
 
 			<Card style={styles.card}>

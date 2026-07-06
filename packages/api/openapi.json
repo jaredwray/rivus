@@ -1246,6 +1246,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -4668,6 +4678,104 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentChannelWebhookResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/channels/voice/plivo/answer": {
+      "post": {
+        "summary": "Plivo voice webhook — answers an inbound call (answer_url)",
+        "tags": [
+          "channels"
+        ],
+        "description": "Plivo requests this URL when someone calls the account’s provisioned number (the application’s answer_url, answer_method POST). The response XML greets the caller and listens for speech; each utterance is transcribed and posted to the input webhook. Deliveries are authenticated with Plivo’s V2 signature headers when PLIVO_AUTH_TOKEN is configured.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/channels/voice/plivo/input": {
+      "post": {
+        "summary": "Plivo voice webhook — one transcribed caller utterance (GetInput action)",
+        "tags": [
+          "channels"
+        ],
+        "description": "GetInput posts each transcribed utterance here. The utterance runs through the same channel-agnostic scheduling orchestrator as every other channel (threads, inbox mirroring as a phone conversation, booking); the response XML speaks the agent’s reply and either listens for the next turn or ends the call on a terminal outcome.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
