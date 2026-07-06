@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { type AccountId, normalizePhone } from '@rivus/core';
+import { type AccountChannelConfig, type AccountId, normalizePhone } from '@rivus/core';
 import { z } from 'zod';
 import type { Config } from '../config';
 import {
@@ -8,17 +8,19 @@ import {
 	type ProvisionedIdentifier,
 } from './channel-provisioning';
 import type { FetchLike } from './resend-mailer';
+import { NoopSmsSender, type SmsMessage, type SmsSender } from './sms';
 import { NoopWhatsappSender, type WhatsappMessage, type WhatsappSender } from './whatsapp';
 
 /**
- * The Plivo adapter for the WhatsApp seams — the only module that knows Plivo's
- * wire format. Plivo fronts the same Messages API for SMS, MMS, and WhatsApp
- * (`type` selects the channel), which is why it's Rivus's primary provider: the
- * SMS and voice channels can later ride the same account, the same rented
- * number, and near-identical adapters. Like `ZernioWhatsappSender` (kept as an
- * alternative provider) and `ResendMailer`, it calls the documented REST
- * endpoints with `fetch`, so it adds no dependency and is trivially faked in
- * tests.
+ * The Plivo adapter for the messaging seams — the only module that knows
+ * Plivo's wire format. Plivo fronts the same Messages API for SMS, MMS, and
+ * WhatsApp (`type` selects the channel), which is why it's Rivus's primary
+ * provider: the WhatsApp and SMS senders below differ by one request field,
+ * both channels share the one number `PlivoProvisioner` rents, and voice can
+ * later ride the same account. Like `ZernioWhatsappSender` (kept as an
+ * alternative WhatsApp provider) and `ResendMailer`, it calls the documented
+ * REST endpoints with `fetch`, so it adds no dependency and is trivially faked
+ * in tests.
  *
  * Wire format sources: Plivo's Messages API and Numbers API references, and the
  * signature algorithm from Plivo's published node SDK (`validateSignature`).
@@ -103,7 +105,12 @@ export function verifyPlivoSignature(options: {
 	});
 }
 
-export class PlivoWhatsappSender implements WhatsappSender {
+/**
+ * The Messages-API transport both channel senders share: one endpoint, one auth
+ * header, one payload shape — only the `type` field and the status-callback URL
+ * (each channel's own webhook) differ per channel.
+ */
+class PlivoMessageTransport {
 	private readonly endpoint: string;
 	private readonly headers: Record<string, string>;
 	private readonly statusCallbackUrl: string;
@@ -116,21 +123,18 @@ export class PlivoWhatsappSender implements WhatsappSender {
 		this.fetchImpl = options.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
 	}
 
-	/**
-	 * Send a free-form WhatsApp text. Meta only allows free-form messages inside
-	 * the 24-hour customer-service window, which every agent send satisfies (the
-	 * customer always messages first, and inbox reply-out answers an open
-	 * conversation). TODO(plivo): add templated sends when Rivus initiates
-	 * conversations (reminders, review requests) outside the window.
-	 */
-	async sendMessage(message: WhatsappMessage): Promise<void> {
+	protected async post(
+		message: { from: string; to: string; text: string },
+		type: 'whatsapp' | 'sms',
+		label: string,
+	): Promise<void> {
 		const body: Record<string, string> = {
 			src: message.from,
 			dst: message.to,
-			type: 'whatsapp',
+			type,
 			text: message.text,
 		};
-		// Delivery reports come back to the webhook so failures flag the inbox.
+		// Delivery reports come back to the channel's webhook so failures flag the inbox.
 		if (this.statusCallbackUrl !== '') {
 			body.url = this.statusCallbackUrl;
 		}
@@ -142,9 +146,35 @@ export class PlivoWhatsappSender implements WhatsappSender {
 		if (!response.ok) {
 			const detail = await response.text().catch(() => '');
 			throw new Error(
-				`Plivo rejected the WhatsApp message (status ${response.status})${detail ? `: ${detail}` : ''}`,
+				`Plivo rejected the ${label} message (status ${response.status})${detail ? `: ${detail}` : ''}`,
 			);
 		}
+	}
+}
+
+export class PlivoWhatsappSender extends PlivoMessageTransport implements WhatsappSender {
+	/**
+	 * Send a free-form WhatsApp text. Meta only allows free-form messages inside
+	 * the 24-hour customer-service window, which every agent send satisfies (the
+	 * customer always messages first, and inbox reply-out answers an open
+	 * conversation). TODO(plivo): add templated sends when Rivus initiates
+	 * conversations (reminders, review requests) outside the window.
+	 */
+	async sendMessage(message: WhatsappMessage): Promise<void> {
+		await this.post(message, 'whatsapp', 'WhatsApp');
+	}
+}
+
+export class PlivoSmsSender extends PlivoMessageTransport implements SmsSender {
+	/**
+	 * Send an SMS. Long messages concatenate into segments on Plivo's side; the
+	 * SMS channel's renderer caps length, so a text never exceeds the segment
+	 * budget. Unlike WhatsApp there is no session window — but the agent still
+	 * only ever replies, and US A2P traffic needs the number registered for
+	 * 10DLC in the Plivo console before carriers accept it.
+	 */
+	async sendMessage(message: SmsMessage): Promise<void> {
+		await this.post(message, 'sms', 'SMS');
 	}
 }
 
@@ -243,21 +273,22 @@ export class PlivoProvisioner implements ChannelProvisioner {
 			);
 		}
 		const parsed = buyResponseSchema.safeParse(JSON.parse(await response.text()));
-		const status = parsed.success ? (parsed.data.numbers[0]?.status ?? '') : '';
-		if (status.toLowerCase() !== 'success') {
+		const status = (parsed.success ? (parsed.data.numbers[0]?.status ?? '') : '').toLowerCase();
+		// Countries that require verification documents answer `pending`: the rental
+		// HAS been placed and activates when compliance clears. Treat it as rented —
+		// throwing here would drop the providerRef after money moved, and the next
+		// enable attempt would buy a second number.
+		if (status !== 'success' && status !== 'pending') {
 			throw new Error(`Plivo did not confirm the rental of ${number} (status "${status}").`);
 		}
 	}
 }
 
-type PlivoConfig = Pick<
-	Config,
-	'PLIVO_AUTH_ID' | 'PLIVO_AUTH_TOKEN' | 'PLIVO_API_URL' | 'PLIVO_WEBHOOK_URL'
->;
+type PlivoCredentials = Pick<Config, 'PLIVO_AUTH_ID' | 'PLIVO_AUTH_TOKEN' | 'PLIVO_API_URL'>;
 
 /** A WhatsApp sender for the config: real Plivo when credentials are present, else a no-op. */
 export function createPlivoWhatsappSender(
-	config: PlivoConfig,
+	config: PlivoCredentials & Pick<Config, 'PLIVO_WEBHOOK_URL'>,
 	fetchImpl?: FetchLike,
 ): WhatsappSender {
 	if (!config.PLIVO_AUTH_ID || !config.PLIVO_AUTH_TOKEN) {
@@ -272,9 +303,26 @@ export function createPlivoWhatsappSender(
 	});
 }
 
+/** An SMS sender for the config: real Plivo when credentials are present, else a no-op. */
+export function createPlivoSmsSender(
+	config: PlivoCredentials & Pick<Config, 'PLIVO_SMS_WEBHOOK_URL'>,
+	fetchImpl?: FetchLike,
+): SmsSender {
+	if (!config.PLIVO_AUTH_ID || !config.PLIVO_AUTH_TOKEN) {
+		return new NoopSmsSender();
+	}
+	return new PlivoSmsSender({
+		authId: config.PLIVO_AUTH_ID,
+		authToken: config.PLIVO_AUTH_TOKEN,
+		apiUrl: config.PLIVO_API_URL,
+		statusCallbackUrl: config.PLIVO_SMS_WEBHOOK_URL,
+		fetchImpl,
+	});
+}
+
 /** A channel provisioner for the config: real Plivo when credentials are present, else a no-op. */
 export function createPlivoProvisioner(
-	config: PlivoConfig & Pick<Config, 'PLIVO_NUMBER_COUNTRY'>,
+	config: PlivoCredentials & Pick<Config, 'PLIVO_NUMBER_COUNTRY'>,
 	fetchImpl?: FetchLike,
 ): ChannelProvisioner {
 	if (!config.PLIVO_AUTH_ID || !config.PLIVO_AUTH_TOKEN) {
@@ -287,4 +335,23 @@ export function createPlivoProvisioner(
 		numberCountry: config.PLIVO_NUMBER_COUNTRY,
 		fetchImpl,
 	});
+}
+
+/**
+ * The identifier a channel config holds **iff Plivo owns its number** — the
+ * fingerprint is `providerRef` being exactly the address's bare digits, which
+ * is what {@link PlivoProvisioner} stores and no other provisioner does (zernio
+ * keeps its own opaque id, the no-op stores `'noop'`). The channel-enable route
+ * uses this to give a channel its sibling's Plivo number instead of renting a
+ * second one — the one-number-across-channels story — while numbers Plivo does
+ * not own are never shared onto a channel Plivo would have to send from.
+ */
+export function plivoOwnedIdentifier(config: AccountChannelConfig): ProvisionedIdentifier | null {
+	if (config.address === '' || config.providerRef === '') {
+		return null;
+	}
+	if (config.providerRef !== config.address.replace(/^\+/, '')) {
+		return null;
+	}
+	return { address: config.address, providerRef: config.providerRef };
 }

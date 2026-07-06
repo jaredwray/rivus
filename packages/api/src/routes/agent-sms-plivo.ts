@@ -4,25 +4,26 @@ import { z } from 'zod';
 import { errorResponseSchema } from '../http-schemas';
 import { defaultCapabilities } from '../services/agent/capabilities';
 import { parsePlivoInbound } from '../services/agent/plivo-inbound';
-import { createWhatsappChannelAdapter } from '../services/agent/whatsapp/adapter';
+import { createSmsChannelAdapter } from '../services/agent/sms/adapter';
 import { channelWebhookResponseSchema, dispatchPhoneChannelEvent } from './agent-phone-shared';
 import { plivoFormBodyParser, plivoWebhookAuthHook } from './plivo-webhook-auth';
 
 /**
- * The Plivo edge of the scheduling agent's WhatsApp channel. Plivo posts two
- * kinds of deliveries here: inbound customer messages (the webhook configured
- * on the WhatsApp Business Account in the Plivo console) and delivery reports
- * for Rivus's own sends (the callback URL the sender attaches to every
- * message). This route owns only the Plivo-specific edges — the shared V2
- * signature gate and the payload shape, including Plivo's form-encoded
- * variant — then hands the canonical event to {@link dispatchPhoneChannelEvent},
- * the same shared body the zernio and SMS routes use.
+ * The Plivo edge of the scheduling agent's SMS channel — the mirror of the
+ * Plivo WhatsApp route. Plivo posts two kinds of deliveries here: inbound
+ * customer texts (the message_url configured on the number's Plivo
+ * application) and delivery reports for Rivus's own sends (the callback URL
+ * the sender attaches to every message). The route owns only the Plivo
+ * edges — the shared V2 signature gate and payload shape — then hands the
+ * canonical event to {@link dispatchPhoneChannelEvent}, so SMS inherits
+ * scheduling, the inbox, FAQ drafts, and delivery-failure handling with no
+ * channel-specific feature code.
  *
  * Everything unactionable answers `200 {handled:false}` (never a non-2xx that
  * would make Plivo redeliver something that will never become actionable).
  */
 
-export const agentWhatsappPlivoRoutes: FastifyPluginAsync = async (fastify) => {
+export const agentSmsPlivoRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
 	const {
 		config,
@@ -32,11 +33,11 @@ export const agentWhatsappPlivoRoutes: FastifyPluginAsync = async (fastify) => {
 		agentThreads,
 		memberships,
 		notifier,
-		whatsappSender,
+		smsSender,
 		jobs,
 	} = app.deps;
 
-	const adapter = createWhatsappChannelAdapter({ customers, sender: whatsappSender });
+	const adapter = createSmsChannelAdapter({ customers, sender: smsSender });
 	const capabilities = defaultCapabilities();
 	const dispatchDeps = {
 		config,
@@ -53,21 +54,21 @@ export const agentWhatsappPlivoRoutes: FastifyPluginAsync = async (fastify) => {
 		{ parseAs: 'string' },
 		plivoFormBodyParser,
 	);
-	app.addHook('onRequest', plivoWebhookAuthHook(app, config.PLIVO_WEBHOOK_URL));
+	app.addHook('onRequest', plivoWebhookAuthHook(app, config.PLIVO_SMS_WEBHOOK_URL));
 
 	app.post(
-		'/whatsapp/plivo/inbound',
+		'/sms/plivo/inbound',
 		{
 			schema: {
 				tags: ['channels'],
-				summary: 'Plivo WhatsApp webhook (inbound customer messages + delivery status)',
+				summary: 'Plivo SMS webhook (inbound customer texts + delivery status)',
 				description:
-					'Plivo delivers WhatsApp events for the account’s provisioned business ' +
-					'number here: inbound customer messages, and delivery reports for messages ' +
-					'Rivus sent (the sender passes this URL as the status callback). On an ' +
-					'inbound message Rivus validates the sender against the account’s customers ' +
-					'(by phone), keeps the multi-turn scheduling state on the thread, and replies ' +
-					'over WhatsApp. On a failed delivery it flags the conversation for a human. ' +
+					'Plivo delivers SMS events for the account’s provisioned number here: ' +
+					'inbound customer texts, and delivery reports for messages Rivus sent ' +
+					'(the sender passes this URL as the status callback). On an inbound text ' +
+					'Rivus validates the sender against the account’s customers (by phone), ' +
+					'keeps the multi-turn scheduling state on the thread, and replies over ' +
+					'SMS. On a failed delivery it flags the conversation for a human. ' +
 					'Deliveries are authenticated with Plivo’s V2 signature headers when ' +
 					'PLIVO_AUTH_TOKEN is configured.',
 				body: z.unknown(),
@@ -79,7 +80,7 @@ export const agentWhatsappPlivoRoutes: FastifyPluginAsync = async (fastify) => {
 			},
 		},
 		async (request) => {
-			const result = parsePlivoInbound(request.body, 'whatsapp');
+			const result = parsePlivoInbound(request.body, 'sms');
 			if (result.kind === 'unrecognized') {
 				return { handled: false, outcome: 'unrecognized_payload' };
 			}
@@ -88,7 +89,7 @@ export const agentWhatsappPlivoRoutes: FastifyPluginAsync = async (fastify) => {
 			}
 			return dispatchPhoneChannelEvent({
 				deps: dispatchDeps,
-				channel: 'whatsapp',
+				channel: 'sms',
 				adapter,
 				capabilities,
 				event: result.event,

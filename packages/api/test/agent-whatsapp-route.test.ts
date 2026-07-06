@@ -13,6 +13,7 @@ import { signZernioPayload } from '../src/services/zernio-whatsapp';
 import {
 	buildTestAppWithRepos,
 	RecordingMailer,
+	RecordingSmsSender,
 	RecordingWhatsappSender,
 	signupOwner,
 } from './helpers';
@@ -269,6 +270,8 @@ function buildWhatsappApp(extraConfig: Record<string, string> = {}): FastifyInst
 		receivedEmails: new NoopReceivedEmailReader(),
 		whatsappSender: new RecordingWhatsappSender(),
 		whatsappProvisioner: new NoopChannelProvisioner(),
+		smsSender: new RecordingSmsSender(),
+		smsProvisioner: new NoopChannelProvisioner(),
 		notifier: createNotificationService({ notifications: repos.notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),

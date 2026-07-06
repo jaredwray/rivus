@@ -5,7 +5,6 @@ import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
 import { createInMemoryRepositories } from '../src/repositories/memory';
 import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
-import { type PlivoInboundResult, parsePlivoInbound } from '../src/services/agent/plivo-inbound';
 import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
@@ -19,37 +18,35 @@ import {
 	signupOwner,
 } from './helpers';
 
-const WEBHOOK_URL = '/v1/channels/whatsapp/plivo/inbound';
-// The account's business number is stored `+`-formed; Plivo delivers bare digits.
-const BIZ = '+15550001111';
-const BIZ_PLIVO = '15550001111';
+const WEBHOOK_URL = '/v1/channels/sms/plivo/inbound';
+// The account's number is stored `+`-formed; Plivo delivers bare digits.
+const BIZ = '+15550002222';
+const BIZ_PLIVO = '15550002222';
 const SENDER = '+15559990000';
 const SENDER_PLIVO = '15559990000';
 
-/** A Plivo-shaped inbound WhatsApp text delivery. */
+/** A Plivo-shaped inbound SMS delivery (SMS payloads carry `Text`, no ContentType). */
 function inbound(overrides: Record<string, string> = {}) {
 	return {
 		From: SENDER_PLIVO,
 		To: BIZ_PLIVO,
-		Type: 'whatsapp',
-		ContentType: 'text',
-		Body: 'Hi there',
-		MessageUUID: 'plivo-msg-001',
-		ProfileName: 'Dana',
+		Type: 'sms',
+		Text: 'Hi there',
+		MessageUUID: 'plivo-sms-001',
 		...overrides,
 	};
 }
 
-function sender(app: FastifyInstance): RecordingWhatsappSender {
-	return app.deps.whatsappSender as RecordingWhatsappSender;
+function sender(app: FastifyInstance): RecordingSmsSender {
+	return app.deps.smsSender as RecordingSmsSender;
 }
 
-/** Build an app + repos and enable WhatsApp on the signed-up owner's account. */
+/** Build an app + repos and enable SMS on the signed-up owner's account. */
 async function setup() {
 	const { app, repos } = await buildTestAppWithRepos();
 	const owner = await signupOwner(app);
 	const accountId = owner.account.id as AccountId;
-	await repos.accounts.setChannelConfig(accountId, 'whatsapp', {
+	await repos.accounts.setChannelConfig(accountId, 'sms', {
 		enabled: true,
 		address: BIZ,
 		providerRef: BIZ_PLIVO,
@@ -57,14 +54,14 @@ async function setup() {
 	return { app, repos, accountId, owner };
 }
 
-describe('POST /v1/channels/whatsapp/plivo/inbound', () => {
+describe('POST /v1/channels/sms/plivo/inbound', () => {
 	let app: FastifyInstance | undefined;
 	afterEach(async () => {
 		await app?.close();
 		app = undefined;
 	});
 
-	it('ignores a message to a number no account has provisioned', async () => {
+	it('ignores a text to a number no account has provisioned', async () => {
 		const built = await setup();
 		app = built.app;
 		const res = await app.inject({
@@ -78,7 +75,7 @@ describe('POST /v1/channels/whatsapp/plivo/inbound', () => {
 	it('acknowledges without replying when the channel is disabled', async () => {
 		const { app: built, repos, accountId } = await setup();
 		app = built;
-		await repos.accounts.setChannelConfig(accountId, 'whatsapp', {
+		await repos.accounts.setChannelConfig(accountId, 'sms', {
 			enabled: false,
 			address: BIZ,
 			providerRef: BIZ_PLIVO,
@@ -88,7 +85,7 @@ describe('POST /v1/channels/whatsapp/plivo/inbound', () => {
 		expect(sender(app).messages).toHaveLength(0);
 	});
 
-	it('sends an unknown sender a signup link prefilled with their phone', async () => {
+	it('sends an unknown sender a signup link prefilled with their phone, over SMS', async () => {
 		const built = await setup();
 		app = built.app;
 		const res = await app.inject({ method: 'POST', url: WEBHOOK_URL, payload: inbound() });
@@ -97,9 +94,11 @@ describe('POST /v1/channels/whatsapp/plivo/inbound', () => {
 		expect(sent?.from).toBe(BIZ);
 		expect(sent?.to).toBe(SENDER);
 		expect(sent?.text).toContain(`phone=${encodeURIComponent(SENDER)}`);
+		// The reply left over SMS, not WhatsApp.
+		expect((app.deps.whatsappSender as RecordingWhatsappSender).messages).toHaveLength(0);
 	});
 
-	it('books a slot for a recognized customer over two Plivo turns', async () => {
+	it('books a slot for a recognized customer over two texts', async () => {
 		const { app: built, repos, accountId } = await setup();
 		app = built;
 		await repos.customers.create(accountId, {
@@ -114,29 +113,31 @@ describe('POST /v1/channels/whatsapp/plivo/inbound', () => {
 		const offer = await app.inject({
 			method: 'POST',
 			url: WEBHOOK_URL,
-			payload: inbound({ Body: 'When are you free?', MessageUUID: 'plivo-msg-a' }),
+			payload: inbound({ Text: 'When are you free?', MessageUUID: 'plivo-sms-a' }),
 		});
 		expect(offer.json()).toEqual({ handled: true, outcome: 'offer_slots' });
 		expect(sender(app).messages.at(-1)?.text).toContain('1.');
 		const book = await app.inject({
 			method: 'POST',
 			url: WEBHOOK_URL,
-			payload: inbound({ Body: '1', MessageUUID: 'plivo-msg-b' }),
+			payload: inbound({ Text: '1', MessageUUID: 'plivo-sms-b' }),
 		});
 		expect(book.json()).toEqual({ handled: true, outcome: 'book' });
 		const { total } = await repos.jobs.list({ accountId, page: 1, pageSize: 10 });
 		expect(total).toBe(1);
+		const thread = await repos.agentThreads.findByContact(accountId, 'sms', SENDER);
+		expect(thread).not.toBeNull();
 	});
 
-	it('accepts Plivo’s form-encoded variant (SMS-shaped Text field)', async () => {
+	it('accepts the form-encoded variant', async () => {
 		const built = await setup();
 		app = built.app;
 		const body = new URLSearchParams({
 			From: SENDER_PLIVO,
 			To: BIZ_PLIVO,
-			Type: 'whatsapp',
+			Type: 'sms',
 			Text: 'Hi there',
-			MessageUUID: 'plivo-msg-form',
+			MessageUUID: 'plivo-sms-form',
 		});
 		const res = await app.inject({
 			method: 'POST',
@@ -148,7 +149,7 @@ describe('POST /v1/channels/whatsapp/plivo/inbound', () => {
 		expect(sender(app).messages.at(-1)?.to).toBe(SENDER);
 	});
 
-	it('ignores an exact redelivery of an already-processed message', async () => {
+	it('ignores an exact redelivery of an already-processed text', async () => {
 		const built = await setup();
 		app = built.app;
 		const first = await app.inject({ method: 'POST', url: WEBHOOK_URL, payload: inbound() });
@@ -157,7 +158,7 @@ describe('POST /v1/channels/whatsapp/plivo/inbound', () => {
 		expect(second.json()).toEqual({ handled: false, outcome: 'duplicate_delivery' });
 	});
 
-	it('refuses to converse with any account’s own business number (loop guard)', async () => {
+	it('refuses to converse with any account’s own SMS number (loop guard)', async () => {
 		const built = await setup();
 		app = built.app;
 		const res = await app.inject({
@@ -168,59 +169,72 @@ describe('POST /v1/channels/whatsapp/plivo/inbound', () => {
 		expect(res.json()).toEqual({ handled: false, outcome: 'own_number' });
 	});
 
-	it('declines media, location, and button deliveries (text only)', async () => {
+	it('declines an MMS (no text body)', async () => {
 		const built = await setup();
 		app = built.app;
 		const res = await app.inject({
 			method: 'POST',
 			url: WEBHOOK_URL,
-			payload: inbound({ ContentType: 'media', Body: '' }),
+			payload: inbound({ Type: 'mms', Text: '' }),
 		});
-		expect(res.json()).toEqual({ handled: false, outcome: 'unsupported_message_type' });
+		// An mms-typed delivery is not this hook's channel: recognized, ignored.
+		expect(res.json()).toEqual({ handled: false, outcome: 'ignored_event_type' });
+
+		const empty = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: inbound({ Text: '' }),
+		});
+		expect(empty.json()).toEqual({ handled: false, outcome: 'unsupported_message_type' });
 	});
 
-	it('ignores a non-WhatsApp (SMS) message on the hook', async () => {
+	it('ignores a WhatsApp message on the SMS hook', async () => {
 		const built = await setup();
 		app = built.app;
 		const res = await app.inject({
 			method: 'POST',
 			url: WEBHOOK_URL,
-			payload: inbound({ Type: 'sms' }),
+			payload: inbound({ Type: 'whatsapp' }),
 		});
 		expect(res.json()).toEqual({ handled: false, outcome: 'ignored_event_type' });
 	});
 
-	it('answers unrecognized payloads with 200 (never a retry storm)', async () => {
-		const built = await setup();
-		app = built.app;
-		const res = await app.inject({
-			method: 'POST',
-			url: WEBHOOK_URL,
-			payload: { hello: 'world' },
+	it('keeps the SMS and WhatsApp threads separate when both share one number', async () => {
+		const { app: built, repos, accountId } = await setup();
+		app = built;
+		// The same number provisioned on WhatsApp too (the shared-number setup).
+		await repos.accounts.setChannelConfig(accountId, 'whatsapp', {
+			enabled: true,
+			address: BIZ,
+			providerRef: BIZ_PLIVO,
 		});
-		expect(res.statusCode).toBe(200);
-		expect(res.json()).toEqual({ handled: false, outcome: 'unrecognized_payload' });
+		const res = await app.inject({ method: 'POST', url: WEBHOOK_URL, payload: inbound() });
+		expect(res.json()).toEqual({ handled: true, outcome: 'send_signup_link' });
+		// The inbound text landed on the SMS channel: an sms thread, an SMS reply.
+		expect(await repos.agentThreads.findByContact(accountId, 'sms', SENDER)).not.toBeNull();
+		expect(await repos.agentThreads.findByContact(accountId, 'whatsapp', SENDER)).toBeNull();
+		expect(sender(app).messages).toHaveLength(1);
+		expect((app.deps.whatsappSender as RecordingWhatsappSender).messages).toHaveLength(0);
 	});
 
-	it('flags the conversation when a delivery report says failed, ignores the rest', async () => {
+	it('flags the conversation when a delivery report says undelivered, ignores the rest', async () => {
 		const built = await setup();
 		app = built.app;
-		// Open a thread first (an unknown sender gets a signup link).
 		await app.inject({ method: 'POST', url: WEBHOOK_URL, payload: inbound() });
-		const delivered = await app.inject({
+		const sent = await app.inject({
 			method: 'POST',
 			url: WEBHOOK_URL,
-			payload: { From: BIZ_PLIVO, To: SENDER_PLIVO, Status: 'delivered', MessageUUID: 'm-out-1' },
+			payload: { From: BIZ_PLIVO, To: SENDER_PLIVO, Status: 'sent', MessageUUID: 'm-out-1' },
 		});
-		expect(delivered.json()).toEqual({ handled: false, outcome: 'ignored_event_type' });
+		expect(sent.json()).toEqual({ handled: false, outcome: 'ignored_event_type' });
 		const failed = await app.inject({
 			method: 'POST',
 			url: WEBHOOK_URL,
 			payload: {
 				From: BIZ_PLIVO,
 				To: SENDER_PLIVO,
-				Status: 'failed',
-				ErrorCode: 30008,
+				Status: 'undelivered',
+				ErrorCode: '30005',
 				MessageUUID: 'm-out-1',
 			},
 		});
@@ -231,9 +245,9 @@ describe('POST /v1/channels/whatsapp/plivo/inbound', () => {
 // --- Signature (separate config) ---------------------------------------------
 
 const AUTH_TOKEN = 'plivo-test-auth-token';
-const PINNED_URL = 'https://api.rivus.ai/v1/channels/whatsapp/plivo/inbound';
+const PINNED_URL = 'https://api.rivus.ai/v1/channels/sms/plivo/inbound';
 
-function buildPlivoApp(extraConfig: Record<string, string> = {}): FastifyInstance {
+function buildSmsApp(extraConfig: Record<string, string> = {}): FastifyInstance {
 	const repos = createInMemoryRepositories();
 	return buildApp({
 		config: loadConfig({
@@ -255,16 +269,16 @@ function buildPlivoApp(extraConfig: Record<string, string> = {}): FastifyInstanc
 	});
 }
 
-describe('POST /v1/channels/whatsapp/plivo/inbound — signature', () => {
+describe('POST /v1/channels/sms/plivo/inbound — signature', () => {
 	let app: FastifyInstance | undefined;
 	afterEach(async () => {
 		await app?.close();
 		app = undefined;
 	});
 
-	it('accepts a delivery signed for the pinned webhook URL and rejects the rest', async () => {
-		app = buildPlivoApp({ PLIVO_AUTH_TOKEN: AUTH_TOKEN, PLIVO_WEBHOOK_URL: PINNED_URL });
-		const nonce = '12345678901234567890';
+	it('accepts a delivery signed for the pinned SMS webhook URL and rejects the rest', async () => {
+		app = buildSmsApp({ PLIVO_AUTH_TOKEN: AUTH_TOKEN, PLIVO_SMS_WEBHOOK_URL: PINNED_URL });
+		const nonce = '2468013579';
 		const headers = {
 			'x-plivo-signature-v2-nonce': nonce,
 			'x-plivo-signature-v2': signPlivoUrl({ authToken: AUTH_TOKEN, url: PINNED_URL, nonce }),
@@ -273,56 +287,32 @@ describe('POST /v1/channels/whatsapp/plivo/inbound — signature', () => {
 		// Unknown account, but the signature passed (a 401 would mean it didn't).
 		expect(ok.json()).toEqual({ handled: false, outcome: 'unknown_account' });
 
-		const wrongNonce = await app.inject({
-			method: 'POST',
-			url: WEBHOOK_URL,
-			payload: inbound(),
-			headers: { ...headers, 'x-plivo-signature-v2-nonce': 'different-nonce' },
-		});
-		expect(wrongNonce.statusCode).toBe(401);
-
 		const unsigned = await app.inject({ method: 'POST', url: WEBHOOK_URL, payload: inbound() });
 		expect(unsigned.statusCode).toBe(401);
-	});
 
-	it('accepts the main-account signature header', async () => {
-		app = buildPlivoApp({ PLIVO_AUTH_TOKEN: AUTH_TOKEN, PLIVO_WEBHOOK_URL: PINNED_URL });
-		const nonce = '888777666555';
-		const res = await app.inject({
+		// A signature minted for the WhatsApp hook's URL never opens the SMS hook.
+		const crossChannel = await app.inject({
 			method: 'POST',
 			url: WEBHOOK_URL,
 			payload: inbound(),
 			headers: {
 				'x-plivo-signature-v2-nonce': nonce,
-				'x-plivo-signature-ma-v2': signPlivoUrl({ authToken: AUTH_TOKEN, url: PINNED_URL, nonce }),
+				'x-plivo-signature-v2': signPlivoUrl({
+					authToken: AUTH_TOKEN,
+					url: 'https://api.rivus.ai/v1/channels/whatsapp/plivo/inbound',
+					nonce,
+				}),
 			},
 		});
-		expect(res.json()).toEqual({ handled: false, outcome: 'unknown_account' });
+		expect(crossChannel.statusCode).toBe(401);
 	});
 
 	it('derives the signed URL from forwarding headers when none is pinned', async () => {
-		app = buildPlivoApp({ PLIVO_AUTH_TOKEN: AUTH_TOKEN });
-		const nonce = '424242424242';
+		app = buildSmsApp({ PLIVO_AUTH_TOKEN: AUTH_TOKEN });
+		const nonce = '1357924680';
 		const res = await app.inject({
 			method: 'POST',
 			url: WEBHOOK_URL,
-			payload: inbound(),
-			headers: {
-				'x-forwarded-proto': 'https',
-				'x-forwarded-host': 'api.rivus.ai',
-				'x-plivo-signature-v2-nonce': nonce,
-				'x-plivo-signature-v2': signPlivoUrl({ authToken: AUTH_TOKEN, url: PINNED_URL, nonce }),
-			},
-		});
-		expect(res.json()).toEqual({ handled: false, outcome: 'unknown_account' });
-	});
-
-	it('ignores the query string when verifying (Plivo signs the base URL)', async () => {
-		app = buildPlivoApp({ PLIVO_AUTH_TOKEN: AUTH_TOKEN });
-		const nonce = '10101010';
-		const res = await app.inject({
-			method: 'POST',
-			url: `${WEBHOOK_URL}?utm=plivo`,
 			payload: inbound(),
 			headers: {
 				'x-forwarded-proto': 'https',
@@ -335,12 +325,12 @@ describe('POST /v1/channels/whatsapp/plivo/inbound — signature', () => {
 	});
 
 	it('stays open when unconfigured outside production, and 503s in production', async () => {
-		app = buildPlivoApp();
+		app = buildSmsApp();
 		const open = await app.inject({ method: 'POST', url: WEBHOOK_URL, payload: inbound() });
 		expect(open.json()).toEqual({ handled: false, outcome: 'unknown_account' });
 		await app.close();
 
-		app = buildPlivoApp({
+		app = buildSmsApp({
 			NODE_ENV: 'production',
 			JWT_SECRET: 'x'.repeat(32),
 			RESEND_API_KEY: 're_test_key',
@@ -349,105 +339,5 @@ describe('POST /v1/channels/whatsapp/plivo/inbound — signature', () => {
 		});
 		const res = await app.inject({ method: 'POST', url: WEBHOOK_URL, payload: inbound() });
 		expect(res.statusCode).toBe(503);
-	});
-
-	it('503s in production on a partial credential pair (token without auth id)', async () => {
-		// The sender would be a no-op: verifying and "handling" deliveries would
-		// acknowledge messages into a black hole, so the route must refuse instead.
-		app = buildPlivoApp({
-			NODE_ENV: 'production',
-			JWT_SECRET: 'x'.repeat(32),
-			RESEND_API_KEY: 're_test_key',
-			LOG_LEVEL: 'silent',
-			CORS_ORIGIN: 'https://app.rivus.ai',
-			PLIVO_AUTH_TOKEN: AUTH_TOKEN,
-		});
-		const nonce = '31337';
-		const res = await app.inject({
-			method: 'POST',
-			url: WEBHOOK_URL,
-			payload: inbound(),
-			headers: {
-				'x-forwarded-proto': 'https',
-				'x-forwarded-host': 'api.rivus.ai',
-				'x-plivo-signature-v2-nonce': nonce,
-				'x-plivo-signature-v2': signPlivoUrl({ authToken: AUTH_TOKEN, url: PINNED_URL, nonce }),
-			},
-		});
-		expect(res.statusCode).toBe(503);
-	});
-});
-
-// --- Payload mapping edges the route tests don't reach ------------------------
-
-describe('parsePlivoInbound', () => {
-	function kind(result: PlivoInboundResult): string {
-		return result.kind;
-	}
-
-	it('maps SMS-shaped payloads (Text, no ContentType) to a text message', () => {
-		const result = parsePlivoInbound(
-			{ From: SENDER_PLIVO, To: BIZ_PLIVO, Text: 'hello' },
-			'whatsapp',
-		);
-		expect(result).toEqual({
-			kind: 'event',
-			event: {
-				type: 'whatsapp.message.received',
-				data: { to: BIZ, from: SENDER, text: 'hello', messageId: '', profileName: '' },
-			},
-		});
-	});
-
-	it('keeps `+`-formed numbers and stringifies numeric MessageUUIDs', () => {
-		const result = parsePlivoInbound(
-			{
-				From: SENDER,
-				To: BIZ,
-				Body: 'hi',
-				MessageUUID: 12345,
-			},
-			'whatsapp',
-		);
-		expect(result).toEqual({
-			kind: 'event',
-			event: {
-				type: 'whatsapp.message.received',
-				data: { to: BIZ, from: SENDER, text: 'hi', messageId: '12345', profileName: '' },
-			},
-		});
-	});
-
-	it('uses the status as the failure reason when there is no error code', () => {
-		const result = parsePlivoInbound(
-			{ From: BIZ_PLIVO, To: SENDER_PLIVO, Status: 'undelivered' },
-			'whatsapp',
-		);
-		expect(result).toEqual({
-			kind: 'event',
-			event: {
-				type: 'whatsapp.message.failed',
-				data: { from: BIZ, to: SENDER, reason: 'undelivered' },
-			},
-		});
-	});
-
-	it('ignores in-flight and successful delivery reports', () => {
-		for (const status of ['queued', 'sent', 'delivered', 'read', 'SENT']) {
-			expect(
-				kind(parsePlivoInbound({ From: BIZ_PLIVO, To: SENDER_PLIVO, Status: status }, 'whatsapp')),
-			).toBe('ignored');
-		}
-	});
-
-	it('rejects non-object and number-less payloads', () => {
-		expect(kind(parsePlivoInbound('a string', 'whatsapp'))).toBe('unrecognized');
-		expect(kind(parsePlivoInbound(null, 'whatsapp'))).toBe('unrecognized');
-		expect(kind(parsePlivoInbound({ From: 'garbage', To: BIZ_PLIVO, Body: 'x' }, 'whatsapp'))).toBe(
-			'unrecognized',
-		);
-		expect(kind(parsePlivoInbound({ From: SENDER_PLIVO, Body: 'x' }, 'whatsapp'))).toBe(
-			'unrecognized',
-		);
 	});
 });

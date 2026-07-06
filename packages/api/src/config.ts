@@ -81,14 +81,18 @@ const envSchema = z
 		PLIVO_AUTH_TOKEN: z.string().min(1).optional(),
 		// Base URL of Plivo's REST API; the account-scoped resource paths hang off it.
 		PLIVO_API_URL: z.url().default('https://api.plivo.com/v1'),
-		// The public URL of this API's Plivo webhook (…/v1/channels/whatsapp/plivo/inbound
-		// as reachable from the internet), i.e. the exact URL configured in the Plivo
-		// console. Used two ways: it pins the URL signature validation recomputes
-		// (Plivo signs the URL it calls, so a rewriting proxy in front of the API
-		// would otherwise break verification), and it rides along on every send as
-		// the delivery-status callback so failures flag the conversation. When unset,
-		// verification derives the URL from the request and sends carry no callback.
+		// The public URL of this API's Plivo *WhatsApp* webhook
+		// (…/v1/channels/whatsapp/plivo/inbound as reachable from the internet), i.e.
+		// the exact URL configured in the Plivo console. Used two ways: it pins the
+		// URL signature validation recomputes (Plivo signs the URL it calls, so a
+		// rewriting proxy in front of the API would otherwise break verification),
+		// and it rides along on every send as the delivery-status callback so
+		// failures flag the conversation. When unset, verification derives the URL
+		// from the request and sends carry no callback.
 		PLIVO_WEBHOOK_URL: z.url().optional(),
+		// The SMS counterpart: the public URL of …/v1/channels/sms/plivo/inbound,
+		// with the same two roles (signature pinning + per-send status callback).
+		PLIVO_SMS_WEBHOOK_URL: z.url().optional(),
 		// ISO 3166-1 alpha-2 country whose numbers the provisioner rents.
 		PLIVO_NUMBER_COUNTRY: z.string().length(2).default('US'),
 		// --- AI (duplicate-FAQ detection) ---

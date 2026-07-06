@@ -6,9 +6,10 @@ import type { ChannelAdapter } from '../src/services/agent/channel';
 import { createEmailChannelAdapter } from '../src/services/agent/email/adapter';
 import type { AgentDecision } from '../src/services/agent/engine';
 import { type AgentReplyContext, composeAgentResponse } from '../src/services/agent/response';
+import { createSmsChannelAdapter } from '../src/services/agent/sms/adapter';
 import { createWhatsappChannelAdapter } from '../src/services/agent/whatsapp/adapter';
 import type { AgentEmail, Mailer } from '../src/services/email';
-import { RecordingWhatsappSender } from './helpers';
+import { RecordingSmsSender, RecordingWhatsappSender } from './helpers';
 
 /**
  * The invariant that makes "a core feature ships on every channel" structural:
@@ -129,8 +130,15 @@ function whatsappChannel(): ChannelUnderTest {
 	return { name: 'whatsapp', adapter, lastRendered: () => sender.messages.at(-1)?.text ?? '' };
 }
 
+function smsChannel(): ChannelUnderTest {
+	const sender = new RecordingSmsSender();
+	const { customers } = createInMemoryRepositories();
+	const adapter = createSmsChannelAdapter({ customers, sender });
+	return { name: 'sms', adapter, lastRendered: () => sender.messages.at(-1)?.text ?? '' };
+}
+
 // Every channel with an outbound transport. Adding one here covers it for all decisions.
-const CHANNELS: Array<() => ChannelUnderTest> = [emailChannel, whatsappChannel];
+const CHANNELS: Array<() => ChannelUnderTest> = [emailChannel, whatsappChannel, smsChannel];
 
 describe('agent response render matrix (channels × decisions)', () => {
 	for (const makeChannel of CHANNELS) {

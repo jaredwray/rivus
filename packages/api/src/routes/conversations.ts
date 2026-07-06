@@ -117,11 +117,16 @@ export const conversationRoutes: FastifyPluginAsync = async (fastify) => {
 		if (!account) {
 			return;
 		}
-		// A disabled WhatsApp channel is off: record the reply but don't send it.
-		if (conversation.channel === 'whatsapp' && !account.channels.whatsapp.enabled) {
+		// A disabled channel is off: record the reply but don't send it. Applies to
+		// every provisioned channel with an on/off switch (whatsapp, sms — email has
+		// no toggle), so disabling a channel silences reply-out too, not just the agent.
+		if (
+			(conversation.channel === 'whatsapp' || conversation.channel === 'sms') &&
+			!account.channels[conversation.channel].enabled
+		) {
 			logger.warn(
-				{ conversationId: conversation.id },
-				'whatsapp channel is disabled; reply recorded but not sent',
+				{ conversationId: conversation.id, channel: conversation.channel },
+				'channel is disabled; reply recorded but not sent',
 			);
 			return;
 		}

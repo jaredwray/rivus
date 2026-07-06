@@ -10,6 +10,7 @@ import type { AgentEmail, InviteEmail, Mailer, VerificationEmail } from '../src/
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
+import type { SmsMessage, SmsSender } from '../src/services/sms';
 import type { WhatsappMessage, WhatsappSender } from '../src/services/whatsapp';
 import type { AppDeps } from '../src/types';
 
@@ -42,6 +43,21 @@ export class RecordingWhatsappSender implements WhatsappSender {
 		if (this.failNext) {
 			this.failNext = false;
 			throw new Error('WhatsApp send failed (test)');
+		}
+		this.messages.push(message);
+	}
+}
+
+/** An SMS sender that records every message so tests can assert on delivery. */
+export class RecordingSmsSender implements SmsSender {
+	readonly messages: SmsMessage[] = [];
+	/** When set, the next send rejects once (to exercise the booking-rollback path). */
+	failNext = false;
+
+	async sendMessage(message: SmsMessage): Promise<void> {
+		if (this.failNext) {
+			this.failNext = false;
+			throw new Error('SMS send failed (test)');
 		}
 		this.messages.push(message);
 	}
@@ -89,6 +105,8 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		receivedEmails: new NoopReceivedEmailReader(),
 		whatsappSender: new RecordingWhatsappSender(),
 		whatsappProvisioner: new NoopChannelProvisioner(),
+		smsSender: new RecordingSmsSender(),
+		smsProvisioner: new NoopChannelProvisioner(),
 		// A real notification service over the in-memory store, so route emission is
 		// exercised end-to-end in tests.
 		notifier: createNotificationService({ notifications }),
@@ -104,9 +122,10 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 
 /**
  * Build an app whose repositories are exposed, so a test can seed data directly
- * (e.g. a user with no membership) to exercise edge cases.
+ * (e.g. a user with no membership) to exercise edge cases. `overrides` swaps
+ * individual deps (e.g. a fake provisioner) on top of the defaults.
  */
-export async function buildTestAppWithRepos(): Promise<{
+export async function buildTestAppWithRepos(overrides: Partial<AppDeps> = {}): Promise<{
 	app: FastifyInstance;
 	repos: InMemoryRepositories;
 }> {
@@ -145,10 +164,13 @@ export async function buildTestAppWithRepos(): Promise<{
 		receivedEmails: new NoopReceivedEmailReader(),
 		whatsappSender: new RecordingWhatsappSender(),
 		whatsappProvisioner: new NoopChannelProvisioner(),
+		smsSender: new RecordingSmsSender(),
+		smsProvisioner: new NoopChannelProvisioner(),
 		notifier: createNotificationService({ notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
 		ping: async () => ({ ready: true }),
+		...overrides,
 	});
 	await app.ready();
 	return { app, repos };

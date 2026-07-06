@@ -20,9 +20,14 @@ import {
 import { createReceivedEmailReader } from './services/agent/email/received';
 import { createFaqAnswerService } from './services/faq-answer';
 import { createFaqSimilarityService } from './services/faq-similarity';
+import {
+	createSmsProvisioner,
+	createSmsSender,
+	createWhatsappProvisioner,
+	createWhatsappSender,
+} from './services/messaging-provider';
 import { createNotificationService } from './services/notifications';
 import { createMailer } from './services/resend-mailer';
-import { createWhatsappProvisioner, createWhatsappSender } from './services/whatsapp-provider';
 
 /** Connect to Mongo, build the app with Mongo-backed repositories, and listen. */
 export async function start(): Promise<void> {
@@ -49,6 +54,8 @@ export async function start(): Promise<void> {
 		receivedEmails: createReceivedEmailReader(config),
 		whatsappSender: createWhatsappSender(config),
 		whatsappProvisioner: createWhatsappProvisioner(config),
+		smsSender: createSmsSender(config),
+		smsProvisioner: createSmsProvisioner(config),
 		notifier: createNotificationService({ notifications }),
 		faqSimilarity: createFaqSimilarityService(config),
 		faqAnswer: createFaqAnswerService(config),
