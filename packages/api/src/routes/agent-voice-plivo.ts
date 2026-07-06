@@ -34,6 +34,18 @@ const TERMINAL_OUTCOMES = new Set(['book', 'confirm_existing', 'send_signup_link
 
 const GOODBYE = 'Thanks for calling. Goodbye!';
 const NO_INPUT = "I didn't catch anything — call back anytime. Goodbye!";
+const NOT_IN_SERVICE = "Sorry, this number isn't in service. Goodbye!";
+const ANONYMOUS =
+	"Sorry, we can't take calls from restricted or anonymous numbers. Please call back with caller I D enabled. Goodbye!";
+// Spoken with HTTP 200 instead of erroring — deliberately. These webhooks are
+// call-flow ACTION URLs, not async status callbacks: the response XML drives a
+// live call, so a non-200 buys no durable retry (Plivo's retry-on-non-200
+// applies to status callbacks like hangup_url; a live caller can't be parked
+// while the service recovers). Erroring would replace this polite goodbye with
+// Plivo's generic mid-call failure handling; "call back in a few minutes" IS
+// the retry path for a human on the phone.
+const APOLOGY =
+	'Sorry, something went wrong on our end. Please call back in a few minutes. Goodbye!';
 
 function xmlEscape(text: string): string {
 	return text
@@ -63,6 +75,35 @@ function listenDocument(prompt: string, actionUrl: string): string {
 		`<Speak>${xmlEscape(NO_INPUT)}</Speak>` +
 		'</Response>'
 	);
+}
+
+/** Word numbers ASR may emit where the menu says "Option 1". */
+const SPOKEN_NUMBERS: Record<string, string> = {
+	one: '1',
+	two: '2',
+	three: '3',
+	four: '4',
+	five: '5',
+	six: '6',
+	seven: '7',
+	eight: '8',
+	nine: '9',
+	ten: '10',
+};
+
+/**
+ * Voice-edge speech normalization: "option one" → "option 1" (also "number
+ * one"), so a spoken menu pick parses exactly like a typed one. Bare word
+ * numbers ("two") already parse in core; this only covers the phrasing the
+ * spoken menu itself invites.
+ */
+function normalizeSpeech(text: string): string {
+	return text
+		.trim()
+		.replace(
+			/\b(option|number)\s+(one|two|three|four|five|six|seven|eight|nine|ten)\b/gi,
+			(_, lead: string, word: string) => `${lead} ${SPOKEN_NUMBERS[word.toLowerCase()]}`,
+		);
 }
 
 // Plivo delivers numbers bare ("14155551234"); normalize like the other routes.
@@ -105,15 +146,22 @@ export const agentVoicePlivoRoutes: FastifyPluginAsync = async (fastify) => {
 	 */
 	async function resolveAccount(to: string, from: string): Promise<Account | { speech: string }> {
 		const businessNumber = callerNumber(to);
+		// Both repository implementations already return null for '', so an
+		// unparseable To can never match an unprovisioned account — these explicit
+		// guards just spare the lookups and keep the route safe on its own terms.
+		if (businessNumber === '') {
+			return { speech: NOT_IN_SERVICE };
+		}
 		const account = await accounts.findByChannelAddress('voice', businessNumber);
 		if (!account || account.status === 'canceled') {
-			return { speech: "Sorry, this number isn't in service. Goodbye!" };
+			return { speech: NOT_IN_SERVICE };
 		}
 		if (!account.channels.voice.enabled) {
 			return { speech: `Sorry, ${account.name} isn't taking calls here right now. Goodbye!` };
 		}
 		// Loop guard: never converse with any account's own number.
-		if (await accounts.findByChannelAddress('voice', callerNumber(from))) {
+		const caller = callerNumber(from);
+		if (caller !== '' && (await accounts.findByChannelAddress('voice', caller))) {
 			return { speech: GOODBYE };
 		}
 		return account;
@@ -141,17 +189,27 @@ export const agentVoicePlivoRoutes: FastifyPluginAsync = async (fastify) => {
 			},
 		},
 		async (request, reply) => {
-			const payload = callPayloadSchema.safeParse(request.body);
-			const { From = '', To = '' } = payload.success ? payload.data : {};
-			const resolved = await resolveAccount(To, From);
 			reply.type('text/xml');
-			if (!('id' in resolved)) {
-				return speakDocument(resolved.speech);
+			try {
+				const payload = callPayloadSchema.safeParse(request.body);
+				const { From = '', To = '' } = payload.success ? payload.data : {};
+				const resolved = await resolveAccount(To, From);
+				if (!('id' in resolved)) {
+					return speakDocument(resolved.speech);
+				}
+				// A caller with no presentable number can never be recognized or booked —
+				// decline up front instead of greeting and hanging up a turn later.
+				if (callerNumber(From) === '') {
+					return speakDocument(ANONYMOUS);
+				}
+				const greeting =
+					`Hi! You've reached ${resolved.name}. I'm Rivus, their scheduling assistant. ` +
+					'How can I help you today?';
+				return listenDocument(greeting, `${requestOrigin(request)}${INPUT_PATH}`);
+			} catch (error) {
+				request.log.error({ err: error }, 'voice answer webhook failed');
+				return speakDocument(APOLOGY);
 			}
-			const greeting =
-				`Hi! You've reached ${resolved.name}. I'm Rivus, their scheduling assistant. ` +
-				'How can I help you today?';
-			return listenDocument(greeting, `${requestOrigin(request)}${INPUT_PATH}`);
 		},
 	);
 
@@ -170,54 +228,63 @@ export const agentVoicePlivoRoutes: FastifyPluginAsync = async (fastify) => {
 			},
 		},
 		async (request, reply) => {
-			const payload = callPayloadSchema.safeParse(request.body);
-			const {
-				From = '',
-				To = '',
-				Speech = '',
-				CallUUID = '',
-			} = payload.success ? payload.data : {};
-			const resolved = await resolveAccount(To, From);
 			reply.type('text/xml');
-			if (!('id' in resolved)) {
-				return speakDocument(resolved.speech);
-			}
-			const actionUrl = `${requestOrigin(request)}${INPUT_PATH}`;
-			const caller = callerNumber(From);
-			if (caller === '') {
-				return speakDocument(GOODBYE);
-			}
-			if (Speech.trim() === '') {
-				return listenDocument("Sorry, I didn't catch that. Could you say it again?", actionUrl);
-			}
+			try {
+				const payload = callPayloadSchema.safeParse(request.body);
+				const {
+					From = '',
+					To = '',
+					Speech = '',
+					CallUUID = '',
+				} = payload.success ? payload.data : {};
+				const resolved = await resolveAccount(To, From);
+				if (!('id' in resolved)) {
+					return speakDocument(resolved.speech);
+				}
+				const actionUrl = `${requestOrigin(request)}${INPUT_PATH}`;
+				const caller = callerNumber(From);
+				if (caller === '') {
+					return speakDocument(ANONYMOUS);
+				}
+				const speech = normalizeSpeech(Speech);
+				if (speech === '') {
+					return listenDocument("Sorry, I didn't catch that. Could you say it again?", actionUrl);
+				}
 
-			// One spoken turn = one orchestrated agent turn, same as a chat message.
-			// The capture adapter hands back the rendered utterance to speak.
-			const capture = { text: '' };
-			const adapter = createVoiceChannelAdapter({ customers, capture });
-			const result = await handleInboundAgentMessage({
-				deps: { config, jobs, conversations, agentThreads },
-				adapter,
-				capabilities,
-				account: resolved,
-				message: {
-					sender: { address: caller, name: '' },
-					text: Speech,
-					subject: '',
-					// No per-utterance id from Plivo; '' skips redelivery dedup, which a
-					// synchronous webhook doesn't need. CallUUID stays in the logs.
-					externalMessageId: '',
-				},
-				logger: request.log.child({ callUuid: CallUUID }),
-			});
+				// One spoken turn = one orchestrated agent turn, same as a chat message.
+				// The capture adapter hands back the rendered utterance to speak.
+				const capture = { text: '' };
+				const adapter = createVoiceChannelAdapter({ customers, capture });
+				const result = await handleInboundAgentMessage({
+					deps: { config, jobs, conversations, agentThreads },
+					adapter,
+					capabilities,
+					account: resolved,
+					message: {
+						sender: { address: caller, name: '' },
+						text: speech,
+						subject: '',
+						// Plivo sends no per-utterance id, and a synthetic CallUUID+Speech key
+						// would dedupe a caller legitimately repeating themselves (same words,
+						// same call) into a goodbye — worse than the rare timeout-retry replay
+						// it would catch, which lands on the already-booked thread as
+						// confirm_existing rather than a double booking. So '' (dedup off).
+						externalMessageId: '',
+					},
+					logger: request.log.child({ callUuid: CallUUID }),
+				});
 
-			if (!result.handled || capture.text === '') {
-				return speakDocument(GOODBYE);
+				if (!result.handled || capture.text === '') {
+					return speakDocument(GOODBYE);
+				}
+				if (TERMINAL_OUTCOMES.has(result.outcome)) {
+					return speakDocument(`${capture.text} ${GOODBYE}`);
+				}
+				return listenDocument(capture.text, actionUrl);
+			} catch (error) {
+				request.log.error({ err: error }, 'voice input webhook failed');
+				return speakDocument(APOLOGY);
 			}
-			if (TERMINAL_OUTCOMES.has(result.outcome)) {
-				return speakDocument(`${capture.text} ${GOODBYE}`);
-			}
-			return listenDocument(capture.text, actionUrl);
 		},
 	);
 };
