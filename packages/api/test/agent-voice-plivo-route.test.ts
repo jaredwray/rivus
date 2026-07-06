@@ -1,6 +1,6 @@
 import type { AccountId } from '@rivus/core';
 import type { FastifyInstance } from 'fastify';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
 import { createInMemoryRepositories } from '../src/repositories/memory';
@@ -92,6 +92,29 @@ describe('POST /v1/channels/voice/plivo/answer', () => {
 		expect(res.body).not.toContain('<GetInput');
 	});
 
+	it('declines restricted/anonymous callers up front instead of greeting them', async () => {
+		const built = await setup();
+		app = built.app;
+		const res = await app.inject({
+			method: 'POST',
+			url: ANSWER_URL,
+			payload: call({ From: '' }),
+		});
+		expect(res.body).toContain('restricted or anonymous');
+		expect(res.body).not.toContain('<GetInput');
+	});
+
+	it('speaks an apology instead of JSON when a dependency fails (Plivo needs XML)', async () => {
+		const { app: built, repos } = await setup();
+		app = built;
+		vi.spyOn(repos.accounts, 'findByChannelAddress').mockRejectedValueOnce(new Error('db down'));
+		const res = await app.inject({ method: 'POST', url: ANSWER_URL, payload: call() });
+		expect(res.statusCode).toBe(200);
+		expect(res.headers['content-type']).toContain('xml');
+		expect(res.body).toContain('something went wrong');
+		expect(res.body).not.toContain('<GetInput');
+	});
+
 	it('declines the call when the channel is disabled', async () => {
 		const { app: built, repos, accountId } = await setup();
 		app = built;
@@ -156,7 +179,8 @@ describe('POST /v1/channels/voice/plivo/input', () => {
 		const res = await app.inject({
 			method: 'POST',
 			url: INPUT_URL,
-			payload: call({ Speech: 'option 1' }),
+			// ASR often writes the pick out in words; the route normalizes it.
+			payload: call({ Speech: 'option one' }),
 		});
 		expect(res.body).toContain('You&apos;re booked!');
 		expect(res.body).toContain('Goodbye');
@@ -197,6 +221,20 @@ describe('POST /v1/channels/voice/plivo/input', () => {
 		});
 		expect(res.body).toContain('didn&apos;t catch that');
 		expect(res.body).toContain('<GetInput');
+	});
+
+	it('speaks an apology when the orchestrator fails mid-turn', async () => {
+		const { app: built, repos } = await setup();
+		app = built;
+		vi.spyOn(repos.agentThreads, 'findByContact').mockRejectedValueOnce(new Error('db down'));
+		const res = await app.inject({
+			method: 'POST',
+			url: INPUT_URL,
+			payload: call({ Speech: 'When are you free?' }),
+		});
+		expect(res.statusCode).toBe(200);
+		expect(res.headers['content-type']).toContain('xml');
+		expect(res.body).toContain('something went wrong');
 	});
 
 	it('hangs up on calls for unknown numbers or from an account’s own number', async () => {
