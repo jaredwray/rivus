@@ -50,6 +50,7 @@ export function createWhatsappChannelAdapter(deps: {
 				from: ctx.account.channels.whatsapp.address,
 				to: ctx.to.address,
 				text,
+				providerRef: ctx.account.channels.whatsapp.providerRef,
 			});
 			return text;
 		},

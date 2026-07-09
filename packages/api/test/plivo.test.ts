@@ -4,12 +4,6 @@ import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config';
 import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
 import {
-	createSmsProvisioner,
-	createSmsSender,
-	createWhatsappProvisioner,
-	createWhatsappSender,
-} from '../src/services/messaging-provider';
-import {
 	createPlivoProvisioner,
 	createPlivoSmsSender,
 	createPlivoWhatsappSender,
@@ -23,7 +17,6 @@ import {
 import type { FetchLike } from '../src/services/resend-mailer';
 import { NoopSmsSender } from '../src/services/sms';
 import { NoopWhatsappSender } from '../src/services/whatsapp';
-import { ZernioProvisioner, ZernioWhatsappSender } from '../src/services/zernio-whatsapp';
 
 const AUTH_ID = 'MA_TEST_AUTH_ID';
 const AUTH_TOKEN = 'test-auth-token';
@@ -349,6 +342,19 @@ describe('PlivoProvisioner', () => {
 		});
 	});
 
+	it('stores the address’s own bare digits as the ref, whatever form the search returned', async () => {
+		// The ref is the ownership fingerprint (`plivoOwnsRef`), so it must be
+		// canonical even if Plivo ever returns a `+`-formed number.
+		const { fetchImpl } = fakeFetch([
+			{ ok: true, status: 200, body: '{"objects":[{"number":"+14154009186"}]}' },
+			{ ok: true, status: 201, body: '{"numbers":[{"number":"14154009186","status":"Success"}]}' },
+		]);
+		await expect(provisioner(fetchImpl).provision(INPUT)).resolves.toEqual({
+			address: '+14154009186',
+			providerRef: '14154009186',
+		});
+	});
+
 	it('fails when Plivo offers a number that is not valid E.164', async () => {
 		const { fetchImpl } = fakeFetch([
 			{ ok: true, status: 200, body: '{"objects":[{"number":"not-a-number"}]}' },
@@ -358,47 +364,26 @@ describe('PlivoProvisioner', () => {
 	});
 });
 
+// Provider *selection* (which provider a config routes to, mixed-fleet
+// outbound routing) is covered in test/twilio.test.ts alongside the Twilio
+// adapter; this section covers only the Plivo factories themselves.
 describe('provider factories', () => {
 	it('Plivo factories degrade to no-ops without credentials', () => {
 		const config = testConfig();
 		expect(createPlivoWhatsappSender(config)).toBeInstanceOf(NoopWhatsappSender);
+		expect(createPlivoSmsSender(config)).toBeInstanceOf(NoopSmsSender);
 		expect(createPlivoProvisioner(config)).toBeInstanceOf(NoopChannelProvisioner);
+
+		// One Plivo credential alone is not a configured provider.
+		const partial = testConfig({ PLIVO_AUTH_ID: AUTH_ID });
+		expect(createPlivoWhatsappSender(partial)).toBeInstanceOf(NoopWhatsappSender);
+		expect(createPlivoProvisioner(partial)).toBeInstanceOf(NoopChannelProvisioner);
 	});
 
 	it('Plivo factories build real adapters when credentials are set', () => {
 		const config = testConfig({ PLIVO_AUTH_ID: AUTH_ID, PLIVO_AUTH_TOKEN: AUTH_TOKEN });
 		expect(createPlivoWhatsappSender(config)).toBeInstanceOf(PlivoWhatsappSender);
+		expect(createPlivoSmsSender(config)).toBeInstanceOf(PlivoSmsSender);
 		expect(createPlivoProvisioner(config)).toBeInstanceOf(PlivoProvisioner);
-	});
-
-	it('selects Plivo first, then zernio, then the no-ops', () => {
-		const plivo = testConfig({
-			PLIVO_AUTH_ID: AUTH_ID,
-			PLIVO_AUTH_TOKEN: AUTH_TOKEN,
-			ZERNIO_API_KEY: 'zk_1',
-		});
-		expect(createWhatsappSender(plivo)).toBeInstanceOf(PlivoWhatsappSender);
-		expect(createWhatsappProvisioner(plivo)).toBeInstanceOf(PlivoProvisioner);
-
-		const zernio = testConfig({ ZERNIO_API_KEY: 'zk_1' });
-		expect(createWhatsappSender(zernio)).toBeInstanceOf(ZernioWhatsappSender);
-		expect(createWhatsappProvisioner(zernio)).toBeInstanceOf(ZernioProvisioner);
-
-		// One Plivo credential alone is not a configured provider — fall through.
-		const partial = testConfig({ PLIVO_AUTH_ID: AUTH_ID });
-		expect(createWhatsappSender(partial)).toBeInstanceOf(NoopWhatsappSender);
-		expect(createWhatsappProvisioner(partial)).toBeInstanceOf(NoopChannelProvisioner);
-	});
-
-	it('SMS is Plivo or a no-op — zernio never serves it', () => {
-		const plivo = testConfig({ PLIVO_AUTH_ID: AUTH_ID, PLIVO_AUTH_TOKEN: AUTH_TOKEN });
-		expect(createSmsSender(plivo)).toBeInstanceOf(PlivoSmsSender);
-		expect(createSmsProvisioner(plivo)).toBeInstanceOf(PlivoProvisioner);
-
-		const zernioOnly = testConfig({ ZERNIO_API_KEY: 'zk_1' });
-		expect(createSmsSender(zernioOnly)).toBeInstanceOf(NoopSmsSender);
-		expect(createSmsProvisioner(zernioOnly)).toBeInstanceOf(NoopChannelProvisioner);
-
-		expect(createPlivoSmsSender(testConfig())).toBeInstanceOf(NoopSmsSender);
 	});
 });

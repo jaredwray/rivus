@@ -15,8 +15,10 @@ import { accountRoutes } from './routes/account';
 import { accountChannelRoutes } from './routes/account-channels';
 import { adminRoutes } from './routes/admin';
 import { agentEmailRoutes } from './routes/agent-email';
+import { agentSmsTwilioRoutes, agentWhatsappTwilioRoutes } from './routes/agent-messaging-twilio';
 import { agentSmsPlivoRoutes } from './routes/agent-sms-plivo';
 import { agentVoicePlivoRoutes } from './routes/agent-voice-plivo';
+import { agentVoiceTwilioRoutes } from './routes/agent-voice-twilio';
 import { agentWhatsappRoutes } from './routes/agent-whatsapp';
 import { agentWhatsappPlivoRoutes } from './routes/agent-whatsapp-plivo';
 import { authRoutes } from './routes/auth';
@@ -201,6 +203,12 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 	app.register(publicRoutes, { prefix: '/v1/public' });
 	app.register(agentEmailRoutes, { prefix: '/v1/channels' });
 	app.register(agentWhatsappRoutes, { prefix: '/v1/channels' });
+	// Every provider's webhook edge stays registered side by side — Twilio (the
+	// primary), Plivo (numbers it still owns during the migration), zernio — so
+	// a mixed number fleet keeps every inbound path live.
+	app.register(agentWhatsappTwilioRoutes, { prefix: '/v1/channels' });
+	app.register(agentSmsTwilioRoutes, { prefix: '/v1/channels' });
+	app.register(agentVoiceTwilioRoutes, { prefix: '/v1/channels' });
 	app.register(agentWhatsappPlivoRoutes, { prefix: '/v1/channels' });
 	app.register(agentSmsPlivoRoutes, { prefix: '/v1/channels' });
 	app.register(agentVoicePlivoRoutes, { prefix: '/v1/channels' });

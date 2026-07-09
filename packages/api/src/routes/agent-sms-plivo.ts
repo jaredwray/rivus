@@ -6,7 +6,8 @@ import { defaultCapabilities } from '../services/agent/capabilities';
 import { parsePlivoInbound } from '../services/agent/plivo-inbound';
 import { createSmsChannelAdapter } from '../services/agent/sms/adapter';
 import { channelWebhookResponseSchema, dispatchPhoneChannelEvent } from './agent-phone-shared';
-import { plivoFormBodyParser, plivoWebhookAuthHook } from './plivo-webhook-auth';
+import { plivoWebhookAuthHook } from './plivo-webhook-auth';
+import { formUrlencodedParser } from './webhook-http';
 
 /**
  * The Plivo edge of the scheduling agent's SMS channel — the mirror of the
@@ -52,7 +53,7 @@ export const agentSmsPlivoRoutes: FastifyPluginAsync = async (fastify) => {
 	app.addContentTypeParser(
 		'application/x-www-form-urlencoded',
 		{ parseAs: 'string' },
-		plivoFormBodyParser,
+		formUrlencodedParser,
 	);
 	app.addHook('onRequest', plivoWebhookAuthHook(app, config.PLIVO_SMS_WEBHOOK_URL));
 

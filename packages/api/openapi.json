@@ -4607,6 +4607,202 @@
         }
       }
     },
+    "/v1/channels/whatsapp/twilio/inbound": {
+      "post": {
+        "summary": "Twilio WhatsApp webhook (inbound customer messages + delivery status)",
+        "tags": [
+          "channels"
+        ],
+        "description": "Twilio delivers events for the account’s provisioned number here: inbound customer messages, and status callbacks for messages Rivus sent. The agent handles the message exactly like the other provider edges; the response is always the empty TwiML acknowledgment Twilio expects, with the handling outcome recorded in the logs. Deliveries are authenticated with the X-Twilio-Signature header when TWILIO_AUTH_TOKEN is configured.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/channels/sms/twilio/inbound": {
+      "post": {
+        "summary": "Twilio SMS webhook (inbound customer texts + delivery status)",
+        "tags": [
+          "channels"
+        ],
+        "description": "Twilio delivers events for the account’s provisioned number here: inbound customer messages, and status callbacks for messages Rivus sent. The agent handles the message exactly like the other provider edges; the response is always the empty TwiML acknowledgment Twilio expects, with the handling outcome recorded in the logs. Deliveries are authenticated with the X-Twilio-Signature header when TWILIO_AUTH_TOKEN is configured.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/channels/voice/twilio/answer": {
+      "post": {
+        "summary": "Twilio voice webhook — answers an inbound call (VoiceUrl)",
+        "tags": [
+          "channels"
+        ],
+        "description": "Twilio requests this URL when someone calls the account’s provisioned number (the number’s VoiceUrl, attached at purchase). The response TwiML greets the caller and listens for speech; each utterance is transcribed and posted to the input webhook. Deliveries are authenticated with the X-Twilio-Signature header when TWILIO_AUTH_TOKEN is configured.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/channels/voice/twilio/input": {
+      "post": {
+        "summary": "Twilio voice webhook — one transcribed caller utterance (Gather action)",
+        "tags": [
+          "channels"
+        ],
+        "description": "Gather posts each transcribed utterance here. The utterance runs through the same channel-agnostic scheduling orchestrator as every other channel (threads, inbox mirroring as a phone conversation, booking); the response TwiML speaks the agent’s reply and either listens for the next turn or ends the call on a terminal outcome.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/channels/whatsapp/plivo/inbound": {
       "post": {
         "summary": "Plivo WhatsApp webhook (inbound customer messages + delivery status)",

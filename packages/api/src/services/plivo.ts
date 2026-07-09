@@ -233,7 +233,10 @@ export class PlivoProvisioner implements ChannelProvisioner {
 		if (address === '') {
 			throw new Error(`Plivo offered a number that is not valid E.164: ${number}`);
 		}
-		return { address, providerRef: number };
+		// The ref is the address's own bare digits — the exact fingerprint
+		// `plivoOwnsRef` checks — not the raw search result, so a `+`-formed or
+		// formatted number from Plivo can never break ownership routing/sharing.
+		return { address, providerRef: address.slice(1) };
 	}
 
 	/** Search for a rentable number that supports voice + SMS (one number, every channel). */
@@ -338,19 +341,25 @@ export function createPlivoProvisioner(
 }
 
 /**
- * The identifier a channel config holds **iff Plivo owns its number** — the
- * fingerprint is `providerRef` being exactly the address's bare digits, which
- * is what {@link PlivoProvisioner} stores and no other provisioner does (zernio
- * keeps its own opaque id, the no-op stores `'noop'`). The channel-enable route
- * uses this to give a channel its sibling's Plivo number instead of renting a
- * second one — the one-number-across-channels story — while numbers Plivo does
- * not own are never shared onto a channel Plivo would have to send from.
+ * Whether a stored providerRef names a Plivo-owned number: {@link
+ * PlivoProvisioner} stores exactly the address's bare digits, which no other
+ * provisioner writes (Twilio stores a `PN…` SID, zernio an opaque id, the
+ * no-op `'noop'`).
+ */
+export function plivoOwnsRef(providerRef: string, address: string): boolean {
+	return providerRef !== '' && providerRef === address.replace(/^\+/, '');
+}
+
+/**
+ * The identifier a channel config holds **iff Plivo owns its number**. The
+ * channel-enable route uses this to give a channel its sibling's Plivo number
+ * instead of renting a second one — the one-number-across-channels story —
+ * while numbers Plivo does not own are never shared onto a channel Plivo would
+ * have to send from; `messaging-provider` uses the same fingerprint to route
+ * each send through the number's owner.
  */
 export function plivoOwnedIdentifier(config: AccountChannelConfig): ProvisionedIdentifier | null {
-	if (config.address === '' || config.providerRef === '') {
-		return null;
-	}
-	if (config.providerRef !== config.address.replace(/^\+/, '')) {
+	if (config.address === '' || !plivoOwnsRef(config.providerRef, config.address)) {
 		return null;
 	}
 	return { address: config.address, providerRef: config.providerRef };

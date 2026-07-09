@@ -13,6 +13,13 @@ export interface WhatsappMessage {
 	to: string;
 	/** Plain-text message body. */
 	text: string;
+	/**
+	 * The provider's handle for the sending number, as stored on the account's
+	 * channel config ('' / absent when unknown). A multi-provider deployment
+	 * routes each send through the provider that owns the number (mid-migration,
+	 * Twilio and Plivo numbers coexist); single-provider senders ignore it.
+	 */
+	providerRef?: string;
 }
 
 /** Delivers WhatsApp messages. Implementations reject on delivery failure. */

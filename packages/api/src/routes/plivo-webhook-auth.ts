@@ -1,35 +1,16 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { verifyPlivoSignature } from '../services/plivo';
+import { headerValue, requestOrigin } from './webhook-http';
 
 /**
- * The authenticity gate shared by the Plivo webhook routes (WhatsApp and SMS).
- * Plivo V2 signs the webhook URL + a nonce with the account's auth token — the
- * body is not part of the signature — so unlike the zernio route (whose scheme
- * signs the raw body and must wait for it), this runs at `onRequest`: an
- * unauthenticated delivery is rejected before the body parser does any work on
- * it. Registered per route plugin, once per channel, with that channel's
- * pinned public URL.
+ * The authenticity gate shared by the Plivo webhook routes (WhatsApp, SMS,
+ * voice). Plivo V2 signs the webhook URL + a nonce with the account's auth
+ * token — the body is not part of the signature — so unlike the Twilio gate
+ * (whose scheme signs the form parameters and must wait for them) this runs at
+ * `onRequest`: an unauthenticated delivery is rejected before the body parser
+ * does any work on it. Registered per route plugin, once per channel, with
+ * that channel's pinned public URL.
  */
-
-/** First value of a possibly-repeated header, as a string. */
-function headerValue(value: string | string[] | undefined): string {
-	if (Array.isArray(value)) {
-		return value[0] ?? '';
-	}
-	return value ?? '';
-}
-
-/**
- * The public origin of a request (`https://api.rivus.ai`), honoring the
- * forwarding headers the front-door proxy sets. Used to reconstruct signed
- * webhook URLs and to build absolute callback URLs (the voice route's
- * `GetInput action`).
- */
-export function requestOrigin(request: FastifyRequest): string {
-	const proto = headerValue(request.headers['x-forwarded-proto']) || request.protocol;
-	const host = headerValue(request.headers['x-forwarded-host']) || request.headers.host || '';
-	return `${proto}://${host}`;
-}
 
 /**
  * The URL Plivo signed. The pinned URL (the exact URL configured in the Plivo
@@ -83,18 +64,4 @@ export function plivoWebhookAuthHook(
 			throw app.httpErrors.unauthorized('Invalid webhook signature');
 		}
 	};
-}
-
-/**
- * Parse Plivo's form-encoded callback variant to the same plain-object shape as
- * JSON, so the payload mapper sees one input. Registered plugin-scoped by each
- * Plivo route. TODO(plivo): confirm whether the hooks also use JSON in
- * production — both are accepted either way.
- */
-export function plivoFormBodyParser(
-	_request: FastifyRequest,
-	payload: string,
-	done: (error: Error | null, result?: unknown) => void,
-): void {
-	done(null, Object.fromEntries(new URLSearchParams(payload)));
 }
