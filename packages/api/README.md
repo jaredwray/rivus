@@ -381,7 +381,9 @@ reports flagging failures, and the no-op degradation without credentials.
    provider-owned WhatsApp number, SMS adopts that same number** instead of
    renting a second one (and vice versa — whichever channel is enabled first
    rents, the other shares); outbound texts leave through that number's owner.
-   Numbers neither phone provider owns (zernio's, dev fakes) are never shared.
+   Numbers neither phone provider owns (zernio's, dev fakes) are never shared,
+   and neither is a number whose owning provider is no longer configured — a
+   fresh number through the configured primary beats extending a dead one.
 4. US A2P traffic requires the number to be registered for **10DLC** in the
    provider's console before carriers accept application-originated texts — a
    one-time compliance step per brand/campaign, like the WABA registration for
