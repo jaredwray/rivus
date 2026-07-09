@@ -14,13 +14,14 @@ import { NoopWhatsappSender, type WhatsappMessage, type WhatsappSender } from '.
 /**
  * The Plivo adapter for the messaging seams — the only module that knows
  * Plivo's wire format. Plivo fronts the same Messages API for SMS, MMS, and
- * WhatsApp (`type` selects the channel), which is why it's Rivus's primary
- * provider: the WhatsApp and SMS senders below differ by one request field,
- * both channels share the one number `PlivoProvisioner` rents, and voice can
- * later ride the same account. Like `ZernioWhatsappSender` (kept as an
- * alternative WhatsApp provider) and `ResendMailer`, it calls the documented
- * REST endpoints with `fetch`, so it adds no dependency and is trivially faked
- * in tests.
+ * WhatsApp (`type` selects the channel), and one rented number carries every
+ * channel. It was the original primary provider; it is retained during the
+ * migration to Twilio (`./twilio`) so numbers Plivo still owns keep sending
+ * and receiving — `./messaging-provider` routes each outbound message through
+ * the number's owner. Like `ZernioWhatsappSender` (kept as an alternative
+ * WhatsApp provider) and `ResendMailer`, it calls the documented REST
+ * endpoints with `fetch`, so it adds no dependency and is trivially faked in
+ * tests.
  *
  * Wire format sources: Plivo's Messages API and Numbers API references, and the
  * signature algorithm from Plivo's published node SDK (`validateSignature`).
@@ -233,7 +234,10 @@ export class PlivoProvisioner implements ChannelProvisioner {
 		if (address === '') {
 			throw new Error(`Plivo offered a number that is not valid E.164: ${number}`);
 		}
-		return { address, providerRef: number };
+		// The ref is the address's own bare digits — the exact fingerprint
+		// `plivoOwnsRef` checks — not the raw search result, so a `+`-formed or
+		// formatted number from Plivo can never break ownership routing/sharing.
+		return { address, providerRef: address.slice(1) };
 	}
 
 	/** Search for a rentable number that supports voice + SMS (one number, every channel). */
@@ -338,19 +342,25 @@ export function createPlivoProvisioner(
 }
 
 /**
- * The identifier a channel config holds **iff Plivo owns its number** — the
- * fingerprint is `providerRef` being exactly the address's bare digits, which
- * is what {@link PlivoProvisioner} stores and no other provisioner does (zernio
- * keeps its own opaque id, the no-op stores `'noop'`). The channel-enable route
- * uses this to give a channel its sibling's Plivo number instead of renting a
- * second one — the one-number-across-channels story — while numbers Plivo does
- * not own are never shared onto a channel Plivo would have to send from.
+ * Whether a stored providerRef names a Plivo-owned number: {@link
+ * PlivoProvisioner} stores exactly the address's bare digits, which no other
+ * provisioner writes (Twilio stores a `PN…` SID, zernio an opaque id, the
+ * no-op `'noop'`).
+ */
+export function plivoOwnsRef(providerRef: string, address: string): boolean {
+	return providerRef !== '' && providerRef === address.replace(/^\+/, '');
+}
+
+/**
+ * The identifier a channel config holds **iff Plivo owns its number**. The
+ * channel-enable route uses this to give a channel its sibling's Plivo number
+ * instead of renting a second one — the one-number-across-channels story —
+ * while numbers Plivo does not own are never shared onto a channel Plivo would
+ * have to send from; `messaging-provider` uses the same fingerprint to route
+ * each send through the number's owner.
  */
 export function plivoOwnedIdentifier(config: AccountChannelConfig): ProvisionedIdentifier | null {
-	if (config.address === '' || config.providerRef === '') {
-		return null;
-	}
-	if (config.providerRef !== config.address.replace(/^\+/, '')) {
+	if (config.address === '' || !plivoOwnsRef(config.providerRef, config.address)) {
 		return null;
 	}
 	return { address: config.address, providerRef: config.providerRef };

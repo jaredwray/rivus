@@ -156,15 +156,33 @@ describe('account channel provisioning', () => {
 	});
 });
 
-describe('one Plivo number shared across channels', () => {
+describe('one provider-owned number shared across channels', () => {
 	let app: FastifyInstance | undefined;
 	afterEach(async () => {
 		await app?.close();
 		app = undefined;
 	});
 
+	// Adoption requires the number's owning provider to be configured (an
+	// unconfigured owner can neither send from nor receive on the number), so
+	// each case states which providers the deployment has.
+	function configuredWith(env: Record<string, string>) {
+		return loadConfig({
+			NODE_ENV: 'test',
+			JWT_SECRET: 'test-secret-value-1234',
+			...env,
+		} as NodeJS.ProcessEnv);
+	}
+	const PLIVO_CREDS = { PLIVO_AUTH_ID: 'MA_X', PLIVO_AUTH_TOKEN: 'plivo-token' };
+	const TWILIO_CREDS = {
+		TWILIO_ACCOUNT_SID: 'ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+		TWILIO_AUTH_TOKEN: 'twilio-token',
+	};
+
 	it('enabling SMS adopts the WhatsApp channel’s Plivo-owned number', async () => {
-		const { app: built, repos } = await buildTestAppWithRepos();
+		const { app: built, repos } = await buildTestAppWithRepos({
+			config: configuredWith(PLIVO_CREDS),
+		});
 		app = built;
 		const owner = await signupOwner(app);
 		// A Plivo-provisioned WhatsApp number: providerRef is the bare digits.
@@ -183,7 +201,9 @@ describe('one Plivo number shared across channels', () => {
 	});
 
 	it('enabling WhatsApp adopts the SMS channel’s Plivo-owned number (either direction)', async () => {
-		const { app: built, repos } = await buildTestAppWithRepos();
+		const { app: built, repos } = await buildTestAppWithRepos({
+			config: configuredWith(PLIVO_CREDS),
+		});
 		app = built;
 		const owner = await signupOwner(app);
 		await repos.accounts.setChannelConfig(owner.account.id as AccountId, 'sms', {
@@ -231,7 +251,9 @@ describe('one Plivo number shared across channels', () => {
 	});
 
 	it('enabling voice adopts the account’s Plivo-owned messaging number', async () => {
-		const { app: built, repos } = await buildTestAppWithRepos();
+		const { app: built, repos } = await buildTestAppWithRepos({
+			config: configuredWith(PLIVO_CREDS),
+		});
 		app = built;
 		const owner = await signupOwner(app);
 		await repos.accounts.setChannelConfig(owner.account.id as AccountId, 'sms', {
@@ -248,8 +270,36 @@ describe('one Plivo number shared across channels', () => {
 		expect(res.json().channels.voice).toMatchObject({ enabled: true, address: '+14155550103' });
 	});
 
-	it('never shares a number Plivo does not own (zernio ids, dev fakes)', async () => {
-		const { app: built, repos } = await buildTestAppWithRepos();
+	it('enabling SMS adopts the WhatsApp channel’s Twilio-owned number (PN ref)', async () => {
+		const { app: built, repos } = await buildTestAppWithRepos({
+			config: configuredWith(TWILIO_CREDS),
+		});
+		app = built;
+		const owner = await signupOwner(app);
+		const accountId = owner.account.id as AccountId;
+		// A Twilio-provisioned number: providerRef is the PN… phone-number SID.
+		await repos.accounts.setChannelConfig(accountId, 'whatsapp', {
+			enabled: true,
+			address: '+14155550104',
+			providerRef: 'PN0123456789abcdef0123456789abcdef',
+		});
+		const res = await app.inject({
+			method: 'POST',
+			url: ENABLE_SMS,
+			headers: authHeader(owner.token),
+		});
+		expect(res.statusCode).toBe(200);
+		expect(res.json().channels.sms).toMatchObject({ enabled: true, address: '+14155550104' });
+		// The fingerprint rode along, so outbound SMS routes through Twilio.
+		const account = await repos.accounts.findById(accountId);
+		expect(account?.channels.sms.providerRef).toBe('PN0123456789abcdef0123456789abcdef');
+	});
+
+	it('never shares a number neither phone provider owns (zernio ids, dev fakes)', async () => {
+		// Both providers configured — the only reason not to share is the ref shape.
+		const { app: built, repos } = await buildTestAppWithRepos({
+			config: configuredWith({ ...PLIVO_CREDS, ...TWILIO_CREDS }),
+		});
 		app = built;
 		const owner = await signupOwner(app);
 		// A zernio-provisioned WhatsApp number: opaque providerRef, not bare digits.
@@ -268,6 +318,31 @@ describe('one Plivo number shared across channels', () => {
 		const smsAddress = res.json().channels.sms.address;
 		expect(smsAddress).toMatch(/^\+1555\d{7}$/);
 		expect(smsAddress).not.toBe('+14155550102');
+	});
+
+	it('rents fresh instead of adopting a number whose provider is no longer configured', async () => {
+		// Only Twilio configured; the sibling holds a Plivo-owned number. Adopting
+		// it would enable a channel that can neither send nor receive — a fresh
+		// number through the configured primary keeps the new channel working.
+		const { app: built, repos } = await buildTestAppWithRepos({
+			config: configuredWith(TWILIO_CREDS),
+		});
+		app = built;
+		const owner = await signupOwner(app);
+		await repos.accounts.setChannelConfig(owner.account.id as AccountId, 'whatsapp', {
+			enabled: true,
+			address: '+14155550105',
+			providerRef: '14155550105',
+		});
+		const res = await app.inject({
+			method: 'POST',
+			url: ENABLE_SMS,
+			headers: authHeader(owner.token),
+		});
+		expect(res.statusCode).toBe(200);
+		const smsAddress = res.json().channels.sms.address;
+		expect(smsAddress).toMatch(/^\+1555\d{7}$/);
+		expect(smsAddress).not.toBe('+14155550105');
 	});
 });
 
@@ -328,5 +403,32 @@ describe('production refuses channels with no configured provider', () => {
 		});
 		// The injected (noop) provisioner answers; the config gate passed.
 		expect(res.statusCode).toBe(200);
+	});
+
+	it('allows every channel when only Twilio is configured', async () => {
+		app = await buildTestApp({
+			config: productionConfig({
+				TWILIO_ACCOUNT_SID: 'ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+				TWILIO_AUTH_TOKEN: 'twilio-token',
+			}),
+		});
+		const owner = await signupOwner(app);
+		for (const url of [ENABLE, ENABLE_SMS, '/v1/account/channels/voice/enable']) {
+			const res = await app.inject({ method: 'POST', url, headers: authHeader(owner.token) });
+			expect(res.statusCode).toBe(200);
+		}
+	});
+
+	it('503s on a partial Twilio credential pair (sid without token)', async () => {
+		app = await buildTestApp({
+			config: productionConfig({ TWILIO_ACCOUNT_SID: 'ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' }),
+		});
+		const owner = await signupOwner(app);
+		const res = await app.inject({
+			method: 'POST',
+			url: ENABLE_SMS,
+			headers: authHeader(owner.token),
+		});
+		expect(res.statusCode).toBe(503);
 	});
 });

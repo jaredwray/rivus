@@ -13,6 +13,12 @@ export interface SmsMessage {
 	to: string;
 	/** Plain-text message body. */
 	text: string;
+	/**
+	 * The provider's handle for the sending number, as stored on the account's
+	 * channel config ('' / absent when unknown) — see {@link WhatsappMessage}
+	 * (`./whatsapp`): multi-provider deployments route by the number's owner.
+	 */
+	providerRef?: string;
 }
 
 /** Delivers SMS messages. Implementations reject on delivery failure. */

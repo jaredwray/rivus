@@ -54,6 +54,7 @@ export function createSmsChannelAdapter(deps: {
 				from: ctx.account.channels.sms.address,
 				to: ctx.to.address,
 				text,
+				providerRef: ctx.account.channels.sms.providerRef,
 			});
 			return text;
 		},

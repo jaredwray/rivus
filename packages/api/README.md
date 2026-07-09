@@ -215,7 +215,7 @@ multi-turn state on an `AgentThread`, FAQ drafts, and the exchange mirrored into
 the inbox as a `whatsapp` conversation. None of that is re-implemented per
 channel — or per provider: each provider route owns only its edges (signature
 check and payload shape) and hands a canonical event to the shared dispatch
-(`routes/agent-whatsapp-shared.ts`), which resolves the account, applies the
+(`routes/agent-phone-shared.ts`), which resolves the account, applies the
 loop/unsupported guards, and calls the same `handleInboundAgentMessage` the
 email channel uses. See the "unified across channels" note in
 [AGENTS.md](../../AGENTS.md) for the layering.
@@ -226,18 +226,60 @@ Rivus sent fails to reach the customer, the conversation is flagged
 filter and a human can follow up another way — the same treatment as an email
 bounce.
 
-Two providers are wired behind the same seams (`WhatsappSender`,
-`ChannelProvisioner`): **Plivo** is the primary — chosen whenever its
-credentials are set — and **zernio** the alternative, used when only its key is
-set. With neither configured, both degrade to no-ops (a deterministic fake
+Three providers are wired behind the same seams (`WhatsappSender`, `SmsSender`,
+`ChannelProvisioner`): **Twilio** is the primary — new numbers provision through
+it whenever its credentials are set — **Plivo** stays fully wired during the
+migration off it (numbers it still owns keep working), and **zernio** is the
+WhatsApp-only alternative, used when only its key is set. Outbound sends are
+routed per message by the sending number's stored fingerprint (`providerRef`),
+so a mixed fleet of Twilio and Plivo numbers coexists safely mid-migration: a
+reply always leaves through the provider that owns the number it is sent from.
+With nothing configured, everything degrades to no-ops (a deterministic fake
 number in dev, sends dropped), so the whole flow still runs locally with `curl`
 and no credentials.
 
-#### Plivo (primary provider)
+#### Twilio (primary provider)
+
+Twilio fronts SMS and WhatsApp through one Messages API and one rented number
+(the `whatsapp:` address prefix selects the channel), and voice rides the same
+number via TwiML — one number per account carries all three channels.
+
+1. Set `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` (Console → Account Info), and
+   `TWILIO_API_URL` if it isn't the default.
+2. Webhooks: deliveries are verified with Twilio's `X-Twilio-Signature` scheme,
+   which signs **the exact request URL plus every form parameter** with the
+   auth token (no separate webhook secret). Set each channel's public URL so a
+   rewriting proxy can't break verification, and so sends carry a delivery
+   status callback:
+   - `TWILIO_WHATSAPP_WEBHOOK_URL` → `POST /v1/channels/whatsapp/twilio/inbound`
+   - `TWILIO_SMS_WEBHOOK_URL` → `POST /v1/channels/sms/twilio/inbound`
+   - `TWILIO_VOICE_WEBHOOK_URL` → `POST /v1/channels/voice/twilio/answer`
+3. Numbers: enabling a channel rents a voice+SMS-capable local number through
+   the IncomingPhoneNumbers API and — unlike Plivo — attaches the SMS and voice
+   webhooks **in the same purchase call** (`SmsUrl`, `VoiceUrl`), so no console
+   step is needed before texts and calls flow. WhatsApp still needs the number
+   registered as a WhatsApp sender against a WhatsApp Business Account;
+   Twilio's Senders API can do that programmatically, but it requires a WABA
+   link and an OTP round-trip — see `TODO(twilio)` in `src/services/twilio.ts`.
+4. An account **owner** enables each channel as described in its section;
+   `…/disable` turns it off but retains the number.
+
+| Variable                      | Default                   | Notes                                                                                                                 |
+| ----------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `TWILIO_ACCOUNT_SID`          | _(unset)_                 | Twilio account SID. Both credentials set ⇒ Twilio is the primary provider for every phone-number channel.              |
+| `TWILIO_AUTH_TOKEN`           | _(unset)_                 | Auth token — API auth **and** the webhook signing key. Unset: dev/test accept unsigned deliveries; **production refuses the Twilio routes (503)**. |
+| `TWILIO_API_URL`              | `https://api.twilio.com`  | Base URL of Twilio's REST API.                                                                                         |
+| `TWILIO_WHATSAPP_WEBHOOK_URL` | _(unset)_                 | Public URL of the Twilio WhatsApp webhook. Pins signature verification behind proxies and rides along on sends as the status callback. Unset: the URL is derived per-request and sends carry no callback. |
+| `TWILIO_SMS_WEBHOOK_URL`      | _(unset)_                 | The SMS counterpart, with the same two roles — and attached to newly rented numbers as their inbound `SmsUrl`.         |
+| `TWILIO_VOICE_WEBHOOK_URL`    | _(unset)_                 | Public URL of the voice **answer** webhook — attached to newly rented numbers as their `VoiceUrl`. The input webhook's URL (the `<Gather action>`) is derived from it. |
+| `TWILIO_NUMBER_COUNTRY`       | `US`                      | ISO 3166-1 alpha-2 country whose numbers the provisioner rents.                                                        |
+
+#### Plivo (retained during the Twilio migration)
 
 Plivo fronts SMS, MMS, and WhatsApp through one Messages API and one rented
-number, which is why it's the primary: when the SMS and voice channels are
-built, the same Plivo account and the same per-account number will carry them.
+number. It was the original primary; during the migration it stays fully wired
+so accounts still holding Plivo numbers keep sending and receiving — but new
+numbers no longer provision through it while Twilio's credentials are set.
 
 1. Set `PLIVO_AUTH_ID` + `PLIVO_AUTH_TOKEN` (Console → API keys), and
    `PLIVO_API_URL` if it isn't the default.
@@ -252,7 +294,7 @@ built, the same Plivo account and the same per-account number will carry them.
    Plivo's Numbers API. Registering that number to the WhatsApp Business Account
    (Meta's Embedded Signup in the Plivo console) is a one-time step per number
    that Plivo does not yet expose over the API — see `TODO(plivo)` in
-   `src/services/plivo-whatsapp.ts`.
+   `src/services/plivo.ts`.
 4. An account **owner** enables the channel — in the app (Settings → WhatsApp
    Business → On) or via `POST /v1/account/channels/whatsapp/enable`. Rivus
    provisions the number and starts answering; `…/disable` turns it off but
@@ -260,7 +302,7 @@ built, the same Plivo account and the same per-account number will carry them.
 
 | Variable               | Default                    | Notes                                                                                                                 |
 | ---------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `PLIVO_AUTH_ID`        | _(unset)_                  | Plivo account auth ID. Both credentials set ⇒ Plivo is the active WhatsApp provider.                                   |
+| `PLIVO_AUTH_ID`        | _(unset)_                  | Plivo account auth ID. Both credentials set ⇒ Plivo serves the numbers it owns (and is the primary when Twilio is unconfigured). |
 | `PLIVO_AUTH_TOKEN`     | _(unset)_                  | Plivo auth token — API auth **and** the webhook signing key. Unset: dev/test accept unsigned deliveries; **production refuses the Plivo route (503)**. |
 | `PLIVO_API_URL`        | `https://api.plivo.com/v1` | Base URL of Plivo's REST API.                                                                                          |
 | `PLIVO_WEBHOOK_URL`    | _(unset)_                  | The public URL of the Plivo WhatsApp webhook route. Pins signature verification behind proxies and rides along on sends as the status callback. Unset: the URL is derived per-request and sends carry no callback. |
@@ -269,7 +311,8 @@ built, the same Plivo account and the same per-account number will carry them.
 
 #### zernio (alternative provider)
 
-Used when `ZERNIO_API_KEY` is set and the Plivo credentials are not.
+Used when `ZERNIO_API_KEY` is set and neither Twilio's nor Plivo's credentials
+are.
 
 1. Set `ZERNIO_API_KEY` (and `ZERNIO_API_URL` if it isn't the default).
 2. In zernio, point an inbound webhook at `POST /v1/channels/whatsapp/inbound` and
@@ -284,7 +327,7 @@ Used when `ZERNIO_API_KEY` is set and the Plivo credentials are not.
 | Variable                | Default                  | Notes                                                                                                                   |
 | ----------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
 | `ZERNIO_API_URL`        | `https://zernio.com/api/v1` | Base URL of the zernio API (per zernio's docs).                                                                     |
-| `ZERNIO_API_KEY`        | _(unset)_                | Unset: WhatsApp falls back as described above (Plivo when configured, else the no-ops).                                |
+| `ZERNIO_API_KEY`        | _(unset)_                | Unset: WhatsApp falls back as described above (Twilio/Plivo when configured, else the no-ops).                         |
 | `ZERNIO_WEBHOOK_SECRET` | _(unset)_                | zernio webhook signing secret; the route verifies the `X-Zernio-Signature` (raw-body HMAC-SHA256) header. Unset: dev/test accept unsigned deliveries; **production refuses the route (503)**. |
 | `ZERNIO_VERIFY_TOKEN`   | _(unset)_                | Verify token for the `GET` registration handshake. Unset: that handshake endpoint 404s.                               |
 
@@ -315,56 +358,67 @@ are **text only** (media/location messages get no reply).
 >   *connect credentials + select a number* rather than *provision a new number* —
 >   so `ZernioProvisioner` may need rethinking, not just endpoint tweaks.
 >
-> Until then, use Plivo (or the no-op path) to exercise the flow end-to-end.
+> Until then, use Twilio or Plivo (or the no-op path) to exercise the flow
+> end-to-end.
 
-### SMS channel (Plivo)
+### SMS channel
 
-The same scheduling agent also answers over **SMS**, through the same Plivo
+The same scheduling agent also answers over **SMS**, through the same provider
 account, adapters, and — when both channels are on — the same number as
 WhatsApp. Everything about the WhatsApp channel above applies unchanged: the
 shared webhook dispatch, the inbox mirroring (an `sms` conversation), delivery
 reports flagging failures, and the no-op degradation without credentials.
 
-1. Same credentials as WhatsApp (`PLIVO_AUTH_ID` + `PLIVO_AUTH_TOKEN`).
-2. Point the number's message webhook at `POST /v1/channels/sms/plivo/inbound`
-   (in the Plivo console, the application attached to the number) and set
-   `PLIVO_SMS_WEBHOOK_URL` to that exact public URL.
+1. Same credentials as WhatsApp (Twilio is the primary; Plivo serves the
+   numbers it still owns).
+2. Inbound webhook: Twilio numbers are wired at purchase — the provisioner
+   attaches `TWILIO_SMS_WEBHOOK_URL` (→ `POST /v1/channels/sms/twilio/inbound`)
+   as the number's `SmsUrl`. Plivo numbers point their application's message
+   webhook at `POST /v1/channels/sms/plivo/inbound` in the console, pinned with
+   `PLIVO_SMS_WEBHOOK_URL`.
 3. An owner enables the channel (app: Settings → Text messages, or
    `POST /v1/account/channels/sms/enable`). **If the account already holds a
-   Plivo-owned WhatsApp number, SMS adopts that same number** instead of
+   provider-owned WhatsApp number, SMS adopts that same number** instead of
    renting a second one (and vice versa — whichever channel is enabled first
-   rents, the other shares). Numbers Plivo doesn't own (zernio's, dev fakes)
-   are never shared.
+   rents, the other shares); outbound texts leave through that number's owner.
+   Numbers neither phone provider owns (zernio's, dev fakes) are never shared,
+   and neither is a number whose owning provider is no longer configured — a
+   fresh number through the configured primary beats extending a dead one.
 4. US A2P traffic requires the number to be registered for **10DLC** in the
-   Plivo console before carriers accept application-originated texts — a
+   provider's console before carriers accept application-originated texts — a
    one-time compliance step per brand/campaign, like the WABA registration for
    WhatsApp.
 
-### Voice channel (Plivo)
+### Voice channel
 
 The same scheduling agent also **answers phone calls** on the same number,
-turn-based on Plivo's Voice API: the call hits the answer webhook, Rivus greets
-and listens (`<GetInput inputType="speech">`), and each transcribed utterance
-runs through the identical channel-agnostic orchestrator — thread state, inbox
-mirroring (a `phone` conversation with a full transcript), booking — with the
-reply spoken back in the response XML. The call ends after a terminal outcome
-(booked, confirmed, or directed to self-signup); anything else loops the
-listen. Unknown callers are recognized by phone exactly like SMS/WhatsApp.
+turn-based: the call hits the answer webhook, Rivus greets and listens (Twilio
+`<Gather input="speech">`, Plivo `<GetInput inputType="speech">`), and each
+transcribed utterance runs through the identical channel-agnostic
+orchestrator — thread state, inbox mirroring (a `phone` conversation with a
+full transcript), booking — with the reply spoken back in the response
+document. Both provider routes share one voice core
+(`routes/agent-voice-shared.ts`) — account resolution, guards, spoken wording,
+and turn policy can't drift between dialects. The call ends after a terminal
+outcome (booked, confirmed, or directed to self-signup); anything else loops
+the listen. Unknown callers are recognized by phone exactly like SMS/WhatsApp.
 
-1. Same credentials as the other channels (`PLIVO_AUTH_ID` + `PLIVO_AUTH_TOKEN`);
-   deliveries are verified with the same V2 signature scheme (no extra config —
-   the signed URL is reconstructed per request).
-2. In the Plivo console, create an **Application** with `answer_url` =
-   `POST /v1/channels/voice/plivo/answer` (public URL) and attach it to the
-   account's number. The same application's `message_url` can point at the SMS
-   webhook — one application wires both. TODO(plivo): automate the application
-   attach via the Numbers API when the channel is enabled.
+1. Same credentials as the other channels; deliveries are verified with each
+   provider's signature scheme. Twilio pins the answer endpoint with
+   `TWILIO_VOICE_WEBHOOK_URL` and derives the input endpoint's URL (the
+   `<Gather action>`) from it; Plivo reconstructs each signed URL per request.
+2. Wiring: Twilio numbers get `TWILIO_VOICE_WEBHOOK_URL` (→
+   `POST /v1/channels/voice/twilio/answer`) attached as their `VoiceUrl` at
+   purchase — no console step. Plivo numbers need an **Application** with
+   `answer_url` = `POST /v1/channels/voice/plivo/answer` attached in the
+   console (its `message_url` can point at the SMS webhook — one application
+   wires both; TODO(plivo): automate the attach via the Numbers API).
 3. An owner enables the channel (app: Settings → Phone calls, or
    `POST /v1/account/channels/voice/enable`). The account's existing
-   Plivo-owned WhatsApp/SMS number is adopted — calls, texts, and WhatsApp all
-   share one number — or a fresh voice+SMS number is rented.
+   provider-owned WhatsApp/SMS number is adopted — calls, texts, and WhatsApp
+   all share one number — or a fresh voice+SMS number is rented.
 4. No extra registration: unlike WhatsApp (WABA) and US SMS (10DLC), inbound
-   voice works as soon as the application is attached to the number.
+   voice works as soon as the webhook is attached to the number.
 
 Voice replies record in the inbox like every channel, but `phone`
 conversations have no reply-out transport (there is no live call to push a

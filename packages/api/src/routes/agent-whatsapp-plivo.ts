@@ -6,7 +6,8 @@ import { defaultCapabilities } from '../services/agent/capabilities';
 import { parsePlivoInbound } from '../services/agent/plivo-inbound';
 import { createWhatsappChannelAdapter } from '../services/agent/whatsapp/adapter';
 import { channelWebhookResponseSchema, dispatchPhoneChannelEvent } from './agent-phone-shared';
-import { plivoFormBodyParser, plivoWebhookAuthHook } from './plivo-webhook-auth';
+import { plivoWebhookAuthHook } from './plivo-webhook-auth';
+import { formUrlencodedParser } from './webhook-http';
 
 /**
  * The Plivo edge of the scheduling agent's WhatsApp channel. Plivo posts two
@@ -51,7 +52,7 @@ export const agentWhatsappPlivoRoutes: FastifyPluginAsync = async (fastify) => {
 	app.addContentTypeParser(
 		'application/x-www-form-urlencoded',
 		{ parseAs: 'string' },
-		plivoFormBodyParser,
+		formUrlencodedParser,
 	);
 	app.addHook('onRequest', plivoWebhookAuthHook(app, config.PLIVO_WEBHOOK_URL));
 

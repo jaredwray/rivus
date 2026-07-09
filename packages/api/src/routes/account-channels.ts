@@ -8,6 +8,7 @@ import { toPublicAccount } from '../presenters';
 import { ConflictError } from '../repositories/errors';
 import type { ChannelProvisioner, ProvisionedIdentifier } from '../services/channel-provisioning';
 import { plivoOwnedIdentifier } from '../services/plivo';
+import { twilioOwnedIdentifier } from '../services/twilio';
 
 /**
  * Owner-only provisioning of a messaging channel. Enabling calls the provider to
@@ -17,9 +18,11 @@ import { plivoOwnedIdentifier } from '../services/plivo';
  * derived, always on); WhatsApp, SMS, and voice are all provisionable.
  *
  * One number, every channel: when a channel is enabled and a sibling already
- * holds a Plivo-owned number, that number is adopted instead of renting a
- * second one — Plivo fronts WhatsApp, SMS, and voice on the same number. Numbers Plivo does not own (zernio's, the dev fakes) are never
- * shared onto a channel Plivo would have to send from.
+ * holds a number the phone providers own (Twilio's, or Plivo's during the
+ * migration), that number is adopted instead of renting a second one — both
+ * providers front WhatsApp, SMS, and voice on the same number, and outbound
+ * sends route by the number's owner. Numbers neither owns (zernio's, the dev
+ * fakes) are never shared onto a channel they would have to send from.
  */
 
 const channelParamsSchema = z.object({ channel: provisionedChannelSchema });
@@ -37,33 +40,55 @@ function isProvisionable(channel: string): channel is ProvisionableChannel {
  * predicates the sender/provisioner factories use (`messaging-provider.ts`).
  */
 function providerConfigured(config: Config, channel: ProvisionableChannel): boolean {
+	const twilio = Boolean(config.TWILIO_ACCOUNT_SID && config.TWILIO_AUTH_TOKEN);
 	const plivo = Boolean(config.PLIVO_AUTH_ID && config.PLIVO_AUTH_TOKEN);
-	// Only WhatsApp has an alternative provider (zernio); SMS and voice are Plivo-only.
-	return channel === 'whatsapp' ? plivo || Boolean(config.ZERNIO_API_KEY) : plivo;
+	// Only WhatsApp has an alternative provider (zernio); SMS and voice need a
+	// phone-number provider (Twilio, or Plivo during the migration).
+	return channel === 'whatsapp'
+		? twilio || plivo || Boolean(config.ZERNIO_API_KEY)
+		: twilio || plivo;
 }
 
 /**
  * The identifier to hand the provisioner: the channel's own (idempotent
- * re-enable), else a sibling channel's Plivo-owned number (adopted, so both
- * channels share one number), else empty (a fresh rental).
+ * re-enable), else a sibling channel's provider-owned number (adopted, so both
+ * channels share one number — outbound routing sends through whichever
+ * provider the fingerprint names), else empty (a fresh rental).
+ *
+ * A sibling's number is adopted only while its owning provider is configured.
+ * With the owner's credentials gone (Plivo's, say, after the migration
+ * finishes), that number can neither send (outbound would fall to the primary
+ * and be rejected as not the primary's number) nor receive (the owner's
+ * webhook gate refuses deliveries it can't answer) — adopting it would 200
+ * the enable onto a dead channel. Renting fresh through the configured
+ * primary keeps the new channel working; the sibling's number splits off
+ * until it too is migrated.
  *
  * Known race, accepted: two enables for the same account arriving together can
  * each read empty siblings and rent two numbers. The app serializes its
  * toggles (one busy request at a time), so the residual window is a deliberate
- * double-submit; recovery is releasing the extra number in the Plivo console.
- * Closing it fully needs a per-account claim/lock this API deliberately
- * doesn't have.
+ * double-submit; recovery is releasing the extra number in the provider's
+ * console. Closing it fully needs a per-account claim/lock this API
+ * deliberately doesn't have.
  */
-function existingOrShared(account: Account, channel: ProvisionableChannel): ProvisionedIdentifier {
+function existingOrShared(
+	config: Config,
+	account: Account,
+	channel: ProvisionableChannel,
+): ProvisionedIdentifier {
 	const own = account.channels[channel];
 	if (own.address !== '') {
 		return { address: own.address, providerRef: own.providerRef };
 	}
+	const twilio = Boolean(config.TWILIO_ACCOUNT_SID && config.TWILIO_AUTH_TOKEN);
+	const plivo = Boolean(config.PLIVO_AUTH_ID && config.PLIVO_AUTH_TOKEN);
 	for (const sibling of PROVISIONABLE) {
 		if (sibling === channel) {
 			continue;
 		}
-		const shared = plivoOwnedIdentifier(account.channels[sibling]);
+		const shared =
+			(twilio ? twilioOwnedIdentifier(account.channels[sibling]) : null) ??
+			(plivo ? plivoOwnedIdentifier(account.channels[sibling]) : null);
 		if (shared) {
 			return shared;
 		}
@@ -135,7 +160,7 @@ export const accountChannelRoutes: FastifyPluginAsync = async (fastify) => {
 				provisioned = await provisioners[channel].provision({
 					accountId,
 					accountName: account.name,
-					existing: existingOrShared(account, channel),
+					existing: existingOrShared(config, account, channel),
 				});
 			} catch (error) {
 				request.log.error({ err: error, channel }, 'channel provisioning failed');
