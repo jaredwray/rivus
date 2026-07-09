@@ -181,6 +181,12 @@ describe('signTwilioRequest / verifyTwilioSignature', () => {
 			verifyTwilioSignature({ authToken: AUTH_TOKEN, url: DOC_URL, params: {}, signature: '' }),
 		).toBe(false);
 	});
+
+	it('verifies a non-URL string as-is (no port variants to try)', () => {
+		const url = 'not-a-url';
+		const signature = signTwilioRequest({ authToken: AUTH_TOKEN, url, params: {} });
+		expect(verifyTwilioSignature({ authToken: AUTH_TOKEN, url, params: {}, signature })).toBe(true);
+	});
 });
 
 describe('TwilioWhatsappSender', () => {
@@ -278,6 +284,23 @@ describe('TwilioSmsSender', () => {
 		await expect(sender.sendMessage(MESSAGE)).rejects.toThrow(
 			/SMS message \(status 402\).*insufficient funds/,
 		);
+	});
+
+	it('reports the bare status when the error body cannot be read', async () => {
+		const fetchImpl: FetchLike = async () => ({
+			ok: false,
+			status: 500,
+			text: async () => {
+				throw new Error('stream torn down');
+			},
+		});
+		const sender = new TwilioSmsSender({
+			accountSid: ACCOUNT_SID,
+			authToken: AUTH_TOKEN,
+			apiUrl: API_URL,
+			fetchImpl,
+		});
+		await expect(sender.sendMessage(MESSAGE)).rejects.toThrow(/SMS message \(status 500\)$/);
 	});
 });
 

@@ -14,13 +14,14 @@ import { NoopWhatsappSender, type WhatsappMessage, type WhatsappSender } from '.
 /**
  * The Plivo adapter for the messaging seams — the only module that knows
  * Plivo's wire format. Plivo fronts the same Messages API for SMS, MMS, and
- * WhatsApp (`type` selects the channel), which is why it's Rivus's primary
- * provider: the WhatsApp and SMS senders below differ by one request field,
- * both channels share the one number `PlivoProvisioner` rents, and voice can
- * later ride the same account. Like `ZernioWhatsappSender` (kept as an
- * alternative WhatsApp provider) and `ResendMailer`, it calls the documented
- * REST endpoints with `fetch`, so it adds no dependency and is trivially faked
- * in tests.
+ * WhatsApp (`type` selects the channel), and one rented number carries every
+ * channel. It was the original primary provider; it is retained during the
+ * migration to Twilio (`./twilio`) so numbers Plivo still owns keep sending
+ * and receiving — `./messaging-provider` routes each outbound message through
+ * the number's owner. Like `ZernioWhatsappSender` (kept as an alternative
+ * WhatsApp provider) and `ResendMailer`, it calls the documented REST
+ * endpoints with `fetch`, so it adds no dependency and is trivially faked in
+ * tests.
  *
  * Wire format sources: Plivo's Messages API and Numbers API references, and the
  * signature algorithm from Plivo's published node SDK (`validateSignature`).

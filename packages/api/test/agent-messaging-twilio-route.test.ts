@@ -257,6 +257,16 @@ describe('POST /v1/channels/whatsapp/twilio/inbound', () => {
 			},
 		});
 		expectEmptyTwiml(delivered);
+		// The successful report was recognized-and-ignored: nothing got flagged.
+		const threadAfterDelivered = await repos.agentThreads.findByContact(
+			accountId,
+			'whatsapp',
+			SENDER,
+		);
+		const afterDelivered = threadAfterDelivered
+			? await repos.conversations.findById(accountId, threadAfterDelivered.conversationId)
+			: null;
+		expect(afterDelivered?.status).not.toBe('needs_attention');
 		const failed = await app.inject({
 			method: 'POST',
 			url: WHATSAPP_URL,

@@ -33,11 +33,12 @@ function formParams(body: unknown): TwilioWebhookParams {
 
 /**
  * Build the `preValidation` hook for one Twilio channel webhook. `pinnedUrl`
- * is that channel's public webhook URL (`TWILIO_*_WEBHOOK_URL`); when unset
- * the URL is reconstructed from the request, honoring forwarding headers.
- * Voice pins the answer endpoint's URL, so its input endpoint (different
- * path) always verifies against the reconstructed URL — pass `pinnedUrl`
- * only when it matches the route's own path.
+ * is that endpoint's public URL; when unset the URL is reconstructed from the
+ * request, honoring forwarding headers. The messaging channels pin their
+ * `TWILIO_*_WEBHOOK_URL` directly; the voice pair pins the answer endpoint
+ * with `TWILIO_VOICE_WEBHOOK_URL` and its input endpoint with the URL derived
+ * from that pin (the same URL the answer TwiML hands out as the Gather
+ * action). Pass `pinnedUrl` only when it matches the route's own path.
  */
 export function twilioWebhookAuthHook(
 	app: FastifyInstance,

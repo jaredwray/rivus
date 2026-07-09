@@ -294,7 +294,7 @@ numbers no longer provision through it while Twilio's credentials are set.
    Plivo's Numbers API. Registering that number to the WhatsApp Business Account
    (Meta's Embedded Signup in the Plivo console) is a one-time step per number
    that Plivo does not yet expose over the API — see `TODO(plivo)` in
-   `src/services/plivo-whatsapp.ts`.
+   `src/services/plivo.ts`.
 4. An account **owner** enables the channel — in the app (Settings → WhatsApp
    Business → On) or via `POST /v1/account/channels/whatsapp/enable`. Rivus
    provisions the number and starts answering; `…/disable` turns it off but

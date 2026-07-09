@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
 import { createInMemoryRepositories } from '../src/repositories/memory';
+import { runVoiceTurn, VOICE_LINES } from '../src/routes/agent-voice-shared';
 import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
 import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
@@ -82,6 +83,18 @@ describe('POST /v1/channels/voice/twilio/answer', () => {
 			method: 'POST',
 			url: ANSWER_URL,
 			payload: call({ To: '+15557778888' }),
+		});
+		expect(res.body).toContain('isn&apos;t in service');
+		expect(res.body).not.toContain('<Gather');
+	});
+
+	it('speaks not-in-service when the called number is missing entirely', async () => {
+		const built = await setup();
+		app = built.app;
+		const res = await app.inject({
+			method: 'POST',
+			url: ANSWER_URL,
+			payload: { From: CALLER, CallSid: 'CAcall0002' },
 		});
 		expect(res.body).toContain('isn&apos;t in service');
 		expect(res.body).not.toContain('<Gather');
@@ -218,6 +231,18 @@ describe('POST /v1/channels/voice/twilio/input', () => {
 		});
 		expect(res.body).toContain('didn&apos;t catch that');
 		expect(res.body).toContain('<Gather');
+	});
+
+	it('declines restricted/anonymous callers mid-call too', async () => {
+		const built = await setup();
+		app = built.app;
+		const res = await app.inject({
+			method: 'POST',
+			url: INPUT_URL,
+			payload: call({ From: 'anonymous', SpeechResult: 'hello' }),
+		});
+		expect(res.body).toContain('restricted or anonymous');
+		expect(res.body).not.toContain('<Gather');
 	});
 
 	it('speaks an apology when the orchestrator fails mid-turn', async () => {
@@ -439,5 +464,52 @@ describe('POST /v1/channels/voice/twilio/* — signature', () => {
 		});
 		const res = await app.inject({ method: 'POST', url: ANSWER_URL, payload: call() });
 		expect(res.statusCode).toBe(503);
+	});
+});
+
+// --- The shared voice core's fallback edge ------------------------------------
+
+describe('runVoiceTurn', () => {
+	let app: FastifyInstance | undefined;
+	afterEach(async () => {
+		await app?.close();
+		app = undefined;
+	});
+
+	it('ends the call politely when the turn produces nothing to speak', async () => {
+		const { app: built, repos } = await buildTestAppWithRepos();
+		app = built;
+		const owner = await signupOwner(app);
+		const account = await repos.accounts.findById(owner.account.id as AccountId);
+		if (!account) {
+			throw new Error('account missing');
+		}
+		const turn = await runVoiceTurn({
+			deps: {
+				config: app.deps.config,
+				jobs: repos.jobs,
+				conversations: repos.conversations,
+				agentThreads: repos.agentThreads,
+			},
+			customers: repos.customers,
+			// A capability whose reply renders to empty speech — there is nothing
+			// to say, so the call must close politely instead of looping silence.
+			capabilities: [
+				{
+					id: 'mute',
+					matches: () => true,
+					handle: async () => ({
+						response: { blocks: [] },
+						outcome: 'mute',
+						threadPatch: {},
+					}),
+				},
+			],
+			account,
+			caller: CALLER,
+			speech: 'hello there',
+			logger: app.log,
+		});
+		expect(turn).toEqual({ mode: 'terminal', text: VOICE_LINES.goodbye });
 	});
 });

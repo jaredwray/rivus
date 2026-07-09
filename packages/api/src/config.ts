@@ -76,8 +76,8 @@ const envSchema = z
 		// Twilio is the primary provider for WhatsApp, SMS, and voice: new numbers
 		// are provisioned there and its webhooks verify with the auth token
 		// (X-Twilio-Signature). Numbers other providers still own keep sending
-		// through their owner — outbound routes per account by providerRef — so a
-		// Plivo fleet keeps working mid-migration.
+		// through their owner — each outbound message routes by its sending
+		// number's providerRef — so a Plivo fleet keeps working mid-migration.
 		TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
 		TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
 		// Base URL of Twilio's REST API; the account-scoped resource paths hang off it.
@@ -95,11 +95,12 @@ const envSchema = z
 		// ISO 3166-1 alpha-2 country whose numbers the Twilio provisioner rents.
 		TWILIO_NUMBER_COUNTRY: z.string().length(2).default('US'),
 		// --- WhatsApp channel (Plivo, retained during the Twilio migration) ---
-		// Plivo account credentials (Console → API keys). When both are set, Plivo is
-		// the active WhatsApp provider — sender and number provisioner — and the Plivo
-		// webhook verifies deliveries with the auth token (Plivo signs URL + nonce
-		// with it; there is no separate webhook secret). When unset, WhatsApp falls
-		// back to zernio (above), else to a no-op — mirroring the Resend gate.
+		// Plivo account credentials (Console → API keys). When both are set, Plivo
+		// serves the numbers it still owns (and is the primary provider only while
+		// Twilio is unconfigured), and the Plivo webhooks verify deliveries with the
+		// auth token (Plivo signs URL + nonce with it; there is no separate webhook
+		// secret). When unset, WhatsApp falls back to zernio (above), else to a
+		// no-op — mirroring the Resend gate.
 		PLIVO_AUTH_ID: z.string().min(1).optional(),
 		PLIVO_AUTH_TOKEN: z.string().min(1).optional(),
 		// Base URL of Plivo's REST API; the account-scoped resource paths hang off it.

@@ -109,14 +109,16 @@ export function parseTwilioInbound(body: unknown, channel: TwilioChannel): Twili
 		};
 	}
 
-	// An inbound message. A hook only handles its own channel.
-	if (whatsappShaped !== (channel === 'whatsapp')) {
-		return { kind: 'ignored' };
-	}
+	// An inbound message. Unreadable numbers mean this isn't a delivery we
+	// understand at all; a readable delivery shaped like the other channel is
+	// recognized and ignored (a hook only handles its own channel).
 	const from = twilioNumber(payload.From);
 	const to = twilioNumber(payload.To);
 	if (from === '' || to === '') {
 		return { kind: 'unrecognized' };
+	}
+	if (whatsappShaped !== (channel === 'whatsapp')) {
+		return { kind: 'ignored' };
 	}
 	// A media-only message has an empty Body, which the dispatcher declines as
 	// unsupported — same policy as the Plivo path.
