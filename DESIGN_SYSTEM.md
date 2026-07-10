@@ -39,12 +39,23 @@ theme) instead of hard-coding a new literal in a component.
 
 ### Status
 
-| Token   | Value      | Use                          |
-| ------- | ---------- | ---------------------------- |
-| Success | `#1fb573`  | Paid, positive, online       |
-| Warning | `#f0a020`  | Pending, attention           |
-| Danger  | `#f0584b`  | Overdue, errors, destructive |
-| Accent  | `#6e1ec8`  | Quotes, highlights (violet)  |
+| Token       | Value      | Use                                                  |
+| ----------- | ---------- | ---------------------------------------------------- |
+| Success     | `#1fb573`  | Paid, positive, online                               |
+| Success ink | `#0e7a4f`  | Success-colored **small text** (holds 4.5:1 on white/tints) |
+| Warning     | `#f0a020`  | Pending, attention                                   |
+| Danger      | `#f0584b`  | Overdue, errors, destructive                         |
+| Accent      | `#6e1ec8`  | Quotes, highlights (violet)                          |
+
+### Marketing tints
+
+Soft, near-white washes of the brand colors used on the marketing site for
+hero/header backgrounds and icon chips — never for text or interactive states.
+
+| Token       | Value      | Use                                                    |
+| ----------- | ---------- | ------------------------------------------------------ |
+| Soft violet | `#f0eaff`  | Hero/page-header wash, step numerals, violet icon tiles |
+| Soft sky    | `#eef8ff`  | Hero/page-header wash (paired with Soft violet)         |
 
 ### Text
 
@@ -211,6 +222,28 @@ a messaging channel on) — form choices between options stay a segmented contro
   detached spinner beside the control. **Disabled:** 50% opacity.
 - Announces as a switch with `checked`/`disabled`/`busy` state; pair it with a
   visible "On"/"Off" text echo where color alone would carry the state.
+
+### PageHero (marketing)
+
+The light header band every marketing subpage opens with, on the shared
+hero wash (see Marketing tints).
+
+- **Props:** `eyebrow` · `title` · `lead` · `actions` (optional CTA row) ·
+  `children` (optional extra content, e.g. a stat band)
+
+### Stat band (marketing)
+
+A row of headline numbers under a page hero — white cards on the hairline
+border, values in Accent violet.
+
+- **Data:** `value` · `label` (e.g. "24/7" · "on every channel")
+
+### Chip (marketing)
+
+Compact availability tag on cards (e.g. platform cards on /apps).
+
+- **Variants:** `live` (Success-ink text on a success tint, e.g. "Available
+  now") · `soon` (Accent violet on Soft violet, e.g. "Coming soon")
 
 ### Navigation
 

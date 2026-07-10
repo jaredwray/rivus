@@ -5,5 +5,6 @@ export * from './phone';
 export * from './regex';
 export * from './schemas';
 export * from './slug';
+export * from './sms-consent';
 export * from './staff';
 export * from './types';

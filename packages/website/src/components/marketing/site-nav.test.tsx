@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { appUrl } from '../../lib/site';
+import { appUrl, signupUrl } from '../../lib/site';
 import { SiteNav } from './site-nav';
 
 describe('SiteNav', () => {
@@ -11,6 +11,11 @@ describe('SiteNav', () => {
 		for (const link of signIns) {
 			expect(link.getAttribute('href')).toBe(`${appUrl}/login`);
 		}
+	});
+
+	it('sends "Get started" straight to the app signup', () => {
+		render(<SiteNav />);
+		expect(screen.getByRole('link', { name: 'Get started' }).getAttribute('href')).toBe(signupUrl);
 	});
 
 	it('toggles the mobile menu open and closed', () => {

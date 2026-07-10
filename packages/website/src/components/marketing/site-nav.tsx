@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { appUrl, navLinks } from '../../lib/site';
+import { appUrl, navLinks, signupUrl } from '../../lib/site';
 import { BrandImg } from './brand-img';
 import { MenuIcon } from './icons';
 
@@ -32,9 +32,9 @@ export function SiteNav() {
 					Sign in
 				</a>
 				<div className="nav__actions">
-					<Link className="btn btn--primary nav__cta" href="/#cta">
+					<a className="btn btn--primary nav__cta" href={signupUrl}>
 						Get started
-					</Link>
+					</a>
 					<button
 						type="button"
 						className="nav__menu-btn"

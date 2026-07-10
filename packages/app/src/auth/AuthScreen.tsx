@@ -5,6 +5,7 @@ import { ApiError, type SignupBody } from '@/src/api/client';
 import { getGoogleMapsApiKey } from '@/src/api/config';
 import { deviceTimezone, listTimezones } from '@/src/api/timezones';
 import { AddressAutocomplete } from '@/src/components/AddressAutocomplete';
+import { SmsConsentNote } from '@/src/components/SmsConsentNote';
 import { GradientButton, RivusBadge, Select, TextField, Txt } from '@/src/components/ui';
 import { colors, font, radii } from '@/src/theme/tokens';
 import { useDocumentTitle } from '@/src/theme/useDocumentTitle';
@@ -16,7 +17,8 @@ type Step = 'form' | 'code';
 const COPY: Record<Mode, { title: string; subtitle: string; submit: string; tabTitle: string }> = {
 	signup: {
 		title: 'Create your business account',
-		subtitle: 'Set up Rivus for your business in under a minute.',
+		subtitle:
+			'Start your free 14-day trial — no credit card required, and a free onboarding specialist sets everything up for you.',
 		submit: 'Create account',
 		tabTitle: 'Sign up',
 	},
@@ -259,6 +261,7 @@ export function AuthScreen({
 											placeholder="+1 (206) 555-0100"
 											keyboardType="phone-pad"
 										/>
+										<SmsConsentNote />
 										<AddressAutocomplete
 											label="Address"
 											value={address}

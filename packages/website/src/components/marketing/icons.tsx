@@ -29,6 +29,10 @@ export type IconName =
 	| 'desktop'
 	| 'apple'
 	| 'android'
+	| 'shield'
+	| 'heart'
+	| 'users'
+	| 'pin'
 	| 'menu';
 
 export interface IconProps extends SVGProps<SVGSVGElement> {
@@ -214,6 +218,34 @@ export const AndroidIcon = (props: IconProps) => (
 	</Solid>
 );
 
+export const ShieldIcon = (props: IconProps) => (
+	<Line {...props}>
+		<path d="M12 3l7 3v5c0 4.6-3 8.2-7 10-4-1.8-7-5.4-7-10V6z" />
+		<path d="M9 12l2 2 4-4" />
+	</Line>
+);
+
+export const HeartIcon = (props: IconProps) => (
+	<Line {...props}>
+		<path d="M12 20.5S4 15 4 9.5A4.5 4.5 0 0 1 12 6.6a4.5 4.5 0 0 1 8 2.9c0 5.5-8 11-8 11z" />
+	</Line>
+);
+
+export const UsersIcon = (props: IconProps) => (
+	<Line {...props}>
+		<circle cx="9" cy="8.5" r="3.5" />
+		<path d="M3 20a6 6 0 0 1 12 0" />
+		<path d="M16 5.6a3.5 3.5 0 0 1 0 5.8M17.5 14.5A6 6 0 0 1 21 20" />
+	</Line>
+);
+
+export const PinIcon = (props: IconProps) => (
+	<Line {...props}>
+		<path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z" />
+		<circle cx="12" cy="10" r="2.4" />
+	</Line>
+);
+
 export const MenuIcon = (props: IconProps) => (
 	<Line strokeWidth={2} {...props}>
 		<path d="M4 7h16M4 12h16M4 17h16" />
@@ -244,6 +276,10 @@ export const icons: Record<IconName, ComponentType<IconProps>> = {
 	desktop: DesktopIcon,
 	apple: AppleIcon,
 	android: AndroidIcon,
+	shield: ShieldIcon,
+	heart: HeartIcon,
+	users: UsersIcon,
+	pin: PinIcon,
 	menu: MenuIcon,
 };
 

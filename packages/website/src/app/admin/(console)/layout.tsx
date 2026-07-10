@@ -16,7 +16,8 @@ export default function ConsoleLayout({ children }: { children: ReactNode }) {
 	return (
 		<div className="admin">
 			<AdminSidebar />
-			<div className="admin-main">
+			{/* id="main" is the root layout's skip-link target. */}
+			<div id="main" className="admin-main">
 				<AdminMobileHeader />
 				<AdminTopbar />
 				<div className="admin-content">{children}</div>

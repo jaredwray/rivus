@@ -30,6 +30,8 @@
 	--violet-ink: #4a3b60;
 	--green: #1fb573;
 	--green-2: #46d99a;
+	/* Success at small-text contrast (≥4.5:1 on white and green tints). */
+	--green-ink: #0e7a4f;
 	--amber: #f0a020;
 	--red: #f0584b;
 
@@ -41,7 +43,13 @@
 	--grad: linear-gradient(135deg, #1ebefa, #6e1ec8);
 	--grad-text: linear-gradient(120deg, #1ebefa, #6e1ec8);
 
+	/* Light header wash shared by the home hero and info-page heroes. */
+	--hero-wash: radial-gradient(120% 90% at 88% -10%, #f0eaff 0%, #eef8ff 30%, #ffffff 62%);
+
 	--container: 1180px;
+	/* Clearance for content that must land below the sticky nav (~68px tall)
+	   when scrolled to — anchor targets and any scroll-into-view offset. */
+	--nav-clearance: 84px;
 	color-scheme: light;
 }
 
@@ -51,6 +59,16 @@
 
 html {
 	scroll-behavior: smooth;
+}
+
+/* Anchored sections (e.g. /#features) must clear the sticky nav when jumped
+   to, or their headings land hidden underneath it. Every linkable anchor on
+   the site is a main, section, or article — scoped so ids on interactive
+   elements (form inputs) keep default focus-scroll behavior. */
+main[id],
+section[id],
+article[id] {
+	scroll-margin-top: var(--nav-clearance);
 }
 
 body {
@@ -171,15 +189,41 @@ svg {
 	transform: translateY(-1px);
 }
 
+/* Pressed state (all variants): dim to 85% per the design system. */
+.btn:active {
+	opacity: 0.85;
+	transform: translateY(0);
+}
+
+/* Keyboard focus: a solid violet outline. Outline (not box-shadow) so it
+   never loses to variant shadows like .btn--primary:hover, follows each
+   element's own border-radius, and survives forced-colors mode. The white
+   inner ring separates it from dark grounds. */
+.btn:focus-visible,
+a:focus-visible,
+button:focus-visible {
+	outline: 3px solid var(--violet);
+	outline-offset: 2px;
+	box-shadow: 0 0 0 2px #fff;
+}
+
 .btn--primary {
 	background: var(--grad);
 	color: #fff;
 	box-shadow: 0 12px 26px rgba(110, 30, 200, 0.26);
 }
 
+.btn--primary:hover {
+	box-shadow: 0 14px 30px rgba(110, 30, 200, 0.34);
+}
+
 .btn--white {
 	background: #fff;
 	color: var(--ink);
+}
+
+.btn--white:hover {
+	background: var(--field);
 }
 
 .btn--outline {
@@ -188,16 +232,28 @@ svg {
 	color: var(--ink);
 }
 
+.btn--outline:hover {
+	background: var(--field);
+}
+
 .btn--soft {
 	background: var(--field);
 	border-color: var(--line-3);
 	color: var(--ink);
 }
 
+.btn--soft:hover {
+	background: #eceef4;
+}
+
 .btn--ghost-dark {
 	background: rgba(255, 255, 255, 0.1);
 	border-color: rgba(255, 255, 255, 0.2);
 	color: #fff;
+}
+
+.btn--ghost-dark:hover {
+	background: rgba(255, 255, 255, 0.16);
 }
 
 .btn--lg {
@@ -230,6 +286,9 @@ svg {
 	letter-spacing: 0.04em;
 	padding: 4px 9px;
 	border-radius: 999px;
+	/* The chip must never break into two lines when the badge is squeezed. */
+	white-space: nowrap;
+	flex-shrink: 0;
 }
 
 .badge__text {
@@ -318,6 +377,26 @@ svg {
 	color: var(--muted);
 }
 
+/* ---------- Skip link (keyboard users jump past the nav) ---------- */
+
+.skip-link {
+	position: absolute;
+	left: -9999px;
+	top: 12px;
+	z-index: 100;
+	background: var(--ink);
+	color: #fff;
+	font-size: 14px;
+	font-weight: 600;
+	text-decoration: none;
+	padding: 10px 18px;
+	border-radius: 10px;
+}
+
+.skip-link:focus-visible {
+	left: 12px;
+}
+
 /* ============================================================
    Announcement bar
    ============================================================ */
@@ -333,6 +412,18 @@ svg {
 	align-items: center;
 	justify-content: center;
 	gap: 9px;
+	text-decoration: none;
+}
+
+.announce__cta {
+	white-space: nowrap;
+	text-decoration: underline;
+	text-decoration-color: rgba(255, 255, 255, 0.55);
+	text-underline-offset: 3px;
+}
+
+.announce:hover .announce__cta {
+	text-decoration-color: #fff;
 }
 
 /* ============================================================
@@ -438,7 +529,7 @@ svg {
 .hero {
 	position: relative;
 	overflow: hidden;
-	background: radial-gradient(120% 90% at 88% -10%, #f0eaff 0%, #eef8ff 30%, #ffffff 62%);
+	background: var(--hero-wash);
 }
 
 .hero__glow-a,
@@ -1855,6 +1946,202 @@ svg {
 }
 
 /* ============================================================
+   Info subpages (about / careers / contact / apps)
+   ============================================================ */
+
+/* Page hero — the light header band every subpage opens with. */
+.page-hero {
+	position: relative;
+	overflow: hidden;
+	background: var(--hero-wash);
+	border-bottom: 1px solid var(--line-2);
+}
+
+.page-hero__inner {
+	max-width: 820px;
+	margin: 0 auto;
+	padding: 76px 26px 64px;
+	text-align: center;
+}
+
+.page-hero__title {
+	font-size: clamp(34px, 4.4vw, 54px);
+	font-weight: 700;
+	letter-spacing: -0.03em;
+	line-height: 1.06;
+}
+
+.page-hero__lead {
+	margin: 20px auto 0;
+	font-size: 18px;
+	line-height: 1.6;
+	color: var(--body-2);
+	max-width: 640px;
+}
+
+.page-hero__actions {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 14px;
+	margin-top: 30px;
+	flex-wrap: wrap;
+}
+
+/* Stat band — a row of headline numbers on info pages. */
+.stat-band {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 18px;
+	max-width: 720px;
+	margin: 44px auto 0;
+}
+
+.stat-band__stat {
+	background: #fff;
+	border: 1px solid var(--line);
+	border-radius: 14px;
+	padding: 18px 14px;
+	text-align: center;
+}
+
+/* Solid violet, not gradient text: the signature gradient is reserved for
+   Rivus-the-agent, and brand cyan can't hold 3:1 on the white card anyway. */
+.stat-band__value {
+	font-size: 26px;
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	color: var(--violet);
+}
+
+.stat-band__label {
+	margin-top: 3px;
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--muted);
+}
+
+/* Prose block — narrative copy on the about page. */
+.prose {
+	max-width: 720px;
+	margin: 0 auto;
+}
+
+.prose p {
+	font-size: 16.5px;
+	line-height: 1.75;
+	color: var(--ink-3);
+	margin-bottom: 18px;
+}
+
+.prose p:last-child {
+	margin-bottom: 0;
+}
+
+/* Contact cards — a tile, a blurb, and a real address to write to. */
+.card__link {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	margin-top: 14px;
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--violet);
+	text-decoration: none;
+}
+
+.card__link:hover {
+	text-decoration: underline;
+}
+
+.card--cta {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+}
+
+.card--cta .btn {
+	margin-top: 16px;
+}
+
+/* Availability chip on app-platform cards. */
+.chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 11.5px;
+	font-weight: 600;
+	padding: 4px 11px;
+	border-radius: 999px;
+}
+
+.chip--live {
+	color: var(--green-ink);
+	background: rgba(31, 181, 115, 0.12);
+}
+
+.chip--soon {
+	color: var(--violet);
+	background: #f0eaff;
+}
+
+.card__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+/* Careers — the open-roles empty state. */
+.roles-empty {
+	max-width: 640px;
+	margin: 0 auto;
+	background: #fff;
+	border: 1px dashed var(--line-3);
+	border-radius: 18px;
+	padding: 40px 30px;
+	text-align: center;
+}
+
+.roles-empty__title {
+	margin: 0;
+	font-size: 19px;
+	font-weight: 700;
+}
+
+.roles-empty__body {
+	margin: 10px auto 0;
+	font-size: 15px;
+	line-height: 1.6;
+	color: var(--muted);
+	max-width: 460px;
+}
+
+.roles-empty .btn {
+	margin-top: 22px;
+}
+
+@media (max-width: 640px) {
+	.page-hero__inner {
+		padding: 48px 20px 44px;
+	}
+	.page-hero__lead {
+		font-size: 16px;
+	}
+	.page-hero__actions {
+		flex-direction: column;
+		align-items: stretch;
+	}
+	.page-hero__actions .btn {
+		width: 100%;
+	}
+	.stat-band {
+		grid-template-columns: 1fr;
+		gap: 12px;
+	}
+}
+
+/* ============================================================
    Legal pages (privacy / terms / security)
    ============================================================ */
 
@@ -1931,6 +2218,8 @@ svg {
 }
 
 .legal__text a,
+.legal__list a,
+.legal__lead a,
 .legal__footnote a {
 	color: var(--violet);
 	font-weight: 600;
@@ -1938,6 +2227,8 @@ svg {
 }
 
 .legal__text a:hover,
+.legal__list a:hover,
+.legal__lead a:hover,
 .legal__footnote a:hover {
 	text-decoration: underline;
 }
@@ -2032,6 +2323,22 @@ svg {
 	outline: none;
 	border-color: var(--violet);
 	box-shadow: 0 0 0 3px rgba(110, 30, 200, 0.12);
+}
+
+.join-form__consent {
+	font-size: 12px;
+	line-height: 1.55;
+	color: var(--muted);
+}
+
+.join-form__consent a {
+	color: var(--violet);
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.join-form__consent a:hover {
+	text-decoration: underline;
 }
 
 .join-form__error {
@@ -2200,6 +2507,16 @@ svg {
 	.hero__inner {
 		padding: 34px 20px 40px;
 	}
+	/* When the badge text wraps, a full pill grows tall, ugly rounded caps;
+	   soften to a card radius and let the two-line text breathe. */
+	.badge {
+		border-radius: 16px;
+		align-items: center;
+		padding: 7px 14px 7px 8px;
+	}
+	.badge__text {
+		line-height: 1.4;
+	}
 	.hero__title {
 		font-size: 38px;
 	}
@@ -2299,5 +2616,23 @@ svg {
 
 	.join-card {
 		padding: 26px 20px;
+	}
+}
+
+/* ============================================================
+   Reduced motion
+   Last in the file on purpose: these same-specificity overrides
+   must come after every rule they neutralize to win the cascade.
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+	html {
+		scroll-behavior: auto;
+	}
+	.btn {
+		transition: none;
+	}
+	.btn:hover {
+		transform: none;
 	}
 }
