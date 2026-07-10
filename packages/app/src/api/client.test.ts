@@ -8,7 +8,13 @@ import type {
 	NotificationId,
 } from '@rivus/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, createApiClient, NetworkError, ValidationError } from './client';
+import {
+	ApiError,
+	createApiClient,
+	NetworkError,
+	TWILIO_WHATSAPP_SANDBOX_NUMBER,
+	ValidationError,
+} from './client';
 
 /** Build a `Response`-like object the client's `text()`/`ok` logic understands. */
 function jsonResponse(body: unknown, init: { status?: number } = {}): Response {
@@ -593,6 +599,37 @@ describe('createApiClient', () => {
 			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
 			expect(url).toBe(`${BASE}/v1/account/channels/whatsapp/disable`);
 			expect(init.method).toBe('POST');
+		});
+	});
+
+	describe('sandboxWhatsapp', () => {
+		it('POSTs the mode to the dev-only sandbox route and returns the account', async () => {
+			const account = makeAccount();
+			account.channels.whatsapp = {
+				enabled: true,
+				address: TWILIO_WHATSAPP_SANDBOX_NUMBER,
+				providerRef: 'twilio-sandbox',
+			};
+			fetchMock.mockResolvedValueOnce(jsonResponse(account));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.sandboxWhatsapp('staff-token');
+
+			expect(result.channels.whatsapp.address).toBe(TWILIO_WHATSAPP_SANDBOX_NUMBER);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/admin/sandbox/whatsapp`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer staff-token' });
+			// Attach is the default mode; detach is sent explicitly.
+			expect(JSON.parse(String(init.body))).toEqual({ mode: 'attach' });
+		});
+
+		it('sends detach when asked', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(makeAccount()));
+			const client = createApiClient(BASE, fetchMock);
+			await client.sandboxWhatsapp('staff-token', 'detach');
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(JSON.parse(String(init.body))).toEqual({ mode: 'detach' });
 		});
 	});
 

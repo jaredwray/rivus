@@ -57,6 +57,11 @@ export interface AuthContextValue {
 	 */
 	setChannelEnabled: (channel: ProvisionedChannel, enabled: boolean) => Promise<void>;
 	/**
+	 * Point this account's WhatsApp at Twilio's shared sandbox number, or detach
+	 * it, keeping the session in sync (development + Rivus staff only).
+	 */
+	sandboxWhatsapp: (mode: 'attach' | 'detach') => Promise<void>;
+	/**
 	 * Update your own profile (name, phone, email, profile image), keeping the
 	 * session in sync. Changing the email stages it on `session.user.pendingEmail`
 	 * and emails a code; the live email only changes once
@@ -160,6 +165,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				const account = enabled
 					? await client.enableChannel(session.token, channel)
 					: await client.disableChannel(session.token, channel);
+				setSession({ ...session, account });
+			},
+			async sandboxWhatsapp(mode) {
+				if (!session) {
+					return;
+				}
+				const account = await client.sandboxWhatsapp(session.token, mode);
 				setSession({ ...session, account });
 			},
 			async verifyEmailChange(input) {

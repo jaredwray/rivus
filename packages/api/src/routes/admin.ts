@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { isSeedingEnabled } from '../config';
 import {
 	accountListResponseSchema,
+	accountResponseSchema,
 	authResponseSchema,
 	errorResponseSchema,
 	idParamsSchema,
@@ -18,6 +19,7 @@ import {
 } from '../http-schemas';
 import { toPublicAccount, toPublicUser } from '../presenters';
 import { issueSession } from '../services/session';
+import { TWILIO_SANDBOX_PROVIDER_REF, TWILIO_WHATSAPP_SANDBOX_NUMBER } from '../services/twilio';
 
 /** List query: standard pagination plus an optional free-text company search. */
 const listCompaniesQuerySchema = paginationQuerySchema.extend({
@@ -26,6 +28,11 @@ const listCompaniesQuerySchema = paginationQuerySchema.extend({
 		.trim()
 		.max(160, { error: 'Search must be 160 characters or fewer.' })
 		.optional(),
+});
+
+/** Body of the dev-only WhatsApp-sandbox switch: attach (default) or detach. */
+const sandboxWhatsappSchema = z.object({
+	mode: z.enum(['attach', 'detach']).default('attach'),
 });
 
 /**
@@ -178,6 +185,84 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
 					},
 					{ seed: body.seed, log: (message) => request.log.info(message) },
 				);
+			},
+		);
+
+		// Development-only WhatsApp sandbox switch, gated exactly like the seeder.
+		// Twilio's sandbox is the zero-compliance way to test WhatsApp end-to-end
+		// (no WABA, no sender registration, real inbound webhooks), but inbound
+		// resolution matches on the account's stored channel address — and the
+		// enable flow can't rent the shared sandbox number. This flips the current
+		// account's WhatsApp channel onto the sandbox number (and back off it),
+		// with guards so it can never clobber a real provisioned number. Setup that
+		// stays in the Twilio console: point the sandbox's inbound webhook at
+		// /v1/channels/whatsapp/twilio/inbound and have testers send the join code.
+		app.post(
+			'/sandbox/whatsapp',
+			{
+				onRequest: [fastify.authenticate, fastify.requireStaff],
+				schema: {
+					tags: ['admin'],
+					summary:
+						'Point this account’s WhatsApp at the Twilio sandbox (development only, Rivus staff only)',
+					description:
+						'Attaches the current account’s WhatsApp channel to Twilio’s shared ' +
+						'sandbox number so sandbox conversations reach the scheduling agent — ' +
+						'or detaches it again. Attach refuses to replace a real provisioned ' +
+						'number, and detach only ever clears the sandbox number. Configure the ' +
+						'sandbox’s inbound webhook (Console → Messaging → Try it out) to this ' +
+						'API’s /v1/channels/whatsapp/twilio/inbound route.',
+					security: [{ bearerAuth: [] }],
+					body: sandboxWhatsappSchema,
+					response: {
+						200: accountResponseSchema,
+						401: errorResponseSchema,
+						403: errorResponseSchema,
+						404: errorResponseSchema,
+						409: errorResponseSchema,
+					},
+				},
+			},
+			async (request) => {
+				const accountId = request.user.accountId as AccountId;
+				const account = await accounts.findById(accountId);
+				if (!account) {
+					throw app.httpErrors.notFound('Account not found');
+				}
+				const whatsapp = account.channels.whatsapp;
+				if (request.body.mode === 'detach') {
+					// Only ever clear the sandbox number — never a real one.
+					if (whatsapp.address !== TWILIO_WHATSAPP_SANDBOX_NUMBER) {
+						throw app.httpErrors.conflict('This account is not on the WhatsApp sandbox.');
+					}
+					const updated = await accounts.setChannelConfig(accountId, 'whatsapp', {
+						enabled: false,
+						address: '',
+						providerRef: '',
+					});
+					if (!updated) {
+						throw app.httpErrors.notFound('Account not found');
+					}
+					return toPublicAccount(updated);
+				}
+				// Attach. A real provisioned number is the account's retained identity —
+				// replacing it would orphan the rental, so refuse instead.
+				if (whatsapp.address !== '' && whatsapp.address !== TWILIO_WHATSAPP_SANDBOX_NUMBER) {
+					throw app.httpErrors.conflict(
+						'This account already has a WhatsApp number; the sandbox would replace it.',
+					);
+				}
+				// The repositories' cross-account uniqueness makes a second account's
+				// attach fail with a 409 — one sandbox tenant per deployment.
+				const updated = await accounts.setChannelConfig(accountId, 'whatsapp', {
+					enabled: true,
+					address: TWILIO_WHATSAPP_SANDBOX_NUMBER,
+					providerRef: TWILIO_SANDBOX_PROVIDER_REF,
+				});
+				if (!updated) {
+					throw app.httpErrors.notFound('Account not found');
+				}
+				return toPublicAccount(updated);
 			},
 		);
 	}

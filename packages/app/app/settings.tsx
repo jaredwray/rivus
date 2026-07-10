@@ -8,7 +8,12 @@ import {
 	useWindowDimensions,
 	View,
 } from 'react-native';
-import { ApiError, type Billing, type SeedSummary } from '@/src/api/client';
+import {
+	ApiError,
+	type Billing,
+	type SeedSummary,
+	TWILIO_WHATSAPP_SANDBOX_NUMBER,
+} from '@/src/api/client';
 import { getGoogleMapsApiKey, isSeedingEnabled } from '@/src/api/config';
 import { deviceTimezone, listTimezones } from '@/src/api/timezones';
 import { useAuth } from '@/src/auth/AuthContext';
@@ -184,6 +189,83 @@ function DevSeedCard() {
 	);
 }
 
+/**
+ * A development-only, Rivus-staff-only switch that points this account's
+ * WhatsApp channel at Twilio's shared **sandbox** number, so sandbox
+ * conversations reach the scheduling agent — the zero-compliance way to test
+ * WhatsApp end to end (no WABA, no sender registration). Attach/detach state
+ * reads from the session's account; the API refuses to replace or clear a real
+ * provisioned number, so this can never clobber one. Gated exactly like
+ * {@link DevSeedCard}, with the same server-side enforcement.
+ */
+function DevSandboxCard() {
+	const { session, sandboxWhatsapp, isStaff } = useAuth();
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	const visible = Boolean(session) && isStaff && isSeedingEnabled();
+	const whatsapp = session?.account.channels.whatsapp;
+	const attached = whatsapp?.address === TWILIO_WHATSAPP_SANDBOX_NUMBER;
+	// A real provisioned number blocks the sandbox (the API refuses to replace it).
+	const blocked = Boolean(whatsapp && whatsapp.address !== '' && !attached);
+
+	async function onToggle() {
+		if (busy || !session) {
+			return;
+		}
+		setError(null);
+		setBusy(true);
+		try {
+			await sandboxWhatsapp(attached ? 'detach' : 'attach');
+		} catch (caught) {
+			setError(messageFor(caught, 'Could not update the WhatsApp sandbox.'));
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	if (!visible || !session) {
+		return null;
+	}
+
+	return (
+		<Card style={[styles.card, styles.devCard]}>
+			<SectionLabel style={styles.devLabel}>Developer · WhatsApp sandbox</SectionLabel>
+			<Txt style={styles.rowSub}>
+				{attached
+					? `WhatsApp is on Twilio's sandbox number (${TWILIO_WHATSAPP_SANDBOX_NUMBER}). Send the ` +
+						'sandbox join code to it from WhatsApp and the agent answers. Detach to hand the ' +
+						'channel back.'
+					: blocked
+						? 'This account already has a real WhatsApp number, so the sandbox is unavailable ' +
+							'here — use a fresh test account.'
+						: "Point WhatsApp at Twilio's shared sandbox number to test the agent end to end " +
+							'with no sender registration. First, set the sandbox inbound webhook (Twilio ' +
+							'Console → Messaging → Try it out) to this API. Visible only in development, to ' +
+							'Rivus staff.'}
+			</Txt>
+
+			{error ? <Txt style={styles.errorTxt}>{error}</Txt> : null}
+
+			<GradientButton
+				label={
+					busy
+						? attached
+							? 'Detaching…'
+							: 'Attaching…'
+						: attached
+							? 'Detach the sandbox'
+							: 'Use the WhatsApp sandbox'
+				}
+				icon="message-circle"
+				loading={busy}
+				disabled={blocked}
+				onPress={onToggle}
+			/>
+		</Card>
+	);
+}
+
 export default function SettingsScreen() {
 	useDocumentTitle('Settings');
 	const { session, client, updateAccount, cancelAccount, setChannelEnabled } = useAuth();
@@ -283,6 +365,7 @@ export default function SettingsScreen() {
 					</Txt>
 				</Card>
 				<DevSeedCard />
+				<DevSandboxCard />
 			</ScrollView>
 		);
 	}
@@ -508,6 +591,7 @@ export default function SettingsScreen() {
 			</Card>
 
 			<DevSeedCard />
+			<DevSandboxCard />
 		</ScrollView>
 	);
 }

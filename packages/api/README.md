@@ -263,6 +263,18 @@ number via TwiML — one number per account carries all three channels.
    link and an OTP round-trip — see `TODO(twilio)` in `src/services/twilio.ts`.
 4. An account **owner** enables each channel as described in its section;
    `…/disable` turns it off but retains the number.
+5. **Testing WhatsApp in development — the sandbox.** Twilio's shared WhatsApp
+   sandbox (`+1 415 523 8886`, testers text a per-account join code) needs no
+   WABA or sender registration and fires real inbound webhooks. Point the
+   sandbox's inbound webhook (Console → Messaging → Try it out → Sandbox
+   settings) at this API's `/v1/channels/whatsapp/twilio/inbound`, then use the
+   development-only switch `POST /v1/admin/sandbox/whatsapp` (`{"mode":
+   "attach" | "detach"}`, Rivus staff only — surfaced in the app's Settings as
+   "Developer · WhatsApp sandbox") to point the current account's WhatsApp
+   channel at the sandbox number so those conversations reach the agent. It
+   refuses to replace a real provisioned number, only one account per
+   deployment can hold the sandbox, and free-form agent replies work because
+   the customer always messages first (the 24-hour session window).
 
 | Variable                      | Default                   | Notes                                                                                                                 |
 | ----------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
