@@ -76,8 +76,14 @@ Concrete tactics, in priority order:
 4. **Display name defaulted and linted.** Prefill `Account.name`, lint against prohibited
    patterns. Meta reviews post-hoc, so also *track* the outcome and make DECLINED a guided
    rename, not a support ticket.
-5. **Inside-the-window messaging only, at first.** Every agent send is a reply inside the 24-hour
-   customer service window — free-form, free, no template-approval surface at all. Template
+5. **Inside-the-window messaging only, at first.** Every *agent* send is a synchronous reply
+   inside the 24-hour customer service window — free-form, no template-approval surface at all.
+   One send path is NOT window-safe today: inbox reply-out (`sendChannelReply` in
+   `packages/api/src/routes/conversations.ts`, also the FAQ-draft approval path) lets a human
+   answer a conversation days later, and a free-form send outside the window fails with Twilio
+   error 63016 (template required). The build must gate that path on the last inbound timestamp —
+   block with honest UX ("the WhatsApp window closed — this reply will go by SMS") or fall back
+   to SMS on the same number (§10) — and treat 63016 as terminal, never retried. Template
    messaging is a separate later plan (§3), so template rejection risk is deferred wholesale.
 6. **Persist every rejection** (`whatsappRegistration.rejection`, Sender `offline_reasons`,
    `name_status`) and drive fix-and-resubmit UX from stored state (§6). **Human-in-the-loop
@@ -264,7 +270,8 @@ Wiring, following the `smsRegistration` precedent (`A2P_10DLC_PLAN.md` §4.2):
   (a business-info PATCH can never touch registration state).
 - `packages/api/src/presenters.ts` (`toPublicAccount`): expose **state, path, pendingStage,
   displayName.value/status, rejection message, timestamps** only; `subaccountSid`/`senderSid`/
-  `wabaId`/`phoneNumberId` stay server-side. Matching additions to
+  `wabaId`/`phoneNumberId` — and the subaccount `authToken` (§8 step 2), encrypted at rest —
+  stay server-side. Matching additions to
   `packages/api/src/http-schemas.ts` and the app client (`packages/app/src/api/client.ts`).
 - Config: new vars join the Twilio block in `packages/api/src/config.ts` — e.g.
   `TWILIO_MESSAGING_API_URL` (default `https://messaging.twilio.com`; the Senders API base differs
@@ -272,7 +279,12 @@ Wiring, following the `smsRegistration` precedent (`A2P_10DLC_PLAN.md` §4.2):
   Partner Solution ids for the popup (names directional **[verify at build]**). Every new var must
   also land in `FORWARDED_VARS` (`packages/api/worker/env.ts`), the `Env` interface
   (`packages/api/worker/index.ts`), wrangler secrets/vars, `.env.example`, and
-  `packages/api/README.md` — the documented trap.
+  `packages/api/README.md` — the documented trap. The popup identifiers must additionally reach
+  the **app**, which API-container wiring alone does not do: the Expo client only reads
+  build-time-inlined `EXPO_PUBLIC_*` vars (`packages/app/src/api/config.ts`), so either add
+  `EXPO_PUBLIC_META_*` vars there or — better, since the ids differ per environment without an
+  app rebuild — serve them from a small authenticated bootstrap/config endpoint next to the
+  enable route.
 
 ## 6. Registration state machine
 
@@ -347,9 +359,13 @@ Owner has — or will create — a Facebook/Meta login?
    Expo embedding is an open question — §12.7.)
 3. **The OTP moment — invisible by default.** Rivus-number path: skipped (`only_waba_sharing`) or
    auto-handled (Twilio receives the SMS itself); the wizard just shows "Verifying your number…".
-   Only the `byo_number` path (Phase 3) shows an enter-the-code screen — the code arrives on
-   *their* phone via SMS or voice call and is submitted through the API (§8 step 5), with a
-   voice-call re-send fallback per error 63116 guidance.
+   The `byo_number` path (Phase 3) needs no Rivus-built code screen either: without
+   `only_waba_sharing`, Embedded Signup itself collects the number and completes the SMS/voice
+   OTP **inside Meta's popup** before returning (Twilio ISV guide: the owner "Verify[s] phone
+   number ownership by entering a one-time passcode (OTP) sent via SMS or a voice call") — Rivus
+   just handles the post-popup result. A Rivus-side enter-the-code screen (submitting the code via
+   the Senders API, §8 step 5) exists only as the fallback for API-driven registration outside
+   the popup **[verify at build]**, with a voice-call re-send per error 63116 guidance.
 4. **Display name** — prefilled `Account.name`, linted live (§2 tactic 4), copy: "This is the name
    customers see on WhatsApp. Use your shop's everyday name." One confirmation tap.
 5. **Pending → done** — "WhatsApp: setting up (usually minutes)" while `pending_vetting`, then
@@ -391,8 +407,14 @@ Per business, driven by the orchestrator (`packages/api/src/services/twilio-what
 1. **Enable** — `POST /v1/account/channels/whatsapp/enable` rents/adopts the number as today and
    initializes `whatsappRegistration` to `collecting`.
 2. **Subaccount** — create via the Twilio Accounts API (`friendlyName` = business name), store
-   `subaccountSid` **[verify endpoint at build]**. Whether the parent-rented `PN…` number must
-   transfer into the subaccount or can be registered from the parent is unresolved (§12.2).
+   `subaccountSid` **and the subaccount `authToken`** — the create response returns both, and the
+   ISV guide is explicit: "Save this in your database… You will also use these credentials in the
+   next step when calling the Twilio Senders API to register your customer's phone numbers." The
+   token is a live credential: encrypt it at rest (secret-storage approach → §12), and note the
+   webhook consequence — deliveries for subaccount-hosted senders are signed with the
+   *subaccount's* token, so `twilio-webhook-auth.ts`'s single-config-token gate must grow a
+   per-account token lookup (§12.6). Whether the parent-rented `PN…` number must transfer into
+   the subaccount or can be registered from the parent is unresolved (§12.2).
 3. **Embedded Signup** (owner, in-app; §7 step 2) — persist `waba_id` + `phone_number_id`;
    `collecting → submitting`. (Meta's generic flow also returns an exchangeable token code;
    whether Rivus must exchange it or Twilio's Partner Solution consumes it is **UNVERIFIED**.)
@@ -406,8 +428,10 @@ Per business, driven by the orchestrator (`packages/api/src/services/twilio-what
    63104 number cap) → `rejected` with code+message persisted.
 5. **OTP** — Rivus-number path: automatic or skipped (§7 step 3); on error 63116 (OTP not
    received), retry later or re-request with `verification_method: "voice"` per the error doc.
-   BYO path: owner receives the code; submit `POST /v2/Channels/Senders/{Sid}` with
-   `{"configuration": {"verification_code": "123456"}}` → status `VERIFYING`.
+   BYO path via Embedded Signup: **no API code submission — the OTP completes inside the popup**
+   (§7 step 3). The `POST /v2/Channels/Senders/{Sid}` with
+   `{"configuration": {"verification_code": "123456"}}` → `VERIFYING` round-trip applies only to
+   API-driven registration outside the popup **[verify at build]**.
 6. **Poll to ONLINE** — `GET /v2/Channels/Senders/{Sid}` until `status: "ONLINE"` (typically
    minutes), pacing "several minutes between Senders API requests". On ONLINE → `approved`,
    `approvedAt` set, owner notified. On OFFLINE with `offline_reasons` → `rejected` with the first
@@ -504,16 +528,19 @@ Meta's per-country rate cards when deciding. The categories:
 |------|-------|-------|
 | Twilio per-message fee | $0.005 per WhatsApp message, inbound or outbound **[verify at build]** | The only per-message cost on Rivus's core traffic (below); no documented monthly per-sender or registration fee |
 | Meta template fees | per **delivered** template message, by category + recipient country **[verify at build]** | Marketing/utility/authentication rates; utility free inside an open service window; **US marketing blocked since Apr 2025**; irrelevant until the template plan lands |
-| Meta service conversations | **$0** | User-initiated conversations and all non-template replies inside the 24h window are free — **Rivus's entire current send pattern costs only Twilio's $0.005/message** |
+| Meta service conversations | **$0 only until Oct 1, 2026** | Meta's pricing docs announce per-message charges for service (non-template) messages "Effective October 1, 2026", at rates matching utility/authentication messages by market (specific rates by Sept 1, 2026) **[verify at build]**. Until then, Rivus's send pattern costs only Twilio's $0.005/message; **after, every agent reply carries a Meta per-message fee — model it in pricing now** (developers.facebook.com/documentation/business-messaging/whatsapp/pricing/non-template-messages) |
 | WABA / verification / sender registration | no documented fee | An absence claim from official pricing pages, not an explicit "free" — §13 |
 | Number rental | already sunk | The sender rides the same rented number SMS/voice pay for |
 | Rivus Tech Provider setup | staff time, no listed fee | 3-4 weeks calendar; engineering + a screen-recorded App Review |
 
 **Decide:** absorb the ~$0.005/message in plan pricing (simplest story: "WhatsApp included" — at
-mom-and-pop volumes, cents per month per business) vs metering. Template pricing (the real Meta
-COGS) is deferred to the template plan, but flag now: **reminder-style business-initiated
-messaging will carry per-message Meta fees and a verification push — price that feature, not this
-channel.**
+mom-and-pop volumes, cents per month per business) vs metering — but price against the
+**post-Oct-2026 reality**, when Meta's announced service-message fees make every agent reply
+carry a Meta per-message cost on top of Twilio's (row above): any launch or renewal priced on
+"service messages are free" understates WhatsApp COGS after that date. Template pricing (the
+other Meta COGS) is deferred to the template plan, but flag now: **reminder-style
+business-initiated messaging will carry per-message Meta fees and a verification push — price
+that feature, not this channel.**
 
 ## 12. Open decisions / questions for the team
 
