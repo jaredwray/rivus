@@ -1,10 +1,13 @@
 import { Feather } from '@expo/vector-icons';
-import { type ComponentProps, type ReactNode, useMemo, useState } from 'react';
+import { type ComponentProps, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import {
+	ActivityIndicator,
+	Animated,
 	FlatList,
 	Image,
 	Modal,
 	Pressable,
+	type PressableStateCallbackType,
 	type StyleProp,
 	StyleSheet,
 	Text,
@@ -16,10 +19,28 @@ import {
 	type ViewStyle,
 } from 'react-native';
 import { RivusSymbol } from '../brand/RivusLogo';
-import { colors, font, radii, shadowCard } from '../theme/tokens';
+import { colors, font, radii, shadowCard, shadowSoft } from '../theme/tokens';
 import { BrandGradient } from './Gradient';
 
 type FeatherName = ComponentProps<typeof Feather>['name'];
+
+// react-native-web extends Pressable's style-callback state with `hovered` /
+// `focused`; core react-native types only declare `pressed`. Widening the state
+// here keeps hover affordances typed without `any` — on native the extra flags
+// are simply undefined and the hover styles never apply.
+type PressableState = PressableStateCallbackType & { hovered?: boolean; focused?: boolean };
+
+/** Shared props for the button family. */
+type ButtonProps = {
+	label: string;
+	icon?: FeatherName;
+	onPress?: () => void;
+	style?: StyleProp<ViewStyle>;
+	/** Grays the button out and ignores presses. */
+	disabled?: boolean;
+	/** Swaps the icon slot for a spinner and ignores presses while work is in flight. */
+	loading?: boolean;
+};
 
 /** Text with Montserrat applied by default. Override weight/size/color via style. */
 export function Txt({ style, ...rest }: TextProps) {
@@ -171,27 +192,153 @@ export function RivusBadge({ size = 40, radius = 12 }: { size?: number; radius?:
 }
 
 /** Primary action button with the brand gradient. */
-export function GradientButton({
-	label,
-	icon,
-	onPress,
-	style,
-}: {
-	label: string;
-	icon?: FeatherName;
-	onPress?: () => void;
-	style?: StyleProp<ViewStyle>;
-}) {
+export function GradientButton({ label, icon, onPress, style, disabled, loading }: ButtonProps) {
+	const inert = Boolean(disabled || loading);
 	return (
 		<Pressable
 			onPress={onPress}
+			disabled={inert}
 			accessibilityRole="button"
-			style={({ pressed }) => [styles.gradientBtnWrap, pressed && styles.pressed, style]}
+			accessibilityState={{ disabled: inert, busy: Boolean(loading) }}
+			aria-busy={Boolean(loading)}
+			aria-disabled={inert}
+			style={(state) => {
+				const { pressed, hovered } = state as PressableState;
+				return [
+					styles.gradientBtnWrap,
+					hovered && !inert && styles.btnHoverLift,
+					pressed && !inert && styles.pressed,
+					disabled && styles.btnDisabled,
+					style,
+				];
+			}}
 		>
 			<BrandGradient style={styles.gradientBtn}>
-				{icon ? <Feather name={icon} size={16} color="#fff" /> : null}
+				{loading ? (
+					<ActivityIndicator size="small" color="#fff" style={styles.btnSpinner} />
+				) : icon ? (
+					<Feather name={icon} size={16} color="#fff" />
+				) : null}
 				<Txt style={styles.gradientBtnTxt}>{label}</Txt>
 			</BrandGradient>
+		</Pressable>
+	);
+}
+
+/**
+ * Destructive action button — solid Danger red. Destructive confirms never wear
+ * the brand gradient (that marks Rivus-the-agent; see DESIGN_SYSTEM.md).
+ */
+export function DangerButton({ label, icon, onPress, style, disabled, loading }: ButtonProps) {
+	const inert = Boolean(disabled || loading);
+	return (
+		<Pressable
+			onPress={onPress}
+			disabled={inert}
+			accessibilityRole="button"
+			accessibilityState={{ disabled: inert, busy: Boolean(loading) }}
+			aria-busy={Boolean(loading)}
+			aria-disabled={inert}
+			style={(state) => {
+				const { pressed, hovered } = state as PressableState;
+				return [
+					styles.dangerBtn,
+					hovered && !inert && styles.dangerBtnHover,
+					pressed && !inert && styles.pressed,
+					disabled && styles.btnDisabled,
+					style,
+				];
+			}}
+		>
+			{loading ? (
+				<ActivityIndicator size="small" color="#fff" style={styles.btnSpinner} />
+			) : icon ? (
+				<Feather name={icon} size={16} color="#fff" />
+			) : null}
+			<Txt style={styles.gradientBtnTxt}>{label}</Txt>
+		</Pressable>
+	);
+}
+
+// Thumb geometry for Switch: a 46×26 pill track with a 2px inset, so the 22px
+// thumb travels the remaining 20px when toggled on.
+const SWITCH_THUMB_TRAVEL = 20;
+
+/**
+ * Animated on/off switch for boolean settings. The on state wears the brand
+ * gradient: flipping a switch puts Rivus-the-agent live on something, which is
+ * AI status (see DESIGN_SYSTEM.md). While `busy` the thumb holds a spinner and
+ * presses are ignored, so an in-flight change can't be double-toggled.
+ */
+export function Switch({
+	value,
+	onValueChange,
+	disabled,
+	busy,
+	accessibilityLabel,
+}: {
+	value: boolean;
+	onValueChange?: (value: boolean) => void;
+	disabled?: boolean;
+	/** Shows a spinner in the thumb and ignores presses while a change is in flight. */
+	busy?: boolean;
+	accessibilityLabel?: string;
+}) {
+	const position = useRef(new Animated.Value(value ? 1 : 0)).current;
+
+	useEffect(() => {
+		Animated.timing(position, {
+			toValue: value ? 1 : 0,
+			duration: 160,
+			// Animated values also drive the track crossfade; the JS driver keeps
+			// behavior identical on web (react-native-web) and native.
+			useNativeDriver: false,
+		}).start();
+	}, [position, value]);
+
+	const inert = Boolean(disabled || busy);
+
+	return (
+		<Pressable
+			onPress={() => onValueChange?.(!value)}
+			disabled={inert || !onValueChange}
+			accessibilityRole="switch"
+			accessibilityLabel={accessibilityLabel}
+			accessibilityState={{ checked: value, disabled: inert, busy: Boolean(busy) }}
+			// react-native-web doesn't derive aria-* from accessibilityState, so
+			// mirror the state explicitly for web screen readers.
+			aria-checked={value}
+			aria-busy={Boolean(busy)}
+			aria-disabled={inert}
+			hitSlop={8}
+			style={({ pressed }) => [
+				styles.switchTrack,
+				pressed && !inert && styles.switchPressed,
+				disabled && styles.btnDisabled,
+			]}
+		>
+			<Animated.View style={[styles.switchTrackOn, { opacity: position }]}>
+				<BrandGradient style={styles.switchTrackFill} />
+			</Animated.View>
+			<Animated.View
+				style={[
+					styles.switchThumb,
+					{
+						transform: [
+							{
+								translateX: position.interpolate({
+									inputRange: [0, 1],
+									outputRange: [0, SWITCH_THUMB_TRAVEL],
+								}),
+							},
+						],
+					},
+				]}
+			>
+				{busy ? (
+					<ActivityIndicator size="small" color={colors.brandPurple} style={styles.switchSpinner} />
+				) : null}
+			</Animated.View>
 		</Pressable>
 	);
 }
@@ -330,14 +477,24 @@ export function Segmented<T extends string>({
 	onChange: (value: T) => void;
 }) {
 	return (
-		<View style={styles.segmented}>
+		<View style={styles.segmented} accessibilityRole="radiogroup">
 			{options.map((option) => {
 				const active = option.value === value;
 				return (
 					<Pressable
 						key={option.value}
 						onPress={() => onChange(option.value)}
-						style={[styles.segment, active && styles.segmentActive]}
+						accessibilityRole="radio"
+						accessibilityState={{ checked: active }}
+						aria-checked={active}
+						style={(state) => {
+							const { hovered } = state as PressableState;
+							return [
+								styles.segment,
+								hovered && !active && styles.segmentHover,
+								active && styles.segmentActive,
+							];
+						}}
 					>
 						<Txt style={[styles.segmentTxt, active && styles.segmentTxtActive]}>{option.label}</Txt>
 					</Pressable>
@@ -347,22 +504,49 @@ export function Segmented<T extends string>({
 	);
 }
 
-/** Secondary (outline) button for low-emphasis actions. */
+/**
+ * Secondary (outline) button for low-emphasis actions. The `danger` tone marks
+ * the entry point to a destructive flow (red text, red-tinted hairline) — the
+ * confirm itself is a {@link DangerButton}.
+ */
 export function OutlineButton({
 	label,
+	icon,
 	onPress,
 	style,
-}: {
-	label: string;
-	onPress?: () => void;
-	style?: StyleProp<ViewStyle>;
-}) {
+	disabled,
+	loading,
+	tone = 'default',
+}: ButtonProps & { tone?: 'default' | 'danger' }) {
+	const inert = Boolean(disabled || loading);
+	const danger = tone === 'danger';
+	const contentColor = danger ? colors.redInk : colors.textSub;
 	return (
 		<Pressable
 			onPress={onPress}
-			style={({ pressed }) => [styles.outlineBtn, pressed && styles.pressed, style]}
+			disabled={inert}
+			accessibilityRole="button"
+			accessibilityState={{ disabled: inert, busy: Boolean(loading) }}
+			aria-busy={Boolean(loading)}
+			aria-disabled={inert}
+			style={(state) => {
+				const { pressed, hovered } = state as PressableState;
+				return [
+					styles.outlineBtn,
+					danger && styles.outlineBtnDanger,
+					hovered && !inert && (danger ? styles.outlineBtnDangerHover : styles.outlineBtnHover),
+					pressed && !inert && styles.pressed,
+					disabled && styles.btnDisabled,
+					style,
+				];
+			}}
 		>
-			<Txt style={styles.outlineBtnTxt}>{label}</Txt>
+			{loading ? (
+				<ActivityIndicator size="small" color={contentColor} style={styles.btnSpinner} />
+			) : icon ? (
+				<Feather name={icon} size={16} color={contentColor} />
+			) : null}
+			<Txt style={[styles.outlineBtnTxt, danger && styles.outlineBtnTxtDanger]}>{label}</Txt>
 		</Pressable>
 	);
 }
@@ -442,6 +626,69 @@ export const styles = StyleSheet.create({
 	},
 	pressed: {
 		opacity: 0.85,
+	},
+	btnHoverLift: {
+		opacity: 0.92,
+		...shadowSoft,
+	},
+	btnDisabled: {
+		opacity: 0.5,
+	},
+	// Constrain the spinner to the 16px icon slot so a button keeps its height
+	// when `loading` swaps the icon out (the "small" indicator draws at 20px).
+	btnSpinner: {
+		width: 16,
+		height: 16,
+		transform: [{ scale: 0.75 }],
+	},
+	dangerBtn: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'center',
+		gap: 8,
+		paddingVertical: 11,
+		paddingHorizontal: 16,
+		borderRadius: radii.lg,
+		backgroundColor: colors.red,
+	},
+	dangerBtnHover: {
+		backgroundColor: colors.redInk,
+	},
+	switchTrack: {
+		width: 46,
+		height: 26,
+		borderRadius: radii.pill,
+		padding: 2,
+		backgroundColor: colors.switchTrackOff,
+		justifyContent: 'center',
+		cursor: 'pointer',
+	},
+	switchTrackOn: {
+		position: 'absolute',
+		top: 0,
+		left: 0,
+		right: 0,
+		bottom: 0,
+		borderRadius: radii.pill,
+		overflow: 'hidden',
+	},
+	switchTrackFill: {
+		flex: 1,
+	},
+	switchThumb: {
+		width: 22,
+		height: 22,
+		borderRadius: radii.pill,
+		backgroundColor: colors.surface,
+		alignItems: 'center',
+		justifyContent: 'center',
+		...shadowSoft,
+	},
+	switchSpinner: {
+		transform: [{ scale: 0.7 }],
+	},
+	switchPressed: {
+		opacity: 0.9,
 	},
 	fieldWrap: {
 		gap: 6,
@@ -535,6 +782,8 @@ export const styles = StyleSheet.create({
 		flexDirection: 'row',
 		gap: 6,
 		backgroundColor: colors.field,
+		borderWidth: 1,
+		borderColor: colors.borderField,
 		borderRadius: radii.md,
 		padding: 4,
 	},
@@ -543,6 +792,9 @@ export const styles = StyleSheet.create({
 		alignItems: 'center',
 		paddingVertical: 9,
 		borderRadius: radii.sm,
+	},
+	segmentHover: {
+		backgroundColor: 'rgba(22,22,31,0.05)',
 	},
 	segmentActive: {
 		backgroundColor: colors.surface,
@@ -558,8 +810,10 @@ export const styles = StyleSheet.create({
 		fontFamily: font.semibold,
 	},
 	outlineBtn: {
+		flexDirection: 'row',
 		alignItems: 'center',
 		justifyContent: 'center',
+		gap: 8,
 		paddingVertical: 11,
 		paddingHorizontal: 16,
 		borderRadius: radii.lg,
@@ -567,10 +821,22 @@ export const styles = StyleSheet.create({
 		borderColor: colors.border,
 		backgroundColor: colors.surface,
 	},
+	outlineBtnHover: {
+		backgroundColor: colors.fieldSoft,
+	},
+	outlineBtnDanger: {
+		borderColor: 'rgba(240,88,75,0.45)',
+	},
+	outlineBtnDangerHover: {
+		backgroundColor: 'rgba(240,88,75,0.05)',
+	},
 	outlineBtnTxt: {
 		fontFamily: font.semibold,
 		fontSize: 13.5,
 		color: colors.textSub,
+	},
+	outlineBtnTxtDanger: {
+		color: colors.redInk,
 	},
 	statusChip: {
 		flexDirection: 'row',

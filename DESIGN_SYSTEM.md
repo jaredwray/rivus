@@ -35,6 +35,7 @@ theme) instead of hard-coding a new literal in a component.
 | Card           | `#ffffff`  | Cards, sheets, raised surfaces              |
 | Briefing dark  | `#13131f`  | Dark "briefing" surfaces (gradient base)    |
 | Hairline       | `#e9eaf0`  | 1px borders, dividers, separators           |
+| Switch track   | `#d9dbe6`  | Off-state fill of the Switch control        |
 
 ### Status
 
@@ -82,8 +83,9 @@ linear-gradient(135deg, #1ebefa, #6e1ec8)
 ```
 
 The **one** signature element. Reserve it for Rivus-the-agent: primary buttons,
-the symbol tile, AI status, active nav. **Never** use it as a page or card
-background.
+the symbol tile, AI status, active nav, and the **on** state of a Switch that
+puts Rivus live on a channel (that is AI status). **Never** use it as a page or
+card background, and never on destructive actions (see Buttons → Danger).
 
 Supporting gradients:
 
@@ -179,9 +181,36 @@ A single dashboard metric.
 ### Buttons
 
 - **Primary:** uses the signature gradient at `11px` radius.
-- **Secondary:** white with a `1px` hairline (`#e9eaf0`) border.
-- Both stay **inline** — there is no shared button design component; build per
-  platform using these recipes.
+- **Secondary:** white with a `1px` hairline (`#e9eaf0`) border. Takes a
+  **danger tone** (Danger-red text and a red-tinted hairline) for the
+  low-emphasis entry into a destructive flow ("Cancel account").
+- **Danger:** solid Danger red (`#f0584b`, hover `#d2503f`) with white text —
+  the destructive confirm itself ("Yes, cancel account"). Destructive actions
+  **never** wear the signature gradient.
+- All buttons stay **inline** — there is no shared button design component;
+  build per platform using these recipes.
+
+**States** (all variants): `loading` swaps the icon slot for a small inline
+spinner and ignores presses (label may switch to the progressive form, e.g.
+"Saving…"); `disabled` renders at 50% opacity; hover (web) lifts primary/danger
+slightly and tints secondary with the soft field color; pressed dims to 85%
+opacity. Buttons announce `disabled`/`busy` state to assistive tech.
+
+### Switch
+
+Boolean on/off control for live settings that apply immediately (e.g. switching
+a messaging channel on) — form choices between options stay a segmented control.
+
+- **Props:** `value` · `onValueChange` · `busy` · `disabled` · `accessibilityLabel`
+- **Geometry:** `46×26px` pill track with a `2px` inset, `22px` white thumb
+  (soft shadow) that slides `20px`; thumb and track crossfade over ~160ms.
+- **Off:** Switch-track fill (`#d9dbe6`). **On:** the signature gradient —
+  allowed because flipping one on puts Rivus-the-agent live (AI status).
+- **Busy:** a small violet spinner rides inside the thumb while the change is
+  in flight (e.g. a number provisioning) and presses are ignored — never a
+  detached spinner beside the control. **Disabled:** 50% opacity.
+- Announces as a switch with `checked`/`disabled`/`busy` state; pair it with a
+  visible "On"/"Off" text echo where color alone would carry the state.
 
 ### Navigation
 

@@ -52,6 +52,9 @@ export const colors = {
 	avatarBg: '#eceef4',
 	avatarText: '#4a4b58',
 	chipBg: '#eef0f4',
+
+	// Controls
+	switchTrackOff: '#d9dbe6',
 } as const;
 
 // The signature Rivus gradient (135deg, cyan -> purple).
