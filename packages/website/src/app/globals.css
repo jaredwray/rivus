@@ -30,6 +30,8 @@
 	--violet-ink: #4a3b60;
 	--green: #1fb573;
 	--green-2: #46d99a;
+	/* Success at small-text contrast (≥4.5:1 on white and green tints). */
+	--green-ink: #0e7a4f;
 	--amber: #f0a020;
 	--red: #f0584b;
 
@@ -187,15 +189,16 @@ svg {
 	transform: translateY(0);
 }
 
-/* Keyboard focus: the violet brand ring, visible on light and dark ground. */
+/* Keyboard focus: a solid violet outline. Outline (not box-shadow) so it
+   never loses to variant shadows like .btn--primary:hover, follows each
+   element's own border-radius, and survives forced-colors mode. The white
+   inner ring separates it from dark grounds. */
 .btn:focus-visible,
 a:focus-visible,
 button:focus-visible {
-	outline: none;
-	box-shadow:
-		0 0 0 2px #fff,
-		0 0 0 5px rgba(110, 30, 200, 0.55);
-	border-radius: 12px;
+	outline: 3px solid var(--violet);
+	outline-offset: 2px;
+	box-shadow: 0 0 0 2px #fff;
 }
 
 .btn--primary {
@@ -1993,11 +1996,13 @@ button:focus-visible {
 	text-align: center;
 }
 
+/* Deep-cyan gradient start (not brand cyan): 26px text must hold 3:1 on the
+   white card, which #1ebefa can't. */
 .stat-band__value {
 	font-size: 26px;
 	font-weight: 700;
 	letter-spacing: -0.02em;
-	background: var(--grad-text);
+	background: linear-gradient(120deg, #1593c9, #6e1ec8);
 	-webkit-background-clip: text;
 	background-clip: text;
 	color: transparent;
@@ -2065,7 +2070,7 @@ button:focus-visible {
 }
 
 .chip--live {
-	color: var(--green);
+	color: var(--green-ink);
 	background: rgba(31, 181, 115, 0.12);
 }
 
@@ -2093,6 +2098,7 @@ button:focus-visible {
 }
 
 .roles-empty__title {
+	margin: 0;
 	font-size: 19px;
 	font-weight: 700;
 }

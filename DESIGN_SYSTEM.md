@@ -39,12 +39,13 @@ theme) instead of hard-coding a new literal in a component.
 
 ### Status
 
-| Token   | Value      | Use                          |
-| ------- | ---------- | ---------------------------- |
-| Success | `#1fb573`  | Paid, positive, online       |
-| Warning | `#f0a020`  | Pending, attention           |
-| Danger  | `#f0584b`  | Overdue, errors, destructive |
-| Accent  | `#6e1ec8`  | Quotes, highlights (violet)  |
+| Token       | Value      | Use                                                  |
+| ----------- | ---------- | ---------------------------------------------------- |
+| Success     | `#1fb573`  | Paid, positive, online                               |
+| Success ink | `#0e7a4f`  | Success-colored **small text** (holds 4.5:1 on white/tints) |
+| Warning     | `#f0a020`  | Pending, attention                                   |
+| Danger      | `#f0584b`  | Overdue, errors, destructive                         |
+| Accent      | `#6e1ec8`  | Quotes, highlights (violet)                          |
 
 ### Marketing tints
 

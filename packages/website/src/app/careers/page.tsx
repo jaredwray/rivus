@@ -55,7 +55,7 @@ export default function CareersPage() {
 							<h2 className="h2">Nothing posted right now.</h2>
 						</div>
 						<div className="roles-empty">
-							<div className="roles-empty__title">But great people make their own openings.</div>
+							<h3 className="roles-empty__title">But great people make their own openings.</h3>
 							<p className="roles-empty__body">
 								If Rivus sounds like the problem you want to spend your days on, don't wait for a
 								listing. Tell us what you'd build first — we read every note.
