@@ -1,4 +1,4 @@
-import { agentEmailLocalPart } from '@rivus/core';
+import { agentEmailLocalPart, type ProvisionedChannel } from '@rivus/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
 	ActivityIndicator,
@@ -16,12 +16,13 @@ import { AddressAutocomplete } from '@/src/components/AddressAutocomplete';
 import { CopyField } from '@/src/components/CopyField';
 import {
 	Card,
+	DangerButton,
 	GradientButton,
 	OutlineButton,
 	Pill,
 	SectionLabel,
-	Segmented,
 	Select,
+	Switch,
 	TextField,
 	Txt,
 } from '@/src/components/ui';
@@ -31,6 +32,83 @@ import { useDocumentTitle } from '@/src/theme/useDocumentTitle';
 const PLAN_LABELS: Record<Billing['plan'], string> = {
 	free: 'Free',
 };
+
+/**
+ * Copy for the customer-facing channels a business can switch on. Each renders
+ * as a {@link ChannelCard}; `noun` is how the channel reads inside an error
+ * sentence ("Could not enable texting.").
+ */
+const CHANNELS: {
+	key: ProvisionedChannel;
+	title: string;
+	hint: string;
+	addressLabel: string;
+	noun: string;
+}[] = [
+	{
+		key: 'whatsapp',
+		title: 'WhatsApp Business',
+		hint: 'Customers can message this number on WhatsApp — Rivus books them the same way it does over email. Turn it on to get a number.',
+		addressLabel: 'Your WhatsApp number',
+		noun: 'WhatsApp',
+	},
+	{
+		key: 'sms',
+		title: 'Text messages (SMS)',
+		hint: 'Customers can text this number — Rivus books them the same way it does over email. Turn it on to get a number; WhatsApp and texting share one number when both are on.',
+		addressLabel: 'Your SMS number',
+		noun: 'texting',
+	},
+	{
+		key: 'voice',
+		title: 'Phone calls',
+		hint: 'Customers can call this number — Rivus answers, offers open times, and books them. Turn it on to get a number; calls share one number with WhatsApp and texting.',
+		addressLabel: 'Your phone number',
+		noun: 'phone calls',
+	},
+];
+
+/**
+ * One customer-facing channel (WhatsApp / SMS / voice): an on-off switch in the
+ * card header, the provisioned number once there is one, and any toggle error.
+ * The switch spins in place while the number provisions or releases.
+ */
+function ChannelCard({
+	title,
+	hint,
+	addressLabel,
+	enabled,
+	address,
+	busy,
+	error,
+	onToggle,
+}: {
+	title: string;
+	hint: string;
+	addressLabel: string;
+	enabled: boolean;
+	address: string;
+	busy: boolean;
+	error: string | null;
+	onToggle: (enabled: boolean) => void;
+}) {
+	return (
+		<Card style={styles.card}>
+			<View style={styles.channelHeader}>
+				<SectionLabel style={styles.channelTitle}>{title}</SectionLabel>
+				<View style={styles.channelToggle}>
+					<Txt style={[styles.channelState, enabled && styles.channelStateOn]}>
+						{enabled ? 'On' : 'Off'}
+					</Txt>
+					<Switch value={enabled} onValueChange={onToggle} busy={busy} accessibilityLabel={title} />
+				</View>
+			</View>
+			<Txt style={styles.agentEmailHint}>{hint}</Txt>
+			{enabled && address ? <CopyField label={addressLabel} value={address} /> : null}
+			{error ? <Txt style={styles.errorTxt}>{error}</Txt> : null}
+		</Card>
+	);
+}
 
 function messageFor(error: unknown, fallback: string): string {
 	if (error instanceof ApiError || error instanceof Error) {
@@ -98,6 +176,7 @@ function DevSeedCard() {
 			<GradientButton
 				label={seeding ? 'Seeding…' : 'Seed this account'}
 				icon="database"
+				loading={seeding}
 				onPress={onSeed}
 			/>
 		</Card>
@@ -124,14 +203,12 @@ export default function SettingsScreen() {
 	const [saved, setSaved] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	const [whatsappBusy, setWhatsappBusy] = useState(false);
-	const [whatsappError, setWhatsappError] = useState<string | null>(null);
-
-	const [smsBusy, setSmsBusy] = useState(false);
-	const [smsError, setSmsError] = useState<string | null>(null);
-
-	const [voiceBusy, setVoiceBusy] = useState(false);
-	const [voiceError, setVoiceError] = useState<string | null>(null);
+	// Channels toggle independently (provisioning one number can be slow), so
+	// busy/error state is tracked per channel rather than shared.
+	const [channelBusy, setChannelBusy] = useState<Partial<Record<ProvisionedChannel, boolean>>>({});
+	const [channelError, setChannelError] = useState<
+		Partial<Record<ProvisionedChannel, string | null>>
+	>({});
 
 	const [confirmingCancel, setConfirmingCancel] = useState(false);
 	const [canceling, setCanceling] = useState(false);
@@ -247,60 +324,26 @@ export default function SettingsScreen() {
 		}
 	}
 
-	const whatsapp = session.account.channels.whatsapp;
-	const sms = session.account.channels.sms;
-	const voice = session.account.channels.voice;
-
-	async function onToggleWhatsapp(next: string) {
-		const enabled = next === 'on';
-		if (whatsappBusy || enabled === whatsapp.enabled) {
+	async function onToggleChannel(channel: ProvisionedChannel, enabled: boolean, noun: string) {
+		// The `!session` guard isn't redundant: narrowing from the render path's
+		// early return doesn't reach hoisted function declarations, so tsc requires
+		// it here ('session' is possibly 'null' without it).
+		if (channelBusy[channel] || !session || enabled === session.account.channels[channel].enabled) {
 			return;
 		}
-		setWhatsappError(null);
-		setWhatsappBusy(true);
+		setChannelError((prev) => ({ ...prev, [channel]: null }));
+		setChannelBusy((prev) => ({ ...prev, [channel]: true }));
 		try {
-			// Enabling provisions a number on the first call; the session updates in place.
-			await setChannelEnabled('whatsapp', enabled);
+			// Enabling provisions a number on the first call (channels share one
+			// number where providers allow it); the session updates in place.
+			await setChannelEnabled(channel, enabled);
 		} catch (caught) {
-			setWhatsappError(messageFor(caught, `Could not ${enabled ? 'enable' : 'disable'} WhatsApp.`));
+			setChannelError((prev) => ({
+				...prev,
+				[channel]: messageFor(caught, `Could not ${enabled ? 'enable' : 'disable'} ${noun}.`),
+			}));
 		} finally {
-			setWhatsappBusy(false);
-		}
-	}
-
-	async function onToggleSms(next: string) {
-		const enabled = next === 'on';
-		if (smsBusy || enabled === sms.enabled) {
-			return;
-		}
-		setSmsError(null);
-		setSmsBusy(true);
-		try {
-			// Enabling provisions a number on the first call (reusing the WhatsApp
-			// number when both channels share one); the session updates in place.
-			await setChannelEnabled('sms', enabled);
-		} catch (caught) {
-			setSmsError(messageFor(caught, `Could not ${enabled ? 'enable' : 'disable'} texting.`));
-		} finally {
-			setSmsBusy(false);
-		}
-	}
-
-	async function onToggleVoice(next: string) {
-		const enabled = next === 'on';
-		if (voiceBusy || enabled === voice.enabled) {
-			return;
-		}
-		setVoiceError(null);
-		setVoiceBusy(true);
-		try {
-			// Enabling provisions a number on the first call (reusing the WhatsApp/SMS
-			// number when the channels share one); the session updates in place.
-			await setChannelEnabled('voice', enabled);
-		} catch (caught) {
-			setVoiceError(messageFor(caught, `Could not ${enabled ? 'enable' : 'disable'} phone calls.`));
-		} finally {
-			setVoiceBusy(false);
+			setChannelBusy((prev) => ({ ...prev, [channel]: false }));
 		}
 	}
 
@@ -308,6 +351,7 @@ export default function SettingsScreen() {
 	// business slug with a stable per-account hex tag (so look-alike names never
 	// collide); the domain comes from the session (`AGENT_EMAIL_DOMAIN`).
 	const agentEmail = `${agentEmailLocalPart(session.account.slug, session.account.id)}@${session.agentEmailDomain}`;
+	const channels = session.account.channels;
 
 	return (
 		<ScrollView
@@ -366,6 +410,7 @@ export default function SettingsScreen() {
 					<GradientButton
 						label={saving ? 'Saving…' : 'Save changes'}
 						icon="check"
+						loading={saving}
 						onPress={onSave}
 					/>
 				</View>
@@ -380,74 +425,22 @@ export default function SettingsScreen() {
 				<CopyField label="Your agent address" value={agentEmail} />
 			</Card>
 
-			<Card style={styles.card}>
-				<SectionLabel>WhatsApp Business</SectionLabel>
-				<Txt style={styles.agentEmailHint}>
-					Customers can message this number on WhatsApp — Rivus books them the same way it does over
-					email. Turn it on to get a number.
-				</Txt>
-				<View style={styles.whatsappRow}>
-					<Segmented
-						options={[
-							{ label: 'Off', value: 'off' },
-							{ label: 'On', value: 'on' },
-						]}
-						value={whatsapp.enabled ? 'on' : 'off'}
-						onChange={onToggleWhatsapp}
+			{CHANNELS.map(({ key, title, hint, addressLabel, noun }) => {
+				const channel = channels[key];
+				return (
+					<ChannelCard
+						key={key}
+						title={title}
+						hint={hint}
+						addressLabel={addressLabel}
+						enabled={channel.enabled}
+						address={channel.address}
+						busy={Boolean(channelBusy[key])}
+						error={channelError[key] ?? null}
+						onToggle={(enabled) => onToggleChannel(key, enabled, noun)}
 					/>
-					{whatsappBusy ? <ActivityIndicator color={colors.brandPurple} /> : null}
-				</View>
-				{whatsapp.enabled && whatsapp.address ? (
-					<CopyField label="Your WhatsApp number" value={whatsapp.address} />
-				) : null}
-				{whatsappError ? <Txt style={styles.errorTxt}>{whatsappError}</Txt> : null}
-			</Card>
-
-			<Card style={styles.card}>
-				<SectionLabel>Text messages (SMS)</SectionLabel>
-				<Txt style={styles.agentEmailHint}>
-					Customers can text this number — Rivus books them the same way it does over email. Turn it
-					on to get a number; WhatsApp and texting share one number when both are on.
-				</Txt>
-				<View style={styles.whatsappRow}>
-					<Segmented
-						options={[
-							{ label: 'Off', value: 'off' },
-							{ label: 'On', value: 'on' },
-						]}
-						value={sms.enabled ? 'on' : 'off'}
-						onChange={onToggleSms}
-					/>
-					{smsBusy ? <ActivityIndicator color={colors.brandPurple} /> : null}
-				</View>
-				{sms.enabled && sms.address ? (
-					<CopyField label="Your SMS number" value={sms.address} />
-				) : null}
-				{smsError ? <Txt style={styles.errorTxt}>{smsError}</Txt> : null}
-			</Card>
-
-			<Card style={styles.card}>
-				<SectionLabel>Phone calls</SectionLabel>
-				<Txt style={styles.agentEmailHint}>
-					Customers can call this number — Rivus answers, offers open times, and books them. Turn it
-					on to get a number; calls share one number with WhatsApp and texting.
-				</Txt>
-				<View style={styles.whatsappRow}>
-					<Segmented
-						options={[
-							{ label: 'Off', value: 'off' },
-							{ label: 'On', value: 'on' },
-						]}
-						value={voice.enabled ? 'on' : 'off'}
-						onChange={onToggleVoice}
-					/>
-					{voiceBusy ? <ActivityIndicator color={colors.brandPurple} /> : null}
-				</View>
-				{voice.enabled && voice.address ? (
-					<CopyField label="Your phone number" value={voice.address} />
-				) : null}
-				{voiceError ? <Txt style={styles.errorTxt}>{voiceError}</Txt> : null}
-			</Card>
+				);
+			})}
 
 			<Card style={styles.card}>
 				<SectionLabel>Plan &amp; billing</SectionLabel>
@@ -489,14 +482,16 @@ export default function SettingsScreen() {
 
 				{confirmingCancel ? (
 					<View style={[styles.confirmRow, narrow && styles.confirmRowNarrow]}>
-						<GradientButton
+						<DangerButton
 							label={canceling ? 'Canceling…' : 'Yes, cancel account'}
 							icon="alert-triangle"
+							loading={canceling}
 							onPress={onCancelAccount}
 							style={[styles.confirmBtn, narrow && styles.confirmBtnNarrow]}
 						/>
 						<OutlineButton
 							label="Keep account"
+							disabled={canceling}
 							onPress={() => setConfirmingCancel(false)}
 							style={[styles.confirmBtn, narrow && styles.confirmBtnNarrow]}
 						/>
@@ -504,8 +499,8 @@ export default function SettingsScreen() {
 				) : (
 					<OutlineButton
 						label="Cancel account"
+						tone="danger"
 						onPress={() => setConfirmingCancel(true)}
-						style={styles.dangerBtn}
 					/>
 				)}
 			</Card>
@@ -547,11 +542,29 @@ const styles = StyleSheet.create({
 		marginTop: -2,
 		marginBottom: 4,
 	},
-	whatsappRow: {
+	channelHeader: {
 		flexDirection: 'row',
 		alignItems: 'center',
+		justifyContent: 'space-between',
 		gap: 12,
-		marginBottom: 12,
+	},
+	// Keep long titles from pushing the switch off the card edge.
+	channelTitle: {
+		flex: 1,
+	},
+	channelToggle: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 8,
+	},
+	// Textual echo of the switch state, so state never rides on color alone.
+	channelState: {
+		fontFamily: font.semibold,
+		fontSize: 12,
+		color: colors.textFaint,
+	},
+	channelStateOn: {
+		color: colors.green,
 	},
 	errorTxt: {
 		fontFamily: font.medium,
@@ -612,9 +625,6 @@ const styles = StyleSheet.create({
 	},
 	devLabel: {
 		color: colors.brandPurpleInk,
-	},
-	dangerBtn: {
-		borderColor: 'rgba(240,88,75,0.45)',
 	},
 	confirmRow: {
 		flexDirection: 'row',
