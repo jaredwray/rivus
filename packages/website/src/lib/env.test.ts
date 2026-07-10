@@ -39,6 +39,12 @@ describe('resolveAppUrl', () => {
 		).toBe('http://localhost:8081');
 	});
 
+	it('strips trailing slashes from the override so appended paths stay clean', () => {
+		expect(resolveAppUrl({ NEXT_PUBLIC_APP_URL: 'https://app.example.com/' })).toBe(
+			'https://app.example.com',
+		);
+	});
+
 	it('reads from process.env by default', () => {
 		expect(resolveAppUrl()).toMatch(/^https?:\/\//);
 	});

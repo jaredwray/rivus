@@ -28,7 +28,9 @@ export function isProductionEnv(env?: Record<string, string | undefined>): boole
 export function resolveAppUrl(env?: Record<string, string | undefined>): string {
 	const target = env ?? (typeof process !== 'undefined' ? process.env : {});
 	if (target.NEXT_PUBLIC_APP_URL) {
-		return target.NEXT_PUBLIC_APP_URL;
+		// Strip trailing slashes so consumers can safely append paths
+		// (`${appUrl}/signup`) without producing `https://host//signup`.
+		return target.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '');
 	}
 	return target.RIVUS_ENV === 'development' ? 'https://dev-app.rivus.ai' : 'https://app.rivus.ai';
 }
