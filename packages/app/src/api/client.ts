@@ -204,6 +204,13 @@ const channelConfigResponseSchema = z.object({
 	providerRef: z.string().default(''),
 });
 
+/**
+ * Twilio's shared WhatsApp sandbox number — what the account's WhatsApp address
+ * equals while the dev-only sandbox switch ({@link ApiClient.sandboxWhatsapp})
+ * is attached. Mirrors the API's constant of the same name.
+ */
+export const TWILIO_WHATSAPP_SANDBOX_NUMBER = '+14155238886';
+
 const accountResponseSchema = z.object({
 	id: accountId(),
 	name: z.string(),
@@ -736,6 +743,16 @@ export interface RivusApiClient {
 	 * for non-staff callers. The app gates the Settings affordance the same way.
 	 */
 	seedAccount(token: string, input?: SeedAccountBody): Promise<SeedSummary>;
+	/**
+	 * Point the current account's WhatsApp channel at Twilio's shared sandbox
+	 * number (or detach it), so sandbox conversations reach the scheduling agent
+	 * — the zero-compliance way to test WhatsApp end-to-end in development.
+	 *
+	 * Development + Rivus-staff only, exactly like {@link seedAccount}: the route
+	 * 404s in deployed environments and 403s for non-staff callers. The API
+	 * refuses to replace (or clear) a real provisioned number.
+	 */
+	sandboxWhatsapp(token: string, mode?: 'attach' | 'detach'): Promise<Account>;
 }
 
 /** Strip a single trailing slash so `${base}${path}` never doubles up. */
@@ -1262,6 +1279,14 @@ export function createApiClient(
 		async seedAccount(token: string, input: SeedAccountBody = {}) {
 			const payload = parseInput(seedAccountSchema, input);
 			return request('/v1/admin/seed', seedSummaryResponseSchema, jsonInit('POST', payload, token));
+		},
+
+		sandboxWhatsapp(token: string, mode: 'attach' | 'detach' = 'attach') {
+			return request(
+				'/v1/admin/sandbox/whatsapp',
+				accountResponseSchema,
+				jsonInit('POST', { mode }, token),
+			);
 		},
 	};
 }

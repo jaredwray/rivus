@@ -361,6 +361,23 @@ export class TwilioProvisioner implements ChannelProvisioner {
 	}
 }
 
+/**
+ * Twilio's shared WhatsApp **sandbox** number — the same for every Twilio
+ * account (testers opt in with a per-account join code). A development account
+ * can hold it as its WhatsApp address so sandbox traffic resolves to it
+ * (`POST /v1/admin/sandbox/whatsapp`).
+ */
+export const TWILIO_WHATSAPP_SANDBOX_NUMBER = '+14155238886';
+
+/**
+ * The providerRef stored while an account borrows the sandbox number.
+ * Deliberately NOT an ownership fingerprint: outbound sends fall through to the
+ * primary chain (Twilio, when configured — exactly how sandbox sends work), and
+ * the channel-enable sharing logic never adopts the shared sandbox number onto
+ * SMS/voice the way it would a genuinely owned `PN…` number.
+ */
+export const TWILIO_SANDBOX_PROVIDER_REF = 'twilio-sandbox';
+
 /** Twilio phone-number SIDs: `PN` + 32 hex characters. */
 const TWILIO_NUMBER_SID = /^PN[0-9a-fA-F]{32}$/;
 
