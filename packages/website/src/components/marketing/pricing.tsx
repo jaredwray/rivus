@@ -1,4 +1,4 @@
-import { pricingTiers } from '../../lib/site';
+import { pricingTiers, signupUrl } from '../../lib/site';
 import { CheckIcon } from './icons';
 
 export function Pricing() {
@@ -27,7 +27,7 @@ export function Pricing() {
 							</div>
 							<a
 								className={tier.featured ? 'btn btn--primary plan__cta' : 'btn btn--soft plan__cta'}
-								href={tier.ctaHref ?? '#cta'}
+								href={tier.ctaHref ?? signupUrl}
 							>
 								{tier.cta}
 							</a>

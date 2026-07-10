@@ -17,7 +17,8 @@ type Step = 'form' | 'code';
 const COPY: Record<Mode, { title: string; subtitle: string; submit: string; tabTitle: string }> = {
 	signup: {
 		title: 'Create your business account',
-		subtitle: 'Set up Rivus for your business in under a minute.',
+		subtitle:
+			'Start your free 14-day trial — no credit card required, and a free onboarding specialist sets everything up for you.',
 		submit: 'Create account',
 		tabTitle: 'Sign up',
 	},

@@ -286,6 +286,9 @@ button:focus-visible {
 	letter-spacing: 0.04em;
 	padding: 4px 9px;
 	border-radius: 999px;
+	/* The chip must never break into two lines when the badge is squeezed. */
+	white-space: nowrap;
+	flex-shrink: 0;
 }
 
 .badge__text {
@@ -2503,6 +2506,16 @@ button:focus-visible {
 
 	.hero__inner {
 		padding: 34px 20px 40px;
+	}
+	/* When the badge text wraps, a full pill grows tall, ugly rounded caps;
+	   soften to a card radius and let the two-line text breathe. */
+	.badge {
+		border-radius: 16px;
+		align-items: center;
+		padding: 7px 14px 7px 8px;
+	}
+	.badge__text {
+		line-height: 1.4;
 	}
 	.hero__title {
 		font-size: 38px;

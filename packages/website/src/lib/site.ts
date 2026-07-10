@@ -349,5 +349,13 @@ export const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'
  * Base URL of the Rivus product app — where sign-in, signup, and demo booking
  * live. It's a separate deploy from this marketing site, so links to it are
  * absolute external URLs (plain anchors, not next/link).
+ *
+ * `NEXT_PUBLIC_APP_URL` is injected at build time by next.config.ts
+ * (`resolveAppUrl`), which points each environment at its sibling app deploy —
+ * dev.rivus.ai links to dev-app.rivus.ai. The fallback here only matters in
+ * tests, where the config's env injection doesn't run.
  */
 export const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.rivus.ai';
+
+/** Where every "Get started" CTA lands: the product app's signup. */
+export const signupUrl = `${appUrl}/signup`;
