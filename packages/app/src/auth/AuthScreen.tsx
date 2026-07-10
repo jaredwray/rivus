@@ -5,6 +5,7 @@ import { ApiError, type SignupBody } from '@/src/api/client';
 import { getGoogleMapsApiKey } from '@/src/api/config';
 import { deviceTimezone, listTimezones } from '@/src/api/timezones';
 import { AddressAutocomplete } from '@/src/components/AddressAutocomplete';
+import { SmsConsentNote } from '@/src/components/SmsConsentNote';
 import { GradientButton, RivusBadge, Select, TextField, Txt } from '@/src/components/ui';
 import { colors, font, radii } from '@/src/theme/tokens';
 import { useDocumentTitle } from '@/src/theme/useDocumentTitle';
@@ -259,6 +260,7 @@ export function AuthScreen({
 											placeholder="+1 (206) 555-0100"
 											keyboardType="phone-pad"
 										/>
+										<SmsConsentNote />
 										<AddressAutocomplete
 											label="Address"
 											value={address}

@@ -14,7 +14,8 @@ export function AdminLogin() {
 	const [step, setStep] = useState<Step>('signin');
 
 	return (
-		<div className="admin-login">
+		// id="main" is the root layout's skip-link target.
+		<div id="main" className="admin-login">
 			<div className="admin-login__glow-a" aria-hidden="true" />
 			<div className="admin-login__glow-b" aria-hidden="true" />
 

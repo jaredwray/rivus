@@ -27,7 +27,7 @@ export function Pricing() {
 							</div>
 							<a
 								className={tier.featured ? 'btn btn--primary plan__cta' : 'btn btn--soft plan__cta'}
-								href="#cta"
+								href={tier.ctaHref ?? '#cta'}
 							>
 								{tier.cta}
 							</a>

@@ -7,6 +7,8 @@
  * review them before relying on them in production.
  */
 
+import { SMS_CONSENT_DISCLOSURE, SMS_MESSAGE_CATEGORIES, SMS_PROGRAM_NAME } from '@rivus/core';
+
 export type LegalBlock = { kind: 'text'; text: string } | { kind: 'list'; items: string[] };
 
 export interface LegalSection {
@@ -15,7 +17,7 @@ export interface LegalSection {
 }
 
 export interface LegalDoc {
-	slug: 'privacy' | 'terms' | 'security';
+	slug: 'privacy' | 'terms' | 'security' | 'sms-terms' | 'sms-opt-in' | 'acceptable-use';
 	eyebrow: string;
 	title: string;
 	updated: string;
@@ -27,7 +29,15 @@ export interface LegalDoc {
 const text = (value: string): LegalBlock => ({ kind: 'text', text: value });
 const list = (...items: string[]): LegalBlock => ({ kind: 'list', items });
 
-const UPDATED = 'June 23, 2026';
+const UPDATED = 'July 10, 2026';
+
+/**
+ * The SMS program's carrier-compliance copy lives in @rivus/core so this
+ * site and the product app (which shows the consent where phone numbers are
+ * actually collected) can never drift apart. Re-exported for the compliance
+ * tests that guard these pages.
+ */
+export { SMS_MESSAGE_CATEGORIES, SMS_PROGRAM_NAME };
 
 export const privacyDoc: LegalDoc = {
 	slug: 'privacy',
@@ -71,13 +81,30 @@ export const privacyDoc: LegalDoc = {
 			],
 		},
 		{
-			heading: 'Automated calls, texts, and messages',
+			heading: 'Mobile information and text messaging',
 			blocks: [
 				text(
-					'Rivus communicates with your customers on your behalf. You direct what it sends and to whom, and you are responsible for having the consent the law requires before contacting those customers — including for automated calls and texts.',
+					`When you provide your mobile phone number and opt in to receive SMS text messages from Rivus (the "${SMS_PROGRAM_NAME}" program), we use your mobile information to send you ${SMS_MESSAGE_CATEGORIES}. Mobile phone numbers and SMS opt-in data are used solely by Rivus and our communications service providers for the limited purpose of delivering the messages you have requested. Our [SMS Messaging Terms](/sms-terms) describe the program in full.`,
 				),
 				text(
-					'Message and data rates may apply to recipients. Recipients can opt out of texts at any time by replying STOP, and can reply HELP for help. We honor opt-outs and pass them through to you.',
+					'No mobile information will be shared with third parties or affiliates for marketing or promotional purposes. Information sharing with subcontractors in support services, such as customer service, is permitted. All other categories of personal information described in this Privacy Policy exclude text messaging originator opt-in data and consent; this information will not be shared with any third parties or affiliates.',
+				),
+				text(
+					'We do not share, sell, rent, lease, or otherwise provide your mobile phone number or messaging consent information to any third parties or affiliates for marketing or promotional purposes.',
+				),
+				text(
+					'Message frequency varies based on your account activity and preferences. Message and data rates may apply. You may opt out of receiving SMS messages at any time by replying **STOP** to any message we send you; for help, reply **HELP** or contact us at support@rivus.ai.',
+				),
+			],
+		},
+		{
+			heading: 'Automated calls and messages sent for businesses',
+			blocks: [
+				text(
+					'Rivus also communicates with your customers on your behalf. You direct what it sends and to whom, and you are responsible for having the consent the law requires before contacting those customers — including for automated calls and texts.',
+				),
+				text(
+					'Message and data rates may apply to recipients. Recipients can opt out of texts at any time by replying STOP, and can reply HELP for help. We honor opt-outs and pass them through to you. The same protections above apply to the mobile information of the people your business serves: it is never shared with third parties or affiliates for marketing or promotional purposes.',
 				),
 			],
 		},
@@ -203,7 +230,9 @@ export const termsDoc: LegalDoc = {
 		{
 			heading: 'Acceptable use',
 			blocks: [
-				text('You agree to use Rivus lawfully and not to misuse it. You will not:'),
+				text(
+					'You agree to use Rivus lawfully and not to misuse it. Our [Acceptable Use Policy](/acceptable-use) is part of these terms and spells out the rules — including the content carriers prohibit in text messages. In short, you will not:',
+				),
 				list(
 					'Use Rivus to send spam or deceptive, harassing, or unlawful messages.',
 					'Contact people without the consent the law requires.',
@@ -226,6 +255,9 @@ export const termsDoc: LegalDoc = {
 			blocks: [
 				text(
 					'When Rivus sends calls or texts to your customers, you confirm you have the consent the law requires to contact them, and that you will honor opt-out requests. Standard message and data rates may apply to recipients. You are responsible for the content of messages sent on your behalf.',
+				),
+				text(
+					'Text messages sent through Rivus are governed by our [SMS Messaging Terms](/sms-terms), which are incorporated into these terms by reference. Recipients can opt out at any time by replying **STOP** and get help by replying **HELP**. Consent collected for one business or program is not transferable to another.',
 				),
 			],
 		},
@@ -405,8 +437,236 @@ export const securityDoc: LegalDoc = {
 	],
 };
 
+export const smsTermsDoc: LegalDoc = {
+	slug: 'sms-terms',
+	eyebrow: 'SMS TERMS',
+	title: 'SMS Messaging Terms',
+	updated: UPDATED,
+	contactEmail: 'support@rivus.ai',
+	intro: [
+		`These terms govern the text messages sent through Rivus. They cover two programs: messages Rivus sends you about your own account (the "${SMS_PROGRAM_NAME}" program), and messages a business you patronize sends you through its Rivus agent. They sit alongside our [Terms of Service](/terms) and [Privacy Policy](/privacy).`,
+	],
+	sections: [
+		{
+			heading: 'Program name and description',
+			blocks: [
+				text(
+					`${SMS_PROGRAM_NAME}: by opting in, you agree to receive recurring automated text messages from Rivus at the mobile number you provided, including ${SMS_MESSAGE_CATEGORIES}.`,
+				),
+				text(
+					'When a business you work with uses Rivus, the same kinds of messages — appointment confirmations and reminders, scheduling replies, quotes, invoices and receipts, review requests, and answers to your questions — are sent by that business through Rivus, using the consent you gave that business. See [How you opt in](/sms-opt-in) for details on both programs.',
+				),
+			],
+		},
+		{
+			heading: 'Cancellation (opting out)',
+			blocks: [
+				text(
+					'**You can cancel the SMS service at any time by replying STOP to any message you receive from us.** After you send STOP, we will send you one final message to confirm that you have been unsubscribed; after that, you will receive no further messages from that program. We also honor STOPALL, UNSUBSCRIBE, OPTOUT, CANCEL, END, REVOKE, and QUIT.',
+				),
+				text(
+					'Opting out applies per program: replying STOP to a business that messages you through Rivus stops that business, and replying STOP to a Rivus account notification stops Rivus account texts. If you want to join again, just sign up as you did the first time and we will start sending SMS messages to you again.',
+				),
+			],
+		},
+		{
+			heading: 'Help and support',
+			blocks: [
+				text(
+					'If you are experiencing issues with the messaging program, **reply HELP to any message** for assistance, or contact us directly at support@rivus.ai.',
+				),
+			],
+		},
+		{
+			heading: 'Message frequency and rates',
+			blocks: [
+				text(
+					'Message frequency varies based on your account activity, appointments, and notification preferences. As always, message and data rates may apply for any messages sent to you from us and to us from you. If you have any questions about your text plan or data plan, it is best to contact your wireless provider.',
+				),
+			],
+		},
+		{
+			heading: 'Supported carriers',
+			blocks: [
+				text(
+					'The program is supported on major U.S. carriers, including AT&T, T-Mobile, Verizon, and others. Carriers are not liable for delayed or undelivered messages.',
+				),
+			],
+		},
+		{
+			heading: 'Your mobile information',
+			blocks: [
+				text(
+					'Mobile information collected through the SMS program is not shared with third parties or affiliates for marketing or promotional purposes. For details on how we handle your data, read our [Privacy Policy](/privacy).',
+				),
+			],
+		},
+		{
+			heading: 'WhatsApp messaging',
+			blocks: [
+				text(
+					'If you opt in to receive WhatsApp messages, you are opting in to receive communications from Rivus (or from the business you patronize, sent through Rivus) on WhatsApp. You can opt out of WhatsApp messages at any time by replying STOP or updating your notification preferences.',
+				),
+			],
+		},
+		{
+			heading: 'Changes to these terms',
+			blocks: [
+				text(
+					"We may update these SMS terms as the program evolves. When we make material changes, we'll update the date above. Continuing to receive messages after changes take effect means you accept them.",
+				),
+			],
+		},
+		{
+			heading: 'Contact us',
+			blocks: [text('Questions about text messages from Rivus? Email support@rivus.ai.')],
+		},
+	],
+};
+
+export const smsOptInDoc: LegalDoc = {
+	slug: 'sms-opt-in',
+	eyebrow: 'SMS PROGRAM',
+	title: 'Text messages from Rivus: how you opt in',
+	updated: UPDATED,
+	contactEmail: 'support@rivus.ai',
+	intro: [
+		`This page describes how people give consent to receive text messages sent through Rivus — both the "${SMS_PROGRAM_NAME}" program (messages from Rivus about your own account) and the messages businesses send through Rivus — exactly what they agree to, and how to stop at any time. You will only ever get texts through Rivus because you asked for them.`,
+	],
+	sections: [
+		{
+			heading: 'How Rivus customers opt in',
+			blocks: [
+				text(
+					'If you run a business on Rivus, you opt in by providing your mobile phone number where the app collects it — during signup or in your account settings. This consent is disclosed right at the phone field, on its own (never pre-selected, never buried in other terms):',
+				),
+				text(`"${SMS_CONSENT_DISCLOSURE}"`),
+			],
+		},
+		{
+			heading: "How a business's customers opt in",
+			blocks: [
+				text(
+					'If you are a customer of a business that uses Rivus, that business may text you through Rivus only with your consent. You opt in when you:',
+				),
+				list(
+					'Text the business first — Rivus replies in the same conversation you started.',
+					'Provide your phone number on the business\'s booking or "join as a customer" form, which discloses that you agree to be texted and links these terms.',
+					'Ask the business, in person or on a call, to send you appointment texts.',
+				),
+				text(
+					'Consent applies to that business only — it is never transferred to another business or program. Every message flow includes opt-out instructions, and consent is never a condition of purchase.',
+				),
+			],
+		},
+		{
+			heading: 'SMS program terms',
+			blocks: [
+				list(
+					`Program name: ${SMS_PROGRAM_NAME}.`,
+					`Messages you may receive: ${SMS_MESSAGE_CATEGORIES}.`,
+					'Message frequency: varies based on your account activity, appointments, and preferences.',
+					"Cost: message and data rates may apply. Your carrier's standard messaging and data rates apply to all messages.",
+					'Help: reply HELP to any message, or email support@rivus.ai.',
+					'Cancellation: reply STOP to any message to unsubscribe at any time; we send one final confirmation message.',
+					'Carriers: supported on major U.S. carriers including AT&T, T-Mobile, Verizon, and others. Carriers are not liable for delayed or undelivered messages.',
+					'Privacy: mobile information and SMS opt-in data are never shared with third parties or affiliates for marketing or promotional purposes.',
+				),
+				text(
+					'The full program terms are in our [SMS Messaging Terms](/sms-terms), and our [Privacy Policy](/privacy) covers how we handle your data.',
+				),
+			],
+		},
+		{
+			heading: 'Contact us',
+			blocks: [text('Questions about opting in or out? Email support@rivus.ai.')],
+		},
+	],
+};
+
+export const acceptableUseDoc: LegalDoc = {
+	slug: 'acceptable-use',
+	eyebrow: 'ACCEPTABLE USE',
+	title: 'Acceptable Use Policy',
+	updated: UPDATED,
+	contactEmail: 'legal@rivus.ai',
+	intro: [
+		'Rivus sends real messages to real people on your behalf — over phone calls, SMS, email, and WhatsApp. That only works if every business on Rivus plays by the same rules: the law, carrier and platform policies, and plain respect for the people you message. This policy is part of our [Terms of Service](/terms).',
+	],
+	sections: [
+		{
+			heading: 'The short version',
+			blocks: [
+				text(
+					"Message people who asked to hear from you, about the things they asked to hear about, and stop the moment they say stop. If you would be annoyed to receive it, don't send it.",
+				),
+			],
+		},
+		{
+			heading: 'Consent comes first',
+			blocks: [
+				list(
+					'Only contact people who have given you the consent the law requires — for automated texts and calls, that means prior express consent, and for marketing, prior express written consent.',
+					'Keep records of when and how each person opted in.',
+					'Honor opt-outs immediately. Rivus processes STOP and related keywords automatically, and you may not message someone who has opted out.',
+					'Identify your business in the messages you send.',
+					'Never buy, rent, or share contact lists, and never transfer consent from one business or program to another.',
+				),
+			],
+		},
+		{
+			heading: 'Prohibited content',
+			blocks: [
+				text(
+					'Wireless carriers prohibit certain content on their networks outright. You may not use Rivus messaging in connection with:',
+				),
+				list(
+					'Sex, hate, alcohol, firearms, or tobacco content ("SHAFT"), including vaping.',
+					'Cannabis, CBD, or illegal drugs of any kind.',
+					'Gambling, sweepstakes, or contests.',
+					'Payday loans, third-party debt collection, or debt-relief services.',
+					'Get-rich-quick schemes, multi-level marketing, or deceptive offers.',
+					'Third-party lead generation or the resale of contact data.',
+					'Phishing, fraud, malware, or any unlawful content.',
+				),
+			],
+		},
+		{
+			heading: 'Prohibited behavior',
+			blocks: [
+				list(
+					'No spam: unsolicited bulk messaging, snowshoeing across numbers, or evading carrier filtering.',
+					'No misleading sender identity — messages must come from your business, about your business.',
+					'No burying consent inside unrelated terms or pre-checked boxes.',
+					'No harassing, threatening, or abusive conversations, even with people who opted in.',
+					'No interfering with the Service itself — probing, overloading, or accessing accounts that are not yours.',
+				),
+			],
+		},
+		{
+			heading: 'Enforcement',
+			blocks: [
+				text(
+					'We monitor for abuse and investigate reports. Violations can lead to warnings, message blocking, suspension, or termination of your account, depending on severity — and carriers may independently filter or block traffic that breaks their rules. Where the law requires it, we may also report activity to authorities.',
+				),
+			],
+		},
+		{
+			heading: 'Reporting abuse',
+			blocks: [
+				text(
+					'If you received a message sent through Rivus that you believe violates this policy, email legal@rivus.ai with the details (sender, number, and message) and we will investigate.',
+				),
+			],
+		},
+	],
+};
+
 export const legalDocs: Record<LegalDoc['slug'], LegalDoc> = {
 	privacy: privacyDoc,
 	terms: termsDoc,
 	security: securityDoc,
+	'sms-terms': smsTermsDoc,
+	'sms-opt-in': smsOptInDoc,
+	'acceptable-use': acceptableUseDoc,
 };

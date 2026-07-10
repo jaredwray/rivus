@@ -37,7 +37,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 			    managers, dark-mode tools) inject attributes onto <body> before
 			    React hydrates. The body content is server-rendered and static, so
 			    this only silences that unavoidable extension noise. */}
-			<body suppressHydrationWarning>{children}</body>
+			<body suppressHydrationWarning>
+				<a className="skip-link" href="#main">
+					Skip to content
+				</a>
+				{children}
+			</body>
 		</html>
 	);
 }
