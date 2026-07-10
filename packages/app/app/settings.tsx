@@ -14,6 +14,7 @@ import { deviceTimezone, listTimezones } from '@/src/api/timezones';
 import { useAuth } from '@/src/auth/AuthContext';
 import { AddressAutocomplete } from '@/src/components/AddressAutocomplete';
 import { CopyField } from '@/src/components/CopyField';
+import { SmsConsentNote } from '@/src/components/SmsConsentNote';
 import {
 	Card,
 	DangerButton,
@@ -381,6 +382,7 @@ export default function SettingsScreen() {
 						placeholder="+1 (206) 555-0100"
 						keyboardType="phone-pad"
 					/>
+					<SmsConsentNote />
 					<AddressAutocomplete
 						label="Address"
 						value={address}
