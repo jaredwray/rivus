@@ -296,12 +296,16 @@ export function Switch({
 		}).start();
 	}, [position, value]);
 
-	const inert = Boolean(disabled || busy);
+	// A switch without a handler is non-interactive (e.g. purely presentational
+	// inside a larger pressable row) — announce it as disabled too, so assistive
+	// tech never offers an interaction that won't work. It keeps full opacity,
+	// though: only an explicit `disabled` should read as grayed out.
+	const inert = Boolean(disabled || busy || !onValueChange);
 
 	return (
 		<Pressable
 			onPress={() => onValueChange?.(!value)}
-			disabled={inert || !onValueChange}
+			disabled={inert}
 			accessibilityRole="switch"
 			accessibilityLabel={accessibilityLabel}
 			accessibilityState={{ checked: value, disabled: inert, busy: Boolean(busy) }}
@@ -310,7 +314,8 @@ export function Switch({
 			aria-checked={value}
 			aria-busy={Boolean(busy)}
 			aria-disabled={inert}
-			hitSlop={8}
+			// The 26px track + 9px vertical slop clears the 44px minimum tap target.
+			hitSlop={{ top: 9, bottom: 9, left: 8, right: 8 }}
 			style={({ pressed }) => [
 				styles.switchTrack,
 				pressed && !inert && styles.switchPressed,

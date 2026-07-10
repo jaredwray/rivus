@@ -325,6 +325,9 @@ export default function SettingsScreen() {
 	}
 
 	async function onToggleChannel(channel: ProvisionedChannel, enabled: boolean, noun: string) {
+		// The `!session` guard isn't redundant: narrowing from the render path's
+		// early return doesn't reach hoisted function declarations, so tsc requires
+		// it here ('session' is possibly 'null' without it).
 		if (channelBusy[channel] || !session || enabled === session.account.channels[channel].enabled) {
 			return;
 		}
