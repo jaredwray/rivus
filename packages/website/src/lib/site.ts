@@ -256,6 +256,8 @@ export interface PricingTier {
 	price: string;
 	period?: string;
 	cta: string;
+	/** Where the tier's CTA goes; defaults to the sign-up section. */
+	ctaHref?: string;
 	features: string[];
 	featured?: boolean;
 	badge?: string;
@@ -295,6 +297,7 @@ export const pricingTiers: PricingTier[] = [
 		audience: 'For franchises & chains',
 		price: "Let's talk",
 		cta: 'Contact sales',
+		ctaHref: '/contact',
 		features: [
 			'Everything in Team',
 			'Unlimited locations & seats',
@@ -332,6 +335,9 @@ export const footerColumns: FooterColumn[] = [
 		links: [
 			{ label: 'Privacy', href: '/privacy' },
 			{ label: 'Terms', href: '/terms' },
+			{ label: 'SMS terms', href: '/sms-terms' },
+			{ label: 'SMS opt-in', href: '/sms-opt-in' },
+			{ label: 'Acceptable use', href: '/acceptable-use' },
 			{ label: 'Security', href: '/security' },
 		],
 	},

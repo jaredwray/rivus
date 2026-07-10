@@ -17,7 +17,7 @@ export default async function CustomerJoinPage({ params }: { params: Promise<{ s
 	return (
 		<>
 			<SiteNav />
-			<main className="join">
+			<main id="main" className="join">
 				<div className="join__container">
 					{/* CustomerJoin reads the ?email= prefill via useSearchParams, which
 					    Next requires to sit under a Suspense boundary. */}

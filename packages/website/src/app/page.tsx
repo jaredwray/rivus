@@ -16,7 +16,7 @@ export default function HomePage() {
 		<>
 			<AnnouncementBar />
 			<SiteNav />
-			<main>
+			<main id="main">
 				<Hero />
 				<ProblemSection />
 				<HowItWorks />

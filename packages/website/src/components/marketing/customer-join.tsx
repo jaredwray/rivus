@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { type FormEvent, useEffect, useState } from 'react';
 import { apiUrl } from '../../lib/site';
@@ -186,9 +187,19 @@ export function CustomerJoin({ slug }: { slug: string }) {
 						id="join-phone"
 						type="tel"
 						autoComplete="tel"
+						aria-describedby="join-phone-consent"
 						value={phone}
 						onChange={(event) => setPhone(event.target.value)}
 					/>
+					{/* SMS opt-in disclosure — carrier (A2P/CTIA) compliance requires it
+					    at the point where the number is collected. */}
+					<p id="join-phone-consent" className="join-form__consent">
+						By providing your phone number, you agree that {account.name} may text or call you about
+						your appointments and services, including automated texts sent through Rivus. Consent is
+						not a condition of purchase. Message frequency varies; message and data rates may apply.
+						Reply STOP to opt out or HELP for help. See our <Link href="/sms-terms">SMS terms</Link>{' '}
+						and <Link href="/privacy">privacy policy</Link>.
+					</p>
 				</div>
 				<div className="join-form__field">
 					<label htmlFor="join-address">Address (optional)</label>

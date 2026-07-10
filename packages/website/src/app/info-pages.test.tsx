@@ -1,5 +1,14 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+	appPlatforms,
+	careersEmail,
+	careersValues,
+	companyStats,
+	companyValues,
+	contactChannels,
+} from '../lib/company';
+import { appUrl } from '../lib/site';
 import AboutPage from './about/page';
 import AppsPage from './apps/page';
 import CareersPage from './careers/page';
@@ -13,32 +22,84 @@ beforeEach(() => {
 	);
 });
 
-const pages = [
-	{ name: 'apps', Page: AppsPage, title: 'Rivus on every device', email: null },
-	{ name: 'about', Page: AboutPage, title: 'About Rivus', email: null },
-	{ name: 'careers', Page: CareersPage, title: 'Work at Rivus', email: 'careers@rivus.ai' },
-	{ name: 'contact', Page: ContactPage, title: 'Get in touch', email: 'hello@rivus.ai' },
-];
-
-describe('info "coming soon" pages', () => {
-	it.each(pages)('$name renders its title and a link back home', ({ Page, title }) => {
-		render(<Page />);
-		expect(screen.getByRole('heading', { level: 1, name: title })).toBeTruthy();
-		expect(screen.getByRole('link', { name: /back to home/i }).getAttribute('href')).toBe('/');
+describe('AboutPage', () => {
+	it('renders the story, every company stat, and every value', () => {
+		render(<AboutPage />);
+		expect(screen.getByRole('heading', { level: 1 }).textContent).toContain('Local business');
+		for (const stat of companyStats) {
+			expect(screen.getByText(stat.value)).toBeTruthy();
+			expect(screen.getByText(stat.label)).toBeTruthy();
+		}
+		for (const value of companyValues) {
+			expect(screen.getByText(value.title)).toBeTruthy();
+		}
 	});
 
-	it.each(pages.filter((page) => page.email))('$name exposes a mailto link to $email', ({
-		Page,
-		email,
-	}) => {
-		render(<Page />);
-		expect(screen.getByRole('link', { name: email as string }).getAttribute('href')).toBe(
-			`mailto:${email}`,
+	it('ends in the shared sign-up CTA', () => {
+		render(<AboutPage />);
+		expect(screen.getByRole('link', { name: /get started free/i }).getAttribute('href')).toBe(
+			`${appUrl}/signup`,
+		);
+	});
+});
+
+describe('CareersPage', () => {
+	it('renders every team value and routes both CTAs to the careers inbox', () => {
+		render(<CareersPage />);
+		for (const value of careersValues) {
+			expect(screen.getByText(value.title)).toBeTruthy();
+		}
+		const mailtos = screen
+			.getAllByRole('link')
+			.filter((link) => link.getAttribute('href') === `mailto:${careersEmail}`);
+		// The hero "Introduce yourself" button and the empty-state email button.
+		expect(mailtos.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it('is honest about having no open roles', () => {
+		render(<CareersPage />);
+		expect(screen.getByText(/nothing posted right now/i)).toBeTruthy();
+	});
+});
+
+describe('ContactPage', () => {
+	it('renders a mailto card for every contact channel', () => {
+		render(<ContactPage />);
+		for (const channel of contactChannels) {
+			// Heading role keeps "Security" from also matching the footer link.
+			expect(screen.getByRole('heading', { level: 3, name: channel.title })).toBeTruthy();
+			expect(
+				screen.getByRole('link', { name: new RegExp(channel.email) }).getAttribute('href'),
+			).toBe(`mailto:${channel.email}`);
+		}
+	});
+
+	it('offers a demo booking that goes to the product app', () => {
+		render(<ContactPage />);
+		expect(screen.getByRole('link', { name: /book a demo/i }).getAttribute('href')).toBe(
+			`${appUrl}/demo`,
+		);
+	});
+});
+
+describe('AppsPage', () => {
+	it('renders every platform with its availability', () => {
+		render(<AppsPage />);
+		for (const platform of appPlatforms) {
+			expect(screen.getByText(platform.name)).toBeTruthy();
+		}
+		expect(screen.getByText('Available now')).toBeTruthy();
+		expect(screen.getAllByText('Coming soon')).toHaveLength(
+			appPlatforms.filter((platform) => platform.status === 'soon').length,
 		);
 	});
 
-	it('omits the email footnote when no address is given', () => {
+	it('links the live platform to the product app', () => {
 		render(<AppsPage />);
-		expect(screen.queryByText(/prefer email/i)).toBeNull();
+		const appLinks = screen
+			.getAllByRole('link')
+			.filter((link) => link.getAttribute('href') === appUrl);
+		// Hero CTA plus the web-app platform card.
+		expect(appLinks.length).toBeGreaterThanOrEqual(2);
 	});
 });
