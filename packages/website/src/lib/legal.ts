@@ -37,7 +37,7 @@ const UPDATED = 'July 10, 2026';
  */
 export const SMS_PROGRAM_NAME = 'Rivus Notifications & Reminders';
 export const SMS_MESSAGE_CATEGORIES =
-	'account and phone verification codes, appointment and service reminders, scheduling replies, invoice and billing notifications, review requests, and other transactional notifications';
+	'account and phone verification codes, appointment and service reminders, scheduling replies, invoice and billing notifications, review requests, and other notifications you have requested';
 
 export const privacyDoc: LegalDoc = {
 	slug: 'privacy',
@@ -84,7 +84,7 @@ export const privacyDoc: LegalDoc = {
 			heading: 'Mobile information and text messaging',
 			blocks: [
 				text(
-					`When you provide your mobile phone number and opt in to receive SMS text messages from Rivus, we use your mobile information to send you ${SMS_MESSAGE_CATEGORIES}. Mobile phone numbers and SMS opt-in data are used solely by Rivus and our communications service providers for the limited purpose of delivering the messages you have requested. Our [SMS Messaging Terms](/sms-terms) describe the program in full.`,
+					`When you provide your mobile phone number and opt in to receive SMS text messages from Rivus (the "${SMS_PROGRAM_NAME}" program), we use your mobile information to send you ${SMS_MESSAGE_CATEGORIES}. Mobile phone numbers and SMS opt-in data are used solely by Rivus and our communications service providers for the limited purpose of delivering the messages you have requested. Our [SMS Messaging Terms](/sms-terms) describe the program in full.`,
 				),
 				text(
 					'No mobile information will be shared with third parties or affiliates for marketing or promotional purposes. Information sharing with subcontractors in support services, such as customer service, is permitted. All other categories of personal information described in this Privacy Policy exclude text messaging originator opt-in data and consent; this information will not be shared with any third parties or affiliates.',
@@ -531,17 +531,17 @@ export const smsOptInDoc: LegalDoc = {
 	updated: UPDATED,
 	contactEmail: 'support@rivus.ai',
 	intro: [
-		`This page describes the ${SMS_PROGRAM_NAME} program: how people give consent to receive text messages sent through Rivus, exactly what they agree to, and how to stop at any time. You will only ever get texts through Rivus because you asked for them.`,
+		`This page describes how people give consent to receive text messages sent through Rivus — both the "${SMS_PROGRAM_NAME}" program (messages from Rivus about your own account) and the messages businesses send through Rivus — exactly what they agree to, and how to stop at any time. You will only ever get texts through Rivus because you asked for them.`,
 	],
 	sections: [
 		{
 			heading: 'How Rivus customers opt in',
 			blocks: [
 				text(
-					'If you run a business on Rivus, you opt in when you create your account or update your notification settings and provide your mobile phone number. The sign-up form presents this consent (unchecked, and never required to buy anything):',
+					'If you run a business on Rivus, you opt in by providing your mobile phone number and agreeing to this consent where the number is collected — during signup or in your notification settings. Consent is presented on its own (never pre-selected, never buried in other terms), and reads:',
 				),
 				text(
-					`"By checking this box and providing your mobile phone number, you agree to receive recurring automated text messages from Rivus at the number provided, including ${SMS_MESSAGE_CATEGORIES}. Consent is not a condition of purchase. Message frequency varies. Message and data rates may apply. Reply HELP for help. Reply STOP to unsubscribe at any time."`,
+					`"By providing your mobile phone number, you agree to receive recurring automated text messages from Rivus at the number provided, including ${SMS_MESSAGE_CATEGORIES}. Consent is not a condition of purchase. Message frequency varies. Message and data rates may apply. Reply HELP for help. Reply STOP to unsubscribe at any time."`,
 				),
 			],
 		},

@@ -46,6 +46,16 @@ theme) instead of hard-coding a new literal in a component.
 | Danger  | `#f0584b`  | Overdue, errors, destructive |
 | Accent  | `#6e1ec8`  | Quotes, highlights (violet)  |
 
+### Marketing tints
+
+Soft, near-white washes of the brand colors used on the marketing site for
+hero/header backgrounds and icon chips — never for text or interactive states.
+
+| Token       | Value      | Use                                                    |
+| ----------- | ---------- | ------------------------------------------------------ |
+| Soft violet | `#f0eaff`  | Hero/page-header wash, step numerals, violet icon tiles |
+| Soft sky    | `#eef8ff`  | Hero/page-header wash (paired with Soft violet)         |
+
 ### Text
 
 | Token    | Value      | Use                                   |

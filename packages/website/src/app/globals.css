@@ -63,18 +63,6 @@ article[id] {
 	scroll-margin-top: 84px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-	html {
-		scroll-behavior: auto;
-	}
-	.btn {
-		transition: none;
-	}
-	.btn:hover {
-		transform: none;
-	}
-}
-
 body {
 	margin: 0;
 	background: var(--surface);
@@ -2603,5 +2591,23 @@ button:focus-visible {
 
 	.join-card {
 		padding: 26px 20px;
+	}
+}
+
+/* ============================================================
+   Reduced motion
+   Last in the file on purpose: these same-specificity overrides
+   must come after every rule they neutralize to win the cascade.
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+	html {
+		scroll-behavior: auto;
+	}
+	.btn {
+		transition: none;
+	}
+	.btn:hover {
+		transform: none;
 	}
 }
