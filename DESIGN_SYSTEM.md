@@ -223,6 +223,28 @@ a messaging channel on) — form choices between options stay a segmented contro
 - Announces as a switch with `checked`/`disabled`/`busy` state; pair it with a
   visible "On"/"Off" text echo where color alone would carry the state.
 
+### PageHero (marketing)
+
+The light header band every marketing subpage opens with, on the shared
+hero wash (see Marketing tints).
+
+- **Props:** `eyebrow` · `title` · `lead` · `actions` (optional CTA row) ·
+  `children` (optional extra content, e.g. a stat band)
+
+### Stat band (marketing)
+
+A row of headline numbers under a page hero — white cards on the hairline
+border, values in Accent violet.
+
+- **Data:** `value` · `label` (e.g. "24/7" · "on every channel")
+
+### Chip (marketing)
+
+Compact availability tag on cards (e.g. platform cards on /apps).
+
+- **Variants:** `live` (Success-ink text on a success tint, e.g. "Available
+  now") · `soon` (Accent violet on Soft violet, e.g. "Coming soon")
+
 ### Navigation
 
 The primary app navigation adapts to width (see **Layout & breakpoints**):

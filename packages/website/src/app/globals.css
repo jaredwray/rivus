@@ -43,7 +43,13 @@
 	--grad: linear-gradient(135deg, #1ebefa, #6e1ec8);
 	--grad-text: linear-gradient(120deg, #1ebefa, #6e1ec8);
 
+	/* Light header wash shared by the home hero and info-page heroes. */
+	--hero-wash: radial-gradient(120% 90% at 88% -10%, #f0eaff 0%, #eef8ff 30%, #ffffff 62%);
+
 	--container: 1180px;
+	/* Clearance for content that must land below the sticky nav (~68px tall)
+	   when scrolled to — anchor targets and any scroll-into-view offset. */
+	--nav-clearance: 84px;
 	color-scheme: light;
 }
 
@@ -62,7 +68,7 @@ html {
 main[id],
 section[id],
 article[id] {
-	scroll-margin-top: 84px;
+	scroll-margin-top: var(--nav-clearance);
 }
 
 body {
@@ -217,7 +223,7 @@ button:focus-visible {
 }
 
 .btn--white:hover {
-	background: #f4f5f9;
+	background: var(--field);
 }
 
 .btn--outline {
@@ -520,7 +526,7 @@ button:focus-visible {
 .hero {
 	position: relative;
 	overflow: hidden;
-	background: radial-gradient(120% 90% at 88% -10%, #f0eaff 0%, #eef8ff 30%, #ffffff 62%);
+	background: var(--hero-wash);
 }
 
 .hero__glow-a,
@@ -1944,7 +1950,7 @@ button:focus-visible {
 .page-hero {
 	position: relative;
 	overflow: hidden;
-	background: radial-gradient(120% 90% at 88% -10%, #f0eaff 0%, #eef8ff 30%, #ffffff 62%);
+	background: var(--hero-wash);
 	border-bottom: 1px solid var(--line-2);
 }
 
@@ -1996,16 +2002,13 @@ button:focus-visible {
 	text-align: center;
 }
 
-/* Deep-cyan gradient start (not brand cyan): 26px text must hold 3:1 on the
-   white card, which #1ebefa can't. */
+/* Solid violet, not gradient text: the signature gradient is reserved for
+   Rivus-the-agent, and brand cyan can't hold 3:1 on the white card anyway. */
 .stat-band__value {
 	font-size: 26px;
 	font-weight: 700;
 	letter-spacing: -0.02em;
-	background: linear-gradient(120deg, #1593c9, #6e1ec8);
-	-webkit-background-clip: text;
-	background-clip: text;
-	color: transparent;
+	color: var(--violet);
 }
 
 .stat-band__label {
@@ -2118,6 +2121,9 @@ button:focus-visible {
 @media (max-width: 640px) {
 	.page-hero__inner {
 		padding: 48px 20px 44px;
+	}
+	.page-hero__lead {
+		font-size: 16px;
 	}
 	.page-hero__actions {
 		flex-direction: column;

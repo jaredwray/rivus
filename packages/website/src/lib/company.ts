@@ -19,7 +19,7 @@ export const companyValues: ValueCard[] = [
 	{
 		title: 'Owners first',
 		description:
-			'We build for the person on the roof, behind the chair, under the sink. If it doesn’t hand them time back, it doesn’t ship.',
+			"We build for the person on the roof, behind the chair, under the sink. If it doesn't hand them time back, it doesn't ship.",
 		icon: 'heart',
 		tint: 'red',
 	},
@@ -48,8 +48,8 @@ export const companyValues: ValueCard[] = [
 
 export const aboutStory: string[] = [
 	'Rivus started with a simple observation: the people who keep our towns running — plumbers, electricians, stylists, clinicians, landscapers — lose work every day for one reason. They were busy doing the job, so they missed the call about the next one.',
-	'The fix used to be hiring a front office. Most local businesses can’t, so evenings disappear into voicemails, invoices, and follow-ups. We believed the newest generation of AI could finally carry that load — not with a phone tree or a canned chatbot, but with an agent that genuinely runs the desk: answering every channel in seconds, booking real jobs on a real calendar, collecting payment, and keeping the marketing lights on.',
-	'That’s Rivus. It’s built by a small team in Seattle, Washington, and set up for every customer by a real human specialist — free — because software should meet you where you are. Owners get their evenings back; their customers get an answer the moment they reach out. That’s the whole idea.',
+	"The fix used to be hiring a front office. Most local businesses can't, so evenings disappear into voicemails, invoices, and follow-ups. We believed the newest generation of AI could finally carry that load — not with a phone tree or a canned chatbot, but with an agent that genuinely runs the desk: answering every channel in seconds, booking real jobs on a real calendar, collecting payment, and keeping the marketing lights on.",
+	"That's Rivus. It's built by a small team in Seattle, Washington, and set up for every customer by a real human specialist — free — because software should meet you where you are. Owners get their evenings back; their customers get an answer the moment they reach out. That's the whole idea.",
 ];
 
 export interface CompanyStat {
@@ -69,7 +69,7 @@ export const careersValues: ValueCard[] = [
 	{
 		title: 'Small team, real ownership',
 		description:
-			'You’ll own problems end to end — talk to customers, design the fix, ship it, and watch it book someone’s next job.',
+			"You'll own problems end to end — talk to customers, design the fix, ship it, and watch it book someone's next job.",
 		icon: 'users',
 		tint: 'violet',
 	},
@@ -125,7 +125,7 @@ export const contactChannels: ContactChannel[] = [
 	},
 	{
 		title: 'Press & partnerships',
-		description: 'Working on a story, an integration, or a partnership? We’d love to talk.',
+		description: "Working on a story, an integration, or a partnership? We'd love to talk.",
 		email: 'press@rivus.ai',
 		icon: 'star',
 		tint: 'amber',
