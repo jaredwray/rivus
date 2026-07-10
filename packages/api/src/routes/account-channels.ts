@@ -161,6 +161,10 @@ export const accountChannelRoutes: FastifyPluginAsync = async (fastify) => {
 					accountId,
 					accountName: account.name,
 					existing: existingOrShared(config, account, channel),
+					// The provider provisioner logs each upstream call + response here, so
+					// a failed enable is diagnosable from the container logs (the client
+					// only ever sees the generic 502 below).
+					logger: request.log,
 				});
 			} catch (error) {
 				request.log.error({ err: error, channel }, 'channel provisioning failed');

@@ -1,4 +1,5 @@
 import type { AccountId } from '@rivus/core';
+import type { FastifyBaseLogger } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config';
 import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
@@ -414,6 +415,39 @@ describe('TwilioProvisioner', () => {
 		expect(form.has('SmsMethod')).toBe(false);
 		expect(form.has('VoiceUrl')).toBe(false);
 		expect(form.has('VoiceMethod')).toBe(false);
+	});
+
+	it('logs the Twilio status and response body when provisioning fails', async () => {
+		// A failed enable only surfaces a generic 502 to the client, so the reason
+		// has to be in the logs — the Twilio error code/message from the body.
+		const entries: { level: string; obj: Record<string, unknown>; msg: string }[] = [];
+		const record =
+			(level: string) =>
+			(obj: unknown, msg?: string): void => {
+				entries.push({ level, obj: (obj ?? {}) as Record<string, unknown>, msg: msg ?? '' });
+			};
+		const makeLogger = (): FastifyBaseLogger =>
+			({
+				child: () => makeLogger(),
+				info: record('info'),
+				error: record('error'),
+				warn: record('warn'),
+				debug: record('debug'),
+				fatal: record('fatal'),
+				trace: record('trace'),
+			}) as unknown as FastifyBaseLogger;
+
+		const { fetchImpl } = fakeFetch([
+			{ ok: false, status: 401, body: '{"code":20003,"message":"Authenticate"}' },
+		]);
+		await expect(
+			provisioner(fetchImpl).provision({ ...INPUT, logger: makeLogger() }),
+		).rejects.toThrow(/number search failed \(status 401\)/);
+		const failure = entries.find(
+			(entry) => entry.level === 'error' && entry.msg === 'Twilio number search failed',
+		);
+		expect(failure?.obj.status).toBe(401);
+		expect(String(failure?.obj.body)).toContain('20003');
 	});
 
 	it('fails when the search errors or returns no numbers', async () => {

@@ -1,3 +1,4 @@
+import { writeSync } from 'node:fs';
 import cors, { type FastifyCorsOptionsDelegateCallback } from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
@@ -35,6 +36,31 @@ import { publicRoutes } from './routes/public';
 import { searchRoutes } from './routes/search';
 import type { AppDeps } from './types';
 
+/**
+ * A synchronous stdout sink for the production logger. Pino's default stdout
+ * stream is asynchronous (buffered), and the API runs inside a Cloudflare
+ * container that suspends between requests — buffered log lines were dropped
+ * before the platform captured them, so request and error logs never reached
+ * the container logs (only the Worker's own fetch log survived). Writing each
+ * line with a blocking `writeSync(1, …)` flushes it immediately. `EAGAIN` on a
+ * non-blocking stdout pipe under load is retried briefly (what pino's own sync
+ * writer does), then dropped rather than throwing from inside the logger.
+ */
+const syncStdout = {
+	write(line: string): void {
+		for (let attempt = 0; attempt < 10; attempt++) {
+			try {
+				writeSync(1, line);
+				return;
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== 'EAGAIN') {
+					return;
+				}
+			}
+		}
+	},
+};
+
 function buildLogger(deps: AppDeps) {
 	if (deps.config.NODE_ENV === 'test') {
 		return false;
@@ -42,7 +68,9 @@ function buildLogger(deps: AppDeps) {
 	if (deps.config.NODE_ENV === 'development') {
 		return { level: deps.config.LOG_LEVEL, transport: { target: 'pino-pretty' } };
 	}
-	return { level: deps.config.LOG_LEVEL };
+	// Deployed containers run NODE_ENV=production; log synchronously so a
+	// suspending container can't lose buffered lines (see `syncStdout`).
+	return { level: deps.config.LOG_LEVEL, stream: syncStdout };
 }
 
 /**

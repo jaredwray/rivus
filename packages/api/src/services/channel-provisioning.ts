@@ -1,4 +1,5 @@
 import { type AccountId, agentEmailTag } from '@rivus/core';
+import type { FastifyBaseLogger } from 'fastify';
 
 /**
  * Provisioning of a channel's customer-facing identifier. Unlike email (whose
@@ -16,6 +17,19 @@ export interface ProvisionedIdentifier {
 	providerRef: string;
 }
 
+/** What a provisioner needs to assign (or re-confirm) an account's identifier. */
+export interface ProvisionInput {
+	accountId: AccountId;
+	accountName: string;
+	existing: ProvisionedIdentifier;
+	/**
+	 * The request logger, when the caller has one. Provider provisioners use it
+	 * to record each upstream call and its response, so a failed enable can be
+	 * diagnosed from the logs (the route only surfaces a generic 502).
+	 */
+	logger?: FastifyBaseLogger;
+}
+
 export interface ChannelProvisioner {
 	/**
 	 * Assign (or re-confirm) this account's identifier. Idempotent: when
@@ -23,11 +37,7 @@ export interface ChannelProvisioner {
 	 * re-provisions). Rejects on provider failure — the route maps that to 502 and
 	 * persists nothing.
 	 */
-	provision(input: {
-		accountId: AccountId;
-		accountName: string;
-		existing: ProvisionedIdentifier;
-	}): Promise<ProvisionedIdentifier>;
+	provision(input: ProvisionInput): Promise<ProvisionedIdentifier>;
 }
 
 /**
@@ -37,11 +47,7 @@ export interface ChannelProvisioner {
  * re-enabling returns the same one.
  */
 export class NoopChannelProvisioner implements ChannelProvisioner {
-	async provision(input: {
-		accountId: AccountId;
-		accountName: string;
-		existing: ProvisionedIdentifier;
-	}): Promise<ProvisionedIdentifier> {
+	async provision(input: ProvisionInput): Promise<ProvisionedIdentifier> {
 		if (input.existing.address !== '') {
 			return input.existing;
 		}
