@@ -13,3 +13,22 @@ export function isProductionEnv(env?: Record<string, string | undefined>): boole
 	const target = env ?? (typeof process !== 'undefined' ? process.env : {});
 	return target.RIVUS_ENV === 'production';
 }
+
+/**
+ * The product-app base URL this deployment should link to. Each marketing
+ * environment points at its sibling app deployment — dev.rivus.ai must send
+ * sign-ups to dev-app.rivus.ai, never the production app — with
+ * `NEXT_PUBLIC_APP_URL` as an explicit override for either.
+ *
+ * Called from next.config.ts at build time (the deploy workflows set
+ * `RIVUS_ENV` in the build job's env), which inlines the result into both the
+ * server and client bundles as `NEXT_PUBLIC_APP_URL`; client components can't
+ * read `RIVUS_ENV` themselves.
+ */
+export function resolveAppUrl(env?: Record<string, string | undefined>): string {
+	const target = env ?? (typeof process !== 'undefined' ? process.env : {});
+	if (target.NEXT_PUBLIC_APP_URL) {
+		return target.NEXT_PUBLIC_APP_URL;
+	}
+	return target.RIVUS_ENV === 'development' ? 'https://dev-app.rivus.ai' : 'https://app.rivus.ai';
+}

@@ -1,4 +1,4 @@
-import { onboardingChecklist, onboardingStats } from '../../lib/site';
+import { onboardingChecklist, onboardingStats, signupUrl } from '../../lib/site';
 import { ArrowRightIcon, CheckIcon } from './icons';
 
 export function OnboardingSection() {
@@ -33,7 +33,7 @@ export function OnboardingSection() {
 				</div>
 
 				<div className="onboard__cta">
-					<a className="btn btn--white btn--lg" href="#cta">
+					<a className="btn btn--white btn--lg" href={signupUrl}>
 						Claim your free onboarding
 						<ArrowRightIcon size={18} />
 					</a>

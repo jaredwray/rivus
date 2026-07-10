@@ -1,4 +1,4 @@
-import { siteConfig } from '../../lib/site';
+import { signupUrl, siteConfig } from '../../lib/site';
 import { BrandImg } from './brand-img';
 import { ArrowRightIcon, BoltIcon, CheckIcon, PlayIcon } from './icons';
 
@@ -18,7 +18,7 @@ export function Hero() {
 					</h1>
 					<p className="hero__lead">{siteConfig.heroLead}</p>
 					<div className="hero__actions">
-						<a className="btn btn--primary btn--lg" href="#cta">
+						<a className="btn btn--primary btn--lg" href={signupUrl}>
 							Get started free
 							<ArrowRightIcon size={18} />
 						</a>
