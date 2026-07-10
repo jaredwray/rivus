@@ -7,6 +7,8 @@
  * review them before relying on them in production.
  */
 
+import { SMS_CONSENT_DISCLOSURE, SMS_MESSAGE_CATEGORIES, SMS_PROGRAM_NAME } from '@rivus/core';
+
 export type LegalBlock = { kind: 'text'; text: string } | { kind: 'list'; items: string[] };
 
 export interface LegalSection {
@@ -30,14 +32,12 @@ const list = (...items: string[]): LegalBlock => ({ kind: 'list', items });
 const UPDATED = 'July 10, 2026';
 
 /**
- * The message categories of the Rivus texting program. Carrier vetting
- * (Twilio A2P 10DLC, Plivo/TCR) expects this enumeration to be identical
- * everywhere it appears — privacy policy, SMS terms, and the opt-in page —
- * so it lives in one constant.
+ * The SMS program's carrier-compliance copy lives in @rivus/core so this
+ * site and the product app (which shows the consent where phone numbers are
+ * actually collected) can never drift apart. Re-exported for the compliance
+ * tests that guard these pages.
  */
-export const SMS_PROGRAM_NAME = 'Rivus Notifications & Reminders';
-export const SMS_MESSAGE_CATEGORIES =
-	'account and phone verification codes, appointment and service reminders, scheduling replies, invoice and billing notifications, review requests, and other notifications you have requested';
+export { SMS_MESSAGE_CATEGORIES, SMS_PROGRAM_NAME };
 
 export const privacyDoc: LegalDoc = {
 	slug: 'privacy',
@@ -538,11 +538,9 @@ export const smsOptInDoc: LegalDoc = {
 			heading: 'How Rivus customers opt in',
 			blocks: [
 				text(
-					'If you run a business on Rivus, you opt in by providing your mobile phone number and agreeing to this consent where the number is collected — during signup or in your notification settings. Consent is presented on its own (never pre-selected, never buried in other terms), and reads:',
+					'If you run a business on Rivus, you opt in by providing your mobile phone number where the app collects it — during signup or in your account settings. This consent is disclosed right at the phone field, on its own (never pre-selected, never buried in other terms):',
 				),
-				text(
-					`"By providing your mobile phone number, you agree to receive recurring automated text messages from Rivus at the number provided, including ${SMS_MESSAGE_CATEGORIES}. Consent is not a condition of purchase. Message frequency varies. Message and data rates may apply. Reply HELP for help. Reply STOP to unsubscribe at any time."`,
-				),
+				text(`"${SMS_CONSENT_DISCLOSURE}"`),
 			],
 		},
 		{
