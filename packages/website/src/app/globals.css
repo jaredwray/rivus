@@ -54,8 +54,12 @@ html {
 }
 
 /* Anchored sections (e.g. /#features) must clear the sticky nav when jumped
-   to, or their headings land hidden underneath it. */
-[id] {
+   to, or their headings land hidden underneath it. Every linkable anchor on
+   the site is a main, section, or article — scoped so ids on interactive
+   elements (form inputs) keep default focus-scroll behavior. */
+main[id],
+section[id],
+article[id] {
 	scroll-margin-top: 84px;
 }
 
