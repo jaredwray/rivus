@@ -1,11 +1,13 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { type AccountChannelConfig, type AccountId, normalizePhone } from '@rivus/core';
+import { type AccountChannelConfig, normalizePhone } from '@rivus/core';
+import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
 import type { Config } from '../config';
 import {
 	type ChannelProvisioner,
 	NoopChannelProvisioner,
 	type ProvisionedIdentifier,
+	type ProvisionInput,
 } from './channel-provisioning';
 import type { FetchLike } from './resend-mailer';
 import { NoopSmsSender, type SmsMessage, type SmsSender } from './sms';
@@ -44,6 +46,20 @@ function basicAuth(accountSid: string, authToken: string): Record<string, string
 
 function accountUrl(apiUrl: string, accountSid: string, leaf: string): string {
 	return `${apiUrl.replace(/\/+$/, '')}/${API_VERSION}/Accounts/${accountSid}${leaf}`;
+}
+
+/**
+ * Parse a JSON response body, returning `undefined` (rather than throwing) when
+ * it isn't valid JSON — so a proxy error page or an empty body surfaces as a
+ * clean "unexpected response" through the schema check, with the raw body
+ * already logged, instead of an opaque `SyntaxError`.
+ */
+function safeJson(body: string): unknown {
+	try {
+		return JSON.parse(body);
+	} catch {
+		return undefined;
+	}
 }
 
 /** The parsed form parameters of a webhook request (a repeated key is an array). */
@@ -242,53 +258,75 @@ export class TwilioProvisioner implements ChannelProvisioner {
 		this.fetchImpl = options.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
 	}
 
-	async provision(input: {
-		accountId: AccountId;
-		accountName: string;
-		existing: ProvisionedIdentifier;
-	}): Promise<ProvisionedIdentifier> {
+	async provision(input: ProvisionInput): Promise<ProvisionedIdentifier> {
 		// Idempotent: never re-provision an account that already holds a number.
 		if (input.existing.address !== '') {
 			return input.existing;
 		}
-		const number = await this.findAvailableNumber();
-		const purchased = await this.purchase(number);
+		// A dedicated child logger so every line of a single provisioning attempt
+		// is correlatable, and a failed enable can be diagnosed from the logs (the
+		// route only surfaces a generic 502).
+		const logger = input.logger?.child({
+			scope: 'twilio-provision',
+			accountId: input.accountId,
+			country: this.country,
+			smsWebhook: this.webhooks.smsUrl !== '',
+			voiceWebhook: this.webhooks.voiceUrl !== '',
+		});
+		logger?.info('renting a Twilio number');
+		const number = await this.findAvailableNumber(logger);
+		const purchased = await this.purchase(number, logger);
 		// Twilio returns E.164 with the leading `+` already.
 		const address = normalizePhone(purchased.phoneNumber);
 		if (address === '') {
+			logger?.error({ offered: purchased.phoneNumber }, 'Twilio offered a non-E.164 number');
 			throw new Error(`Twilio offered a number that is not valid E.164: ${purchased.phoneNumber}`);
 		}
+		logger?.info({ address, providerRef: purchased.sid }, 'rented a Twilio number');
 		return { address, providerRef: purchased.sid };
 	}
 
 	/** Search for a rentable local number that supports voice + SMS. */
-	private async findAvailableNumber(): Promise<string> {
+	private async findAvailableNumber(logger?: FastifyBaseLogger): Promise<string> {
 		const query = new URLSearchParams({
 			SmsEnabled: 'true',
 			VoiceEnabled: 'true',
 			PageSize: '5',
 		});
-		const response = await this.fetchImpl(
-			`${accountUrl(this.apiUrl, this.accountSid, `/AvailablePhoneNumbers/${this.country}/Local.json`)}?${query}`,
-			{ method: 'GET', headers: this.headers },
-		);
+		const url = `${accountUrl(this.apiUrl, this.accountSid, `/AvailablePhoneNumbers/${this.country}/Local.json`)}?${query}`;
+		logger?.info({ url }, 'searching for an available number');
+		const response = await this.fetchImpl(url, { method: 'GET', headers: this.headers });
+		const body = await response.text().catch(() => '');
 		if (!response.ok) {
-			const detail = await response.text().catch(() => '');
+			// The response body carries Twilio's error code + message (e.g. 20003
+			// auth failure, or a geo-permission / trial-account rejection).
+			logger?.error({ status: response.status, body }, 'Twilio number search failed');
 			throw new Error(
-				`Twilio number search failed (status ${response.status})${detail ? `: ${detail}` : ''}`,
+				`Twilio number search failed (status ${response.status})${body ? `: ${body}` : ''}`,
 			);
 		}
-		const parsed = searchResponseSchema.safeParse(JSON.parse(await response.text()));
+		const parsed = searchResponseSchema.safeParse(safeJson(body));
 		const number = parsed.success
 			? parsed.data.available_phone_numbers[0]?.phone_number
 			: undefined;
 		if (!number) {
+			logger?.error(
+				{
+					status: response.status,
+					matches: parsed.success ? parsed.data.available_phone_numbers.length : 0,
+				},
+				'Twilio search returned no rentable voice+SMS numbers',
+			);
 			throw new Error(`Twilio has no ${this.country} numbers with voice+SMS available to rent.`);
 		}
+		logger?.info({ number }, 'found an available number');
 		return number;
 	}
 
-	private async purchase(number: string): Promise<{ sid: string; phoneNumber: string }> {
+	private async purchase(
+		number: string,
+		logger?: FastifyBaseLogger,
+	): Promise<{ sid: string; phoneNumber: string }> {
 		const form = new URLSearchParams({ PhoneNumber: number });
 		// Attach the inbound webhooks in the same call — the number is live for
 		// SMS and voice the moment it is rented, no console step.
@@ -300,18 +338,23 @@ export class TwilioProvisioner implements ChannelProvisioner {
 			form.set('VoiceUrl', this.webhooks.voiceUrl);
 			form.set('VoiceMethod', 'POST');
 		}
+		logger?.info({ number }, 'purchasing the number');
 		const response = await this.fetchImpl(
 			accountUrl(this.apiUrl, this.accountSid, '/IncomingPhoneNumbers.json'),
 			{ method: 'POST', headers: this.headers, body: form.toString() },
 		);
+		const body = await response.text().catch(() => '');
 		if (!response.ok) {
-			const detail = await response.text().catch(() => '');
+			// Common causes visible here: 21404 (number no longer available), a
+			// trial account that can't purchase, or an unverified geo permission.
+			logger?.error({ status: response.status, number, body }, 'Twilio refused to rent the number');
 			throw new Error(
-				`Twilio refused to rent ${number} (status ${response.status})${detail ? `: ${detail}` : ''}`,
+				`Twilio refused to rent ${number} (status ${response.status})${body ? `: ${body}` : ''}`,
 			);
 		}
-		const parsed = purchaseResponseSchema.safeParse(JSON.parse(await response.text()));
+		const parsed = purchaseResponseSchema.safeParse(safeJson(body));
 		if (!parsed.success || parsed.data.sid === '') {
+			logger?.error({ status: response.status, number, body }, 'Twilio did not confirm the rental');
 			throw new Error(`Twilio did not confirm the rental of ${number}.`);
 		}
 		return { sid: parsed.data.sid, phoneNumber: parsed.data.phone_number || number };
