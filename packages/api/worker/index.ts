@@ -1,4 +1,5 @@
 import { Container, getContainer } from '@cloudflare/containers';
+import { FORWARDED_VARS, forwardedEnv } from './env';
 
 /** Bindings available to the front-door Worker and the container Durable Object. */
 export interface Env {
@@ -35,7 +36,35 @@ export interface Env {
 	XAI_MODEL?: string;
 	ANTHROPIC_API_KEY?: string;
 	ANTHROPIC_MODEL?: string;
+	// Messaging channels (WhatsApp / SMS / voice). Twilio is the primary provider,
+	// Plivo is retained during the migration, and zernio is the WhatsApp-only
+	// alternative. All optional — an unset provider degrades to a no-op, and only
+	// the ones actually set are forwarded to the container (see FORWARDED_VARS).
+	// The `*_API_URL` / `*_NUMBER_COUNTRY` keys have defaults in `loadConfig`, so
+	// leaving them unset is fine; the credentials and webhook URLs are what matter.
+	TWILIO_ACCOUNT_SID?: string;
+	TWILIO_AUTH_TOKEN?: string;
+	TWILIO_API_URL?: string;
+	TWILIO_WHATSAPP_WEBHOOK_URL?: string;
+	TWILIO_SMS_WEBHOOK_URL?: string;
+	TWILIO_VOICE_WEBHOOK_URL?: string;
+	TWILIO_NUMBER_COUNTRY?: string;
+	PLIVO_AUTH_ID?: string;
+	PLIVO_AUTH_TOKEN?: string;
+	PLIVO_API_URL?: string;
+	PLIVO_WEBHOOK_URL?: string;
+	PLIVO_SMS_WEBHOOK_URL?: string;
+	PLIVO_NUMBER_COUNTRY?: string;
+	ZERNIO_API_KEY?: string;
+	ZERNIO_API_URL?: string;
+	ZERNIO_WEBHOOK_SECRET?: string;
+	ZERNIO_VERIFY_TOKEN?: string;
 }
+
+// Compile-time guard: every forwarded var names a real `Env` binding, so a typo
+// or a key removed from `Env` fails the build here rather than silently dropping
+// a variable from the container. Used by `envVars` below, so it isn't dead code.
+const FORWARDED: readonly (keyof Env)[] = FORWARDED_VARS;
 
 /**
  * The Fastify API needs Node and the MongoDB driver, so it can't run on the
@@ -49,33 +78,12 @@ export class ApiContainer extends Container<Env> {
 	override defaultPort = 4000;
 	override sleepAfter = '10m';
 	// A data property (not a getter): the base Container constructor assigns
-	// `this.envVars`, so a getter-only override would throw. Spread each binding
-	// only when set so an unset secret never reaches the container as "undefined".
+	// `this.envVars`, so a getter-only override would throw. Only the bindings
+	// actually set are forwarded, so an unset secret never reaches the container
+	// as the string "undefined".
 	override envVars = {
 		NODE_ENV: 'production',
-		...(this.env.RIVUS_ENV ? { RIVUS_ENV: this.env.RIVUS_ENV } : {}),
-		...(this.env.MONGODB_URI ? { MONGODB_URI: this.env.MONGODB_URI } : {}),
-		...(this.env.JWT_SECRET ? { JWT_SECRET: this.env.JWT_SECRET } : {}),
-		...(this.env.CORS_ORIGIN ? { CORS_ORIGIN: this.env.CORS_ORIGIN } : {}),
-		...(this.env.COOKIE_DOMAIN ? { COOKIE_DOMAIN: this.env.COOKIE_DOMAIN } : {}),
-		...(this.env.RESEND_API_KEY ? { RESEND_API_KEY: this.env.RESEND_API_KEY } : {}),
-		...(this.env.EMAIL_FROM ? { EMAIL_FROM: this.env.EMAIL_FROM } : {}),
-		...(this.env.APP_URL ? { APP_URL: this.env.APP_URL } : {}),
-		...(this.env.WEBSITE_URL ? { WEBSITE_URL: this.env.WEBSITE_URL } : {}),
-		...(this.env.AGENT_EMAIL_DOMAIN ? { AGENT_EMAIL_DOMAIN: this.env.AGENT_EMAIL_DOMAIN } : {}),
-		...(this.env.RESEND_WEBHOOK_SECRET
-			? { RESEND_WEBHOOK_SECRET: this.env.RESEND_WEBHOOK_SECRET }
-			: {}),
-		...(this.env.OPENAI_API_KEY ? { OPENAI_API_KEY: this.env.OPENAI_API_KEY } : {}),
-		...(this.env.OPENAI_MODEL ? { OPENAI_MODEL: this.env.OPENAI_MODEL } : {}),
-		...(this.env.GOOGLE_GENERATIVE_AI_API_KEY
-			? { GOOGLE_GENERATIVE_AI_API_KEY: this.env.GOOGLE_GENERATIVE_AI_API_KEY }
-			: {}),
-		...(this.env.GEMINI_MODEL ? { GEMINI_MODEL: this.env.GEMINI_MODEL } : {}),
-		...(this.env.XAI_API_KEY ? { XAI_API_KEY: this.env.XAI_API_KEY } : {}),
-		...(this.env.XAI_MODEL ? { XAI_MODEL: this.env.XAI_MODEL } : {}),
-		...(this.env.ANTHROPIC_API_KEY ? { ANTHROPIC_API_KEY: this.env.ANTHROPIC_API_KEY } : {}),
-		...(this.env.ANTHROPIC_MODEL ? { ANTHROPIC_MODEL: this.env.ANTHROPIC_MODEL } : {}),
+		...forwardedEnv(FORWARDED, (key) => this.env[key as keyof Env]),
 	};
 }
 
