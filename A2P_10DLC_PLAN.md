@@ -57,7 +57,7 @@ Concrete tactics, in priority order:
    published number to start every conversation") plus explicit checkbox consent on the booking
    form. State it plainly in the campaign submission.
 4. **Route by identity, not by hope.** EIN present → Low Volume Standard. No EIN → Sole
-   Proprietor. Can't pass either → Toll-free verification fallback (§10). Never submit a no-EIN
+   Proprietor. Can't pass either → Toll-free verification fallback (§9). Never submit a no-EIN
    business down the standard path just because the form allowed it.
 5. **Validate before you pay.** Hard client- and server-side validation (EIN format, exact-name
    copywriting, address normalization) plus an optional KYB/TIN pre-match service, so submissions
@@ -92,8 +92,9 @@ per registration path.
 - Non-US numbers or non-US destination compliance (`TWILIO_NUMBER_COUNTRY` defaults to `US`;
   other countries have different regimes — out of scope).
 - WhatsApp/WABA sender automation (the existing `TODO(twilio)` in
-  `packages/api/src/services/twilio.ts`) — adjacent, shares the Trust Hub secondary profile this
-  plan creates, but tracked separately.
+  `packages/api/src/services/twilio.ts`) — adjacent, and it reuses the business-identity data
+  this plan collects (not the Trust Hub resource itself: WhatsApp senders consume no Trust Hub
+  bundle — see `WHATSAPP_SENDER_PLAN.md` §7), but tracked separately.
 - 10DLC compliance for legacy **Plivo-owned** numbers. The Plivo→Twilio migration
   (`packages/api/src/services/messaging-provider.ts`) supersedes it; migrate the number, then
   register it under this plan.
@@ -238,7 +239,7 @@ Does the business have a US EIN?
          ├─ YES → Sole Proprietor brand
          │        constraints [verify at build]: low throughput (roughly ~1k msgs/day),
          │        ONE campaign, ONE number — acceptable for appointment traffic
-         └─ NO  → Toll-free fallback (§10): lighter verification, no EIN strictly required,
+         └─ NO  → Toll-free fallback (§9): lighter verification, no EIN strictly required,
                   higher default throughput — but the number is toll-free, not local
 ```
 
@@ -358,7 +359,7 @@ crashed or retried orchestration resumes instead of duplicating billable resourc
 **Phase 3 — Automated Low Volume Standard + toll-free fallback**
 - EIN branch of the wizard, hard validation + optional KYB pre-check, LVS brand automation.
 - Toll-free fallback automation: rent a toll-free number, submit toll-free verification, swap the
-  account's channels to it (§10).
+  account's channels to it (§9).
 - Backfill: migrate Phase-1 manually-registered accounts into the same data model.
 
 **Phase 4 — Rejection/appeal UX + hardening**
