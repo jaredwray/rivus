@@ -62,6 +62,12 @@ export interface AuthContextValue {
 	 */
 	sandboxWhatsapp: (mode: 'attach' | 'detach') => Promise<void>;
 	/**
+	 * Release every rented number and reset the phone channels, keeping the
+	 * session in sync (development + Rivus staff only). Resolves with the
+	 * released numbers, so the caller can say what was handed back.
+	 */
+	releaseNumber: () => Promise<string[]>;
+	/**
 	 * Update your own profile (name, phone, email, profile image), keeping the
 	 * session in sync. Changing the email stages it on `session.user.pendingEmail`
 	 * and emails a code; the live email only changes once
@@ -173,6 +179,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				}
 				const account = await client.sandboxWhatsapp(session.token, mode);
 				setSession({ ...session, account });
+			},
+			async releaseNumber() {
+				if (!session) {
+					return [];
+				}
+				const { released, account } = await client.releaseNumber(session.token);
+				setSession({ ...session, account });
+				return released;
 			},
 			async verifyEmailChange(input) {
 				if (!session) {

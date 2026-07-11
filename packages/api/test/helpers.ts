@@ -5,7 +5,7 @@ import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
 import { createInMemoryRepositories, type InMemoryRepositories } from '../src/repositories/memory';
 import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
-import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
+import { NoopChannelProvisioner, NoopNumberReleaser } from '../src/services/channel-provisioning';
 import type { AgentEmail, InviteEmail, Mailer, VerificationEmail } from '../src/services/email';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
@@ -107,6 +107,7 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		whatsappProvisioner: new NoopChannelProvisioner(),
 		smsSender: new RecordingSmsSender(),
 		smsProvisioner: new NoopChannelProvisioner(),
+		numberReleaser: new NoopNumberReleaser(),
 		// A real notification service over the in-memory store, so route emission is
 		// exercised end-to-end in tests.
 		notifier: createNotificationService({ notifications }),
@@ -166,6 +167,7 @@ export async function buildTestAppWithRepos(overrides: Partial<AppDeps> = {}): P
 		whatsappProvisioner: new NoopChannelProvisioner(),
 		smsSender: new RecordingSmsSender(),
 		smsProvisioner: new NoopChannelProvisioner(),
+		numberReleaser: new NoopNumberReleaser(),
 		notifier: createNotificationService({ notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),

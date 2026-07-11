@@ -633,6 +633,24 @@ describe('createApiClient', () => {
 		});
 	});
 
+	describe('releaseNumber', () => {
+		it('POSTs to the dev-only release route and returns the released numbers with the reset account', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse({ released: ['+14155550100'], account: makeAccount() }),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.releaseNumber('staff-token');
+
+			expect(result.released).toEqual(['+14155550100']);
+			expect(result.account.channels.whatsapp).toMatchObject({ enabled: false, address: '' });
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/admin/release-number`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer staff-token' });
+		});
+	});
+
 	describe('cancelAccount', () => {
 		it('POSTs to the cancel endpoint and returns the canceled account', async () => {
 			const account = {

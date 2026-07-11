@@ -40,6 +40,44 @@ export interface ChannelProvisioner {
 	provision(input: ProvisionInput): Promise<ProvisionedIdentifier>;
 }
 
+/** How a release attempt resolved. */
+export type ReleaseOutcome =
+	/** The provider confirmed the number is released (billing stops). */
+	| 'released'
+	/** The provider doesn't know the ref — already released (e.g. by hand in the console). */
+	| 'not_found'
+	/**
+	 * No provider credentials to release with — nothing was attempted, so the
+	 * rental (if any) is still live. Callers must NOT treat the number as gone:
+	 * clearing its stored config would orphan a number that keeps billing.
+	 */
+	| 'skipped';
+
+/**
+ * Releases a rented number back to the provider — the undo of
+ * {@link ChannelProvisioner}. Today this only backs the development-only
+ * "release & reset" admin flow; production never releases numbers (disable
+ * deliberately retains them). Rejects on provider failure so the caller can
+ * refuse to clear state that still bills.
+ */
+export interface NumberReleaser {
+	release(providerRef: string, logger?: FastifyBaseLogger): Promise<ReleaseOutcome>;
+}
+
+/** A releaser with nothing to release against — used when no provider is configured. */
+export class NoopNumberReleaser implements NumberReleaser {
+	async release(): Promise<ReleaseOutcome> {
+		return 'skipped';
+	}
+}
+
+/**
+ * The providerRef {@link NoopChannelProvisioner} stores with its fake numbers.
+ * Deliberately not any provider's fingerprint, so a dev fake is never routed,
+ * shared, or released as if a provider rented it.
+ */
+export const NOOP_PROVIDER_REF = 'noop';
+
 /**
  * A provisioner that hands out a deterministic fake number derived from the
  * account id (the same FNV-1a tag the agent email address uses), so development
@@ -55,6 +93,6 @@ export class NoopChannelProvisioner implements ChannelProvisioner {
 		const subscriber = (Number.parseInt(agentEmailTag(input.accountId), 16) % 10_000_000)
 			.toString()
 			.padStart(7, '0');
-		return { address: `+1555${subscriber}`, providerRef: 'noop' };
+		return { address: `+1555${subscriber}`, providerRef: NOOP_PROVIDER_REF };
 	}
 }

@@ -17,7 +17,7 @@ import type {
 	VerificationCodeRepository,
 } from './repositories/types';
 import type { ReceivedEmailReader } from './services/agent/email/received';
-import type { ChannelProvisioner } from './services/channel-provisioning';
+import type { ChannelProvisioner, NumberReleaser } from './services/channel-provisioning';
 import type { Mailer } from './services/email';
 import type { FaqAnswerService } from './services/faq-answer';
 import type { FaqSimilarityService } from './services/faq-similarity';
@@ -65,6 +65,8 @@ export interface AppDeps {
 	smsSender: SmsSender;
 	/** Provisions an SMS number when an owner enables the channel (shared with WhatsApp when Plivo owns it). */
 	smsProvisioner: ChannelProvisioner;
+	/** Releases a rented number back to its provider (dev-only admin flow). */
+	numberReleaser: NumberReleaser;
 	/** Turns domain events (job assigned, invite accepted, …) into notifications. */
 	notifier: NotificationService;
 	/** AI check for near-duplicate FAQs (a no-op when no provider key is set). */

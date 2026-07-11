@@ -2,7 +2,7 @@ import type { AccountId } from '@rivus/core';
 import type { FastifyBaseLogger } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config';
-import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
+import { NoopChannelProvisioner, NoopNumberReleaser } from '../src/services/channel-provisioning';
 import {
 	createSmsProvisioner,
 	createSmsSender,
@@ -13,10 +13,12 @@ import { PlivoProvisioner } from '../src/services/plivo';
 import type { FetchLike } from '../src/services/resend-mailer';
 import { NoopSmsSender } from '../src/services/sms';
 import {
+	createTwilioNumberReleaser,
 	createTwilioProvisioner,
 	createTwilioSmsSender,
 	createTwilioWhatsappSender,
 	signTwilioRequest,
+	TwilioNumberReleaser,
 	TwilioProvisioner,
 	TwilioSmsSender,
 	TwilioWhatsappSender,
@@ -490,17 +492,60 @@ describe('TwilioProvisioner', () => {
 	});
 });
 
+describe('TwilioNumberReleaser', () => {
+	function releaser(responses: CannedResponse[]) {
+		const { fetchImpl, calls } = fakeFetch(responses);
+		const instance = new TwilioNumberReleaser({
+			accountSid: ACCOUNT_SID,
+			authToken: AUTH_TOKEN,
+			apiUrl: API_URL,
+			fetchImpl,
+		});
+		return { instance, calls };
+	}
+
+	it('DELETEs the number resource with basic auth and reports released on 204', async () => {
+		const { instance, calls } = releaser([{ ok: true, status: 204, body: '' }]);
+		await expect(instance.release(NUMBER_SID)).resolves.toBe('released');
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.url).toBe(
+			`${API_URL}/2010-04-01/Accounts/${ACCOUNT_SID}/IncomingPhoneNumbers/${NUMBER_SID}.json`,
+		);
+		expect(calls[0]?.init.method).toBe('DELETE');
+		const credentials = Buffer.from(`${ACCOUNT_SID}:${AUTH_TOKEN}`).toString('base64');
+		expect(calls[0]?.init.headers.authorization).toBe(`Basic ${credentials}`);
+	});
+
+	it('reports not_found when Twilio no longer knows the ref (already released by hand)', async () => {
+		const { instance } = releaser([
+			{ ok: false, status: 404, body: '{"code":20404,"message":"not found"}' },
+		]);
+		await expect(instance.release(NUMBER_SID)).resolves.toBe('not_found');
+	});
+
+	it('rejects with the status and body on any other refusal', async () => {
+		const { instance } = releaser([
+			{ ok: false, status: 401, body: '{"code":20003,"message":"Authenticate"}' },
+		]);
+		await expect(instance.release(NUMBER_SID)).rejects.toThrow(
+			`Twilio refused to release ${NUMBER_SID} (status 401): {"code":20003,"message":"Authenticate"}`,
+		);
+	});
+});
+
 describe('Twilio factories', () => {
 	it('degrade to no-ops without a full credential pair', () => {
 		const none = testConfig();
 		expect(createTwilioWhatsappSender(none)).toBeInstanceOf(NoopWhatsappSender);
 		expect(createTwilioSmsSender(none)).toBeInstanceOf(NoopSmsSender);
 		expect(createTwilioProvisioner(none)).toBeInstanceOf(NoopChannelProvisioner);
+		expect(createTwilioNumberReleaser(none)).toBeInstanceOf(NoopNumberReleaser);
 
 		const partial = testConfig({ TWILIO_ACCOUNT_SID: ACCOUNT_SID });
 		expect(createTwilioWhatsappSender(partial)).toBeInstanceOf(NoopWhatsappSender);
 		expect(createTwilioSmsSender(partial)).toBeInstanceOf(NoopSmsSender);
 		expect(createTwilioProvisioner(partial)).toBeInstanceOf(NoopChannelProvisioner);
+		expect(createTwilioNumberReleaser(partial)).toBeInstanceOf(NoopNumberReleaser);
 	});
 
 	it('build real adapters when both credentials are set', () => {
@@ -511,6 +556,7 @@ describe('Twilio factories', () => {
 		expect(createTwilioWhatsappSender(config)).toBeInstanceOf(TwilioWhatsappSender);
 		expect(createTwilioSmsSender(config)).toBeInstanceOf(TwilioSmsSender);
 		expect(createTwilioProvisioner(config)).toBeInstanceOf(TwilioProvisioner);
+		expect(createTwilioNumberReleaser(config)).toBeInstanceOf(TwilioNumberReleaser);
 	});
 });
 

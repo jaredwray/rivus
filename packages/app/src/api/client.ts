@@ -573,6 +573,14 @@ const seedSummaryResponseSchema = z.object({
 });
 export type SeedSummary = z.infer<typeof seedSummaryResponseSchema>;
 
+// Result of the development-only release-and-reset flow (mirrors the API's
+// `releaseNumberResponseSchema`): the numbers handed back, then the reset account.
+const releaseNumberResponseSchema = z.object({
+	released: z.array(z.string()),
+	account: accountResponseSchema,
+});
+export type ReleaseNumberResult = z.infer<typeof releaseNumberResponseSchema>;
+
 const healthResponseSchema = z.object({
 	status: z.literal('ok'),
 	uptime: z.number(),
@@ -753,6 +761,20 @@ export interface RivusApiClient {
 	 * refuses to replace (or clear) a real provisioned number.
 	 */
 	sandboxWhatsapp(token: string, mode?: 'attach' | 'detach'): Promise<Account>;
+	/**
+	 * Release every Twilio-rented number the current account holds and reset its
+	 * WhatsApp, SMS, and voice channels to disabled with no number — the "start
+	 * over" for a development number stuck in a broken state. Resolves with the
+	 * released numbers and the reset account. Each rental's channels reset as
+	 * its release is confirmed, so a mid-batch provider refusal rejects (502)
+	 * with already-released numbers cleared and the failing one still on the
+	 * account; a number the deployment can't release at all (another provider's
+	 * rental, or no Twilio credentials) rejects (409) with nothing changed.
+	 *
+	 * Development + Rivus-staff only, exactly like {@link seedAccount}: the route
+	 * 404s in deployed environments and 403s for non-staff callers.
+	 */
+	releaseNumber(token: string): Promise<ReleaseNumberResult>;
 }
 
 /** Strip a single trailing slash so `${base}${path}` never doubles up. */
@@ -1286,6 +1308,14 @@ export function createApiClient(
 				'/v1/admin/sandbox/whatsapp',
 				accountResponseSchema,
 				jsonInit('POST', { mode }, token),
+			);
+		},
+
+		releaseNumber(token: string) {
+			return request(
+				'/v1/admin/release-number',
+				releaseNumberResponseSchema,
+				jsonInit('POST', {}, token),
 			);
 		},
 	};
