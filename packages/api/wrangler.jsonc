@@ -58,7 +58,19 @@
 				// (Resend). Dev uses the `dev.riv.us` subdomain so test traffic never
 				// lands in the production `riv.us` inbox; it's configured as a receiving
 				// (MX) and verified sending domain in Resend, separate from prod's.
-				"AGENT_EMAIL_DOMAIN": "dev.riv.us"
+				"AGENT_EMAIL_DOMAIN": "dev.riv.us",
+				// Public URLs of this environment's Twilio webhooks — plain config, not
+				// secrets (the credentials TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN are set
+				// with `wrangler secret put`). Each pins webhook signature verification
+				// (the URL Twilio calls must match byte-for-byte) and rides along on
+				// sends as the delivery-status callback; the SMS and voice URLs are also
+				// attached to newly rented numbers at purchase (SmsUrl/VoiceUrl), so
+				// numbers rented while these were unset need the two per-number webhooks
+				// pasted into the Twilio console by hand. The voice *input* endpoint has
+				// no var — it derives from the answer URL.
+				"TWILIO_WHATSAPP_WEBHOOK_URL": "https://dev-api.rivus.ai/v1/channels/whatsapp/twilio/inbound",
+				"TWILIO_SMS_WEBHOOK_URL": "https://dev-api.rivus.ai/v1/channels/sms/twilio/inbound",
+				"TWILIO_VOICE_WEBHOOK_URL": "https://dev-api.rivus.ai/v1/channels/voice/twilio/answer"
 			},
 			"containers": [
 				{
@@ -95,7 +107,14 @@
 				"WEBSITE_URL": "https://rivus.ai",
 				// Inbound/outbound domain for the scheduling agent's email channel
 				// (Resend). Production customers email `<account-slug>@riv.us`.
-				"AGENT_EMAIL_DOMAIN": "riv.us"
+				"AGENT_EMAIL_DOMAIN": "riv.us",
+				// Public URLs of this environment's Twilio webhooks — same three roles as
+				// the development block above (signature pinning, send-time status
+				// callback, attached to numbers at purchase). Credentials stay in
+				// `wrangler secret put`, never here.
+				"TWILIO_WHATSAPP_WEBHOOK_URL": "https://api.rivus.ai/v1/channels/whatsapp/twilio/inbound",
+				"TWILIO_SMS_WEBHOOK_URL": "https://api.rivus.ai/v1/channels/sms/twilio/inbound",
+				"TWILIO_VOICE_WEBHOOK_URL": "https://api.rivus.ai/v1/channels/voice/twilio/answer"
 			},
 			"containers": [
 				{
