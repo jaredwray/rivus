@@ -367,8 +367,10 @@ export class TwilioProvisioner implements ChannelProvisioner {
 /**
  * Releases a rented number back to Twilio (`DELETE IncomingPhoneNumbers/{PN…}`,
  * which answers 204 and stops the rental's billing). Backs the dev-only
- * "release & reset" admin flow; a ref Twilio no longer knows (already released
- * in the console) reports `not_found` so cleanup can proceed.
+ * "release & reset" admin flow. The DELETE is scoped to the configured account,
+ * so a 404 is ambiguous — already released (e.g. by hand in the console), or
+ * rented by a *different* Twilio account and still billing there — and is
+ * reported as `not_found` for the caller to resolve, never as a release.
  */
 export class TwilioNumberReleaser implements NumberReleaser {
 	private readonly apiUrl: string;
@@ -390,7 +392,10 @@ export class TwilioNumberReleaser implements NumberReleaser {
 			{ method: 'DELETE', headers: this.headers },
 		);
 		if (response.status === 404) {
-			logger?.info({ providerRef }, 'number already released');
+			// Ambiguous by design: this account's scope has no such number — which is
+			// true after a console release, but also when the number was rented by a
+			// different Twilio account (rotated TWILIO_ACCOUNT_SID) and still bills.
+			logger?.warn({ providerRef }, 'Twilio does not know this number under this account');
 			return 'not_found';
 		}
 		if (!response.ok) {

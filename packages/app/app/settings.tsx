@@ -283,6 +283,10 @@ function DevReleaseCard() {
 	const [confirming, setConfirming] = useState(false);
 	const [done, setDone] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	// Set when the API answers "Twilio doesn't know this number" (409): it was
+	// console-released — or it belongs to a different Twilio account and may
+	// still bill there. Forgetting it is a second, separate decision.
+	const [unknownPrompt, setUnknownPrompt] = useState<string | null>(null);
 
 	const visible = Boolean(session) && isStaff && isSeedingEnabled();
 	const channels = session?.account.channels;
@@ -292,23 +296,37 @@ function DevReleaseCard() {
 		channels && [channels.whatsapp, channels.sms, channels.voice].some((c) => c.address !== ''),
 	);
 
-	async function onRelease() {
+	async function onRelease(clearUnknown = false) {
 		if (busy || !session) {
 			return;
 		}
 		setError(null);
 		setDone(null);
+		setUnknownPrompt(null);
 		setBusy(true);
 		try {
-			const released = await releaseNumber();
+			const { released, forgotten } = await releaseNumber(
+				clearUnknown ? { clearUnknown } : undefined,
+			);
+			const parts = [
+				released.length > 0 ? ` Released ${released.join(' and ')}.` : '',
+				forgotten.length > 0
+					? ` Forgot ${forgotten.join(' and ')} (already gone from this Twilio account).`
+					: '',
+			].join('');
 			setDone(
-				released.length > 0
-					? `Released ${released.join(' and ')} and reset all phone channels.`
+				parts
+					? `Reset all phone channels.${parts}`
 					: 'Reset all phone channels (nothing was rented).',
 			);
 			setConfirming(false);
 		} catch (caught) {
-			setError(messageFor(caught, 'Could not release the number.'));
+			const message = messageFor(caught, 'Could not release the number.');
+			if (caught instanceof ApiError && caught.status === 409 && /doesn't know/.test(message)) {
+				setUnknownPrompt(message);
+			} else {
+				setError(message);
+			}
 		} finally {
 			setBusy(false);
 		}
@@ -331,13 +349,32 @@ function DevReleaseCard() {
 			{error ? <Txt style={styles.errorTxt}>{error}</Txt> : null}
 			{done ? <Txt style={styles.savedTxt}>{done}</Txt> : null}
 
-			{confirming ? (
+			{unknownPrompt ? (
+				<>
+					<Txt style={styles.errorTxt}>{unknownPrompt}</Txt>
+					<View style={[styles.confirmRow, narrow && styles.confirmRowNarrow]}>
+						<DangerButton
+							label={busy ? 'Forgetting…' : 'It’s gone — forget the number'}
+							icon="alert-triangle"
+							loading={busy}
+							onPress={() => onRelease(true)}
+							style={[styles.confirmBtn, narrow && styles.confirmBtnNarrow]}
+						/>
+						<OutlineButton
+							label="Keep the record"
+							disabled={busy}
+							onPress={() => setUnknownPrompt(null)}
+							style={[styles.confirmBtn, narrow && styles.confirmBtnNarrow]}
+						/>
+					</View>
+				</>
+			) : confirming ? (
 				<View style={[styles.confirmRow, narrow && styles.confirmRowNarrow]}>
 					<DangerButton
 						label={busy ? 'Releasing…' : 'Yes, release & reset'}
 						icon="alert-triangle"
 						loading={busy}
-						onPress={onRelease}
+						onPress={() => onRelease()}
 						style={[styles.confirmBtn, narrow && styles.confirmBtnNarrow]}
 					/>
 					<OutlineButton

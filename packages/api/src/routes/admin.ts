@@ -57,9 +57,26 @@ function isInertChannel(config: { address: string; providerRef: string }): boole
 	);
 }
 
-/** Response of the release-and-reset flow: the numbers released, then the reset account. */
+/** Body of the dev-only release-and-reset flow. */
+const releaseNumberSchema = z.object({
+	/**
+	 * Also forget numbers Twilio doesn't know under this deployment's account
+	 * (404 on release). Off by default: such a number may have been rented by a
+	 * different Twilio account (rotated credentials) and still bill there, so
+	 * dropping the account's record of it must be an explicit choice.
+	 */
+	clearUnknown: z.boolean().default(false),
+});
+
+/**
+ * Response of the release-and-reset flow: the numbers Twilio confirmed
+ * released, the ones forgotten without confirmation (unknown to this
+ * deployment's Twilio account, cleared via `clearUnknown`), and the reset
+ * account.
+ */
 const releaseNumberResponseSchema = z.object({
 	released: z.array(z.string()),
+	forgotten: z.array(z.string()),
 	account: accountResponseSchema,
 });
 
@@ -321,10 +338,14 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
 						'clears sandbox/dev-fake leftovers, so the WhatsApp, SMS, and voice ' +
 						'channels end disabled with no number and the next enable rents fresh. ' +
 						'Refuses (409) when the account holds a number this deployment cannot ' +
-						'release (another provider’s rental, or no Twilio credentials); if ' +
-						'Twilio refuses a release mid-batch (502), already-released numbers ' +
-						'are reset and the remaining ones stay visible on the account.',
+						'release (another provider’s rental, or no Twilio credentials) — and ' +
+						'when Twilio doesn’t know a number under this account (already ' +
+						'console-released, or a different Twilio account’s rental that may ' +
+						'still bill), unless `clearUnknown` explicitly forgets it. If Twilio ' +
+						'refuses a release mid-batch (502), already-released numbers are reset ' +
+						'and the remaining ones stay visible on the account.',
 					security: [{ bearerAuth: [] }],
+					body: releaseNumberSchema,
 					response: {
 						200: releaseNumberResponseSchema,
 						401: errorResponseSchema,
@@ -382,6 +403,7 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
 				// release is confirmed — the account never shows a released (dead)
 				// number as live, and never loses an unreleased one.
 				const released: string[] = [];
+				const forgotten: string[] = [];
 				for (const [providerRef, address] of rented) {
 					let outcome: ReleaseOutcome;
 					try {
@@ -409,7 +431,19 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
 							'This deployment has no Twilio credentials to release numbers with, so nothing was reset.',
 						);
 					}
-					released.push(address);
+					// 'not_found' is ambiguous: the number is gone from *this* Twilio
+					// account — released in the console, or rented by a different account
+					// and still billing there. Forget it only on explicit say-so.
+					if (outcome === 'not_found' && !request.body.clearUnknown) {
+						throw app.httpErrors.conflict(
+							`Twilio doesn't know ${address} under this deployment's account — either it ` +
+								'was already released in the console, or it belongs to a different Twilio ' +
+								'account and may still bill there. If it is truly gone, run again with ' +
+								'clearUnknown to forget it.' +
+								(released.length > 0 ? ` Already released and reset: ${released.join(', ')}.` : ''),
+						);
+					}
+					(outcome === 'released' ? released : forgotten).push(address);
 					await clearChannelsHolding(providerRef);
 				}
 				// Sweep the inert leftovers ('noop' fakes, the sandbox marker) so every
@@ -436,7 +470,7 @@ export const adminRoutes: FastifyPluginAsync = async (fastify) => {
 					}
 					updated = next;
 				}
-				return { released, account: toPublicAccount(updated) };
+				return { released, forgotten, account: toPublicAccount(updated) };
 			},
 		);
 	}

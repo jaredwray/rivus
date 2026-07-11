@@ -286,10 +286,15 @@ number via TwiML — one number per account carries all three channels.
    up off with no number and the next enable rents fresh. The invariant: the
    account never loses its only pointer to a number that may still bill. A
    rental this deployment can't release (another provider's, or no Twilio
-   credentials) refuses with 409 and touches nothing; a mid-batch Twilio
-   refusal answers 502 with already-released numbers reset and the remaining
-   ones still visible. Production deliberately has no such route (disable
-   retains the number).
+   credentials) refuses with 409 and touches nothing. A number Twilio doesn't
+   know under this account also refuses with 409 — the release DELETE is
+   account-scoped, so its 404 can mean "already released in the console" but
+   equally "rented by a *different* Twilio account after a credentials change,
+   and still billing there" — until the request opts in with `clearUnknown`,
+   which forgets the number and reports it separately from confirmed releases.
+   A mid-batch Twilio refusal answers 502 with already-released numbers reset
+   and the remaining ones still visible. Production deliberately has no such
+   route (disable retains the number).
 
 | Variable                      | Default                   | Notes                                                                                                                 |
 | ----------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------- |

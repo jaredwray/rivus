@@ -44,7 +44,12 @@ export interface ChannelProvisioner {
 export type ReleaseOutcome =
 	/** The provider confirmed the number is released (billing stops). */
 	| 'released'
-	/** The provider doesn't know the ref — already released (e.g. by hand in the console). */
+	/**
+	 * The provider doesn't know the ref *under these credentials' account*.
+	 * Ambiguous: already released (e.g. by hand in the console) — or rented by a
+	 * different provider account (rotated credentials) and still billing there.
+	 * Callers must not treat this as a confirmed release.
+	 */
 	| 'not_found'
 	/**
 	 * No provider credentials to release with — nothing was attempted, so the

@@ -110,6 +110,7 @@ describe('POST /v1/admin/release-number', () => {
 		// The shared rental is released once, not once per channel.
 		expect(releaser.releases.sort()).toEqual([NUMBER_SID, OTHER_SID].sort());
 		expect(res.json().released.sort()).toEqual(['+14155550100', '+14155550199'].sort());
+		expect(res.json().forgotten).toEqual([]);
 		for (const channel of ['whatsapp', 'sms', 'voice'] as const) {
 			expect(res.json().account.channels[channel]).toMatchObject({ enabled: false, address: '' });
 		}
@@ -119,7 +120,10 @@ describe('POST /v1/admin/release-number', () => {
 		expect(account?.channels.whatsapp.providerRef).toBe('');
 	});
 
-	it('still resets when the provider already forgot the number (released by hand)', async () => {
+	it('refuses (409) a number Twilio does not know — it may be another account’s rental', async () => {
+		// The DELETE is account-scoped: a 404 can mean "released in the console",
+		// but equally "rented under a different TWILIO_ACCOUNT_SID and still
+		// billing there" — so forgetting it must be an explicit choice.
 		const releaser = new RecordingNumberReleaser({ [NUMBER_SID]: 'not_found' });
 		const { app: built, repos } = await buildTestAppWithRepos({
 			config: devConfig(),
@@ -138,10 +142,73 @@ describe('POST /v1/admin/release-number', () => {
 			headers: authHeader(staff.token),
 			payload: {},
 		});
+		expect(res.statusCode).toBe(409);
+		expect(res.json().message).toContain("doesn't know +14155550100");
+		const account = await repos.accounts.findById(staff.account.id);
+		expect(account?.channels.sms).toMatchObject({
+			enabled: true,
+			address: '+14155550100',
+			providerRef: NUMBER_SID,
+		});
+	});
+
+	it('forgets an unknown number only when clearUnknown is sent, reporting it separately', async () => {
+		const releaser = new RecordingNumberReleaser({ [NUMBER_SID]: 'not_found' });
+		const { app: built, repos } = await buildTestAppWithRepos({
+			config: devConfig(),
+			numberReleaser: releaser,
+		});
+		app = built;
+		const staff = await signupOwner(app, { email: STAFF_EMAIL });
+		await repos.accounts.setChannelConfig(staff.account.id, 'sms', {
+			enabled: true,
+			address: '+14155550100',
+			providerRef: NUMBER_SID,
+		});
+		const res = await app.inject({
+			method: 'POST',
+			url: RELEASE_URL,
+			headers: authHeader(staff.token),
+			payload: { clearUnknown: true },
+		});
 		expect(res.statusCode).toBe(200);
-		expect(res.json().released).toEqual(['+14155550100']);
+		// Not claimed as released — Twilio never confirmed anything.
+		expect(res.json().released).toEqual([]);
+		expect(res.json().forgotten).toEqual(['+14155550100']);
 		const account = await repos.accounts.findById(staff.account.id);
 		expect(account?.channels.sms).toMatchObject({ enabled: false, address: '', providerRef: '' });
+	});
+
+	it('splits confirmed releases from forgotten numbers in a mixed batch', async () => {
+		const releaser = new RecordingNumberReleaser({ [NUMBER_SID]: 'not_found' });
+		const { app: built, repos } = await buildTestAppWithRepos({
+			config: devConfig(),
+			numberReleaser: releaser,
+		});
+		app = built;
+		const staff = await signupOwner(app, { email: STAFF_EMAIL });
+		await repos.accounts.setChannelConfig(staff.account.id, 'whatsapp', {
+			enabled: true,
+			address: '+14155550199',
+			providerRef: OTHER_SID,
+		});
+		await repos.accounts.setChannelConfig(staff.account.id, 'sms', {
+			enabled: true,
+			address: '+14155550100',
+			providerRef: NUMBER_SID,
+		});
+		const res = await app.inject({
+			method: 'POST',
+			url: RELEASE_URL,
+			headers: authHeader(staff.token),
+			payload: { clearUnknown: true },
+		});
+		expect(res.statusCode).toBe(200);
+		expect(res.json().released).toEqual(['+14155550199']);
+		expect(res.json().forgotten).toEqual(['+14155550100']);
+		const account = await repos.accounts.findById(staff.account.id);
+		expect(account?.channels.whatsapp).toMatchObject({ enabled: false, address: '' });
+		expect(account?.channels.sms).toMatchObject({ enabled: false, address: '' });
 	});
 
 	it('answers 502 and clears nothing when the provider refuses the only release', async () => {
@@ -304,9 +371,11 @@ describe('POST /v1/admin/release-number', () => {
 			payload: {},
 		});
 		expect(res.statusCode).toBe(200);
-		// Neither the shared sandbox number nor a dev fake is a rental to release.
+		// Neither the shared sandbox number nor a dev fake is a rental to release —
+		// and clearing them is not "forgetting" anything either.
 		expect(releaser.releases).toEqual([]);
 		expect(res.json().released).toEqual([]);
+		expect(res.json().forgotten).toEqual([]);
 		const account = await repos.accounts.findById(staff.account.id);
 		expect(account?.channels.whatsapp).toMatchObject({ enabled: false, address: '' });
 		expect(account?.channels.sms).toMatchObject({ enabled: false, address: '' });

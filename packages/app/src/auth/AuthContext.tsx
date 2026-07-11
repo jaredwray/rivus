@@ -64,9 +64,13 @@ export interface AuthContextValue {
 	/**
 	 * Release every rented number and reset the phone channels, keeping the
 	 * session in sync (development + Rivus staff only). Resolves with the
-	 * released numbers, so the caller can say what was handed back.
+	 * numbers Twilio confirmed released and the ones forgotten without
+	 * confirmation (unknown to the deployment's Twilio account — only cleared
+	 * when `clearUnknown` says so), so the caller can say what happened.
 	 */
-	releaseNumber: () => Promise<string[]>;
+	releaseNumber: (options?: {
+		clearUnknown?: boolean;
+	}) => Promise<{ released: string[]; forgotten: string[] }>;
 	/**
 	 * Update your own profile (name, phone, email, profile image), keeping the
 	 * session in sync. Changing the email stages it on `session.user.pendingEmail`
@@ -180,13 +184,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				const account = await client.sandboxWhatsapp(session.token, mode);
 				setSession({ ...session, account });
 			},
-			async releaseNumber() {
+			async releaseNumber(options) {
 				if (!session) {
-					return [];
+					return { released: [], forgotten: [] };
 				}
-				const { released, account } = await client.releaseNumber(session.token);
+				const { released, forgotten, account } = await client.releaseNumber(session.token, options);
 				setSession({ ...session, account });
-				return released;
+				return { released, forgotten };
 			},
 			async verifyEmailChange(input) {
 				if (!session) {
