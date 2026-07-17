@@ -10,6 +10,11 @@ import type {
 	FaqSimilarityMatch,
 	FaqSimilarityService,
 } from '../src/services/faq-similarity';
+import type {
+	WebsiteAuditInput,
+	WebsiteAuditOutcome,
+	WebsiteAuditService,
+} from '../src/services/website-audit';
 import { authHeader, buildTestApp, buildTestAppWithRepos, signupOwner } from './helpers';
 
 /**
@@ -610,117 +615,111 @@ describe('POST /v1/chat — failure handling', () => {
 	});
 });
 
-describe('POST /v1/chat — web tools', () => {
-	it('nudges an anonymous web search toward sign-in', async () => {
+describe('POST /v1/chat — website audit', () => {
+	/** A scripted audit service, so route tests pin the reply for each outcome. */
+	function auditOutcome(
+		outcome: WebsiteAuditOutcome,
+	): WebsiteAuditService & { inputs: WebsiteAuditInput[] } {
+		const inputs: WebsiteAuditInput[] = [];
+		return {
+			inputs,
+			async audit(input) {
+				inputs.push(input);
+				return outcome;
+			},
+		};
+	}
+
+	it('nudges an anonymous audit ask toward sign-in', async () => {
 		const app = await makeApp();
-		const { status, reply } = await chat(app, 'search the web for pipe prices');
+		const { status, reply } = await chat(app, 'audit my website');
 		expect(status).toBe(200);
 		expect(reply).toMatch(/signed in/i);
 	});
 
-	it('explains when web search is not enabled (the default no-op)', async () => {
+	it('explains when audits are not enabled (no provider keys — the default)', async () => {
 		const app = await makeApp();
 		const { token } = await signupOwner(app);
-		const { reply } = await chat(app, 'search the web for pipe prices', { token });
-		expect(reply).toMatch(/web search isn’t enabled/i);
+		const { reply } = await chat(app, 'audit my website', { token });
+		expect(reply).toMatch(/website audits aren’t enabled/i);
 	});
 
-	it('explains when browsing is not enabled (the default no-op)', async () => {
-		const app = await makeApp();
+	it('asks for a website when the profile has none', async () => {
+		const app = await makeApp({ websiteAudit: auditOutcome({ kind: 'no_website' }) });
 		const { token } = await signupOwner(app);
-		const { reply } = await chat(app, 'read https://example.com/pricing', { token });
-		expect(reply).toMatch(/web browsing isn’t enabled/i);
+		const { reply } = await chat(app, 'audit my website', { token });
+		expect(reply).toMatch(/haven’t added a website/i);
 	});
 
-	it('lists search results with titles, snippets, and links', async () => {
-		const app = await makeApp();
-		const { token } = await signupOwner(app);
-		const queries: string[] = [];
-		app.deps.webSearch = {
-			enabled: true,
-			async search(query) {
-				queries.push(query);
-				return [
-					{
-						title: 'Copper price index',
-						url: 'https://metals.example/copper',
-						description: 'Daily copper pricing.',
-					},
-					{ title: 'Supplier list', url: 'https://suppliers.example', description: '' },
-				];
-			},
-		};
-		const { reply } = await chat(app, 'search the web for copper pipe prices', { token });
-		expect(queries).toEqual(['copper pipe prices']);
-		expect(reply).toContain('Here’s what I found on the web for “copper pipe prices”');
-		expect(reply).toContain('Copper price index — Daily copper pricing.');
-		expect(reply).toContain('https://metals.example/copper');
-		expect(reply).toContain('• Supplier list\n  https://suppliers.example');
-	});
-
-	it('says so when the web search comes back empty', async () => {
-		const app = await makeApp();
-		const { token } = await signupOwner(app);
-		app.deps.webSearch = { enabled: true, search: async () => [] };
-		const { reply } = await chat(app, 'search the web for gorbleflux', { token });
-		expect(reply).toMatch(/came back empty/i);
-	});
-
-	it('quotes a browsed page, keeping its markdown line structure', async () => {
-		const app = await makeApp();
-		const { token } = await signupOwner(app);
-		const urls: string[] = [];
-		app.deps.webBrowse = {
-			enabled: true,
-			async browse(url) {
-				urls.push(url);
-				return { url, content: '# Pricing\n\nStarter: $10/mo' };
-			},
-		};
-		const { reply } = await chat(app, 'read https://example.com/pricing please', { token });
-		expect(urls).toEqual(['https://example.com/pricing']);
-		expect(reply).toContain('Here’s what I found at https://example.com/pricing');
-		expect(reply).toContain('# Pricing\n\nStarter: $10/mo');
-	});
-
-	it('reports an unreadable page rather than inventing content', async () => {
-		const app = await makeApp();
-		const { token } = await signupOwner(app);
-		app.deps.webBrowse = { enabled: true, browse: async (url) => ({ url, content: '   ' }) };
-		const { reply } = await chat(app, 'read https://example.com/empty', { token });
-		expect(reply).toMatch(/couldn’t find any readable content/i);
-	});
-
-	it('degrades to web-specific failure replies when a provider errors, still 200', async () => {
-		const app = await makeApp();
-		const { token } = await signupOwner(app);
-		app.deps.webSearch = {
-			enabled: true,
-			async search() {
-				throw new Error('brave down');
-			},
-		};
-		const search = await chat(app, 'search the web for anything', { token });
-		expect(search.status).toBe(200);
-		expect(search.reply).toMatch(/couldn’t reach web search/i);
-
-		app.deps.webBrowse = {
-			enabled: true,
-			async browse() {
-				throw new Error('zenrows down');
-			},
-		};
-		const browse = await chat(app, 'read https://example.com/pricing', { token });
-		expect(browse.status).toBe(200);
-		expect(browse.reply).toMatch(/couldn’t read https:\/\/example\.com\/pricing/i);
-	});
-
-	it('refuses a non-web address from a custom decider with guidance', async () => {
+	it('reports the cooldown with the minutes remaining', async () => {
 		const app = await makeApp({
-			chatDecider: async () => ({ kind: 'web_browse', url: 'ftp://example.com/file' }),
+			websiteAudit: auditOutcome({ kind: 'cooldown', retryInMinutes: 7 }),
 		});
 		const { token } = await signupOwner(app);
-		const { reply } = await chat(app, 'open that file share', { token });
-		expect(reply).toMatch(/only open full web addresses/i);
+		const { reply } = await chat(app, 'audit my website', { token });
+		expect(reply).toMatch(/about 7 more minutes/i);
+	});
+
+	it('treats an unreachable site as the first finding, not an error', async () => {
+		const app = await makeApp({
+			websiteAudit: auditOutcome({ kind: 'unreachable', url: 'https://example.com' }),
+		});
+		const { token } = await signupOwner(app);
+		const { status, reply } = await chat(app, 'audit my website', { token });
+		expect(status).toBe(200);
+		expect(reply).toContain('Here’s your website audit for https://example.com');
+		expect(reply).toMatch(/couldn’t load the site/i);
+	});
+
+	it('renders a report as ✓/✗ lines with a fix-count coda, from the account’s own data', async () => {
+		const audit = auditOutcome({
+			kind: 'report',
+			report: {
+				url: 'https://example.com',
+				checks: [
+					{ id: 'name', label: 'Your business name “Acme” is on the page', passed: true },
+					{ id: 'phone', label: 'Your phone number isn’t on the site — add it', passed: false },
+				],
+			},
+		});
+		const app = await makeApp({ websiteAudit: audit });
+		const { token } = await signupOwner(app);
+		const { reply } = await chat(app, 'run a website audit', { token });
+		expect(reply).toContain('Here’s your website audit for https://example.com');
+		expect(reply).toContain('✓ Your business name “Acme” is on the page');
+		expect(reply).toContain('✗ Your phone number isn’t on the site — add it');
+		expect(reply).toMatch(/1 thing to fix/i);
+		// The audit ran against the session's own account and knowledge base.
+		expect(audit.inputs).toHaveLength(1);
+		expect(audit.inputs[0]?.faqCount).toBe(0);
+	});
+
+	it('celebrates a clean report', async () => {
+		const app = await makeApp({
+			websiteAudit: auditOutcome({
+				kind: 'report',
+				report: {
+					url: 'https://example.com',
+					checks: [{ id: 'name', label: 'All good', passed: true }],
+				},
+			}),
+		});
+		const { token } = await signupOwner(app);
+		const { reply } = await chat(app, 'audit our site', { token });
+		expect(reply).toMatch(/everything I checked looks good/i);
+	});
+
+	it('degrades to an audit-specific failure reply when the service throws, still 200', async () => {
+		const app = await makeApp({
+			websiteAudit: {
+				async audit(): Promise<WebsiteAuditOutcome> {
+					throw new Error('provider exploded');
+				},
+			},
+		});
+		const { token } = await signupOwner(app);
+		const { status, reply } = await chat(app, 'audit my website', { token });
+		expect(status).toBe(200);
+		expect(reply).toMatch(/couldn’t run the website audit/i);
 	});
 });

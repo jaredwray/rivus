@@ -24,8 +24,7 @@ import type { FaqAnswerService } from './services/faq-answer';
 import type { FaqSimilarityService } from './services/faq-similarity';
 import type { NotificationService } from './services/notifications';
 import type { SmsSender } from './services/sms';
-import type { WebBrowseService } from './services/web-browse';
-import type { WebSearchService } from './services/web-search';
+import type { WebsiteAuditService } from './services/website-audit';
 import type { WhatsappSender } from './services/whatsapp';
 
 /** Result of a readiness check: whether dependencies are usable, and why not. */
@@ -78,10 +77,8 @@ export interface AppDeps {
 	faqAnswer: FaqAnswerService;
 	/** Routes a chat turn to an action (model-backed when a key is set, rule-based otherwise). */
 	chatDecider: Decide;
-	/** Web search for the chat (Brave-backed; a "not enabled" no-op without a key). */
-	webSearch: WebSearchService;
-	/** Web-page fetching for the chat (ZenRows-backed; a "not enabled" no-op without a key). */
-	webBrowse: WebBrowseService;
+	/** The chat's website audit — the one purpose-bound use of the web tools (Brave + ZenRows). */
+	websiteAudit: WebsiteAuditService;
 	/** Readiness check for downstream dependencies (e.g. the database). */
 	ping: () => Promise<ReadinessResult>;
 }

@@ -12,8 +12,7 @@ import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
 import { signPlivoUrl } from '../src/services/plivo';
-import { NoopWebBrowse } from '../src/services/web-browse';
-import { NoopWebSearch } from '../src/services/web-search';
+import { createWebsiteAuditService } from '../src/services/website-audit';
 import {
 	buildTestAppWithRepos,
 	RecordingMailer,
@@ -256,8 +255,7 @@ function buildPlivoApp(extraConfig: Record<string, string> = {}): FastifyInstanc
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
 		chatDecider: createDecider(),
-		webSearch: new NoopWebSearch(),
-		webBrowse: new NoopWebBrowse(),
+		websiteAudit: createWebsiteAuditService({}),
 		ping: async () => ({ ready: true }),
 	});
 }

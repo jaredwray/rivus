@@ -17,14 +17,13 @@ import {
 	findSimilarFaq,
 	type KnowledgeAnswer,
 } from '../knowledge';
-import type { WebBrowseService } from '../web-browse';
-import type { WebSearchResult, WebSearchService } from '../web-search';
+import type { WebsiteAuditOutcome, WebsiteAuditService } from '../website-audit';
 
 /**
  * The operations the chat assistant can perform: account-scoped data reads and
  * writes executed in-process against the same repositories and AI services the
- * `/v1` routes use, plus its web tools (search and browse), which are gated on
- * their provider keys and answer as "not enabled" without them.
+ * `/v1` routes use, plus the website audit — the one purpose-bound use of the
+ * web tools, gated on its provider keys and answering "not enabled" without them.
  *
  * This replaces the standalone agent's HTTP client (`@rivus/agent`'s `api.ts`) —
  * same method surface and result shapes, no network hop, no forwarded token.
@@ -49,10 +48,8 @@ export interface ChatActions {
 	findSimilarFaq(input: { question: string; answer?: string }): Promise<FaqSimilarityCheck>;
 	/** Answer a free-text question from the account's knowledge base (AI-assisted). */
 	answerFromKnowledge(input: { question: string }): Promise<KnowledgeAnswer>;
-	/** Search the public web (Brave). `enabled` is false when no key is configured. */
-	searchWeb(input: { query: string }): Promise<{ enabled: boolean; results: WebSearchResult[] }>;
-	/** Read a web page through the browsing proxy (ZenRows), as markdown text. */
-	browsePage(input: { url: string }): Promise<{ enabled: boolean; content: string }>;
+	/** Audit the account's own website (its URL comes from the profile, never the chat). */
+	auditWebsite(): Promise<WebsiteAuditOutcome>;
 }
 
 export interface ChatActionsDeps {
@@ -60,8 +57,7 @@ export interface ChatActionsDeps {
 	faqs: FaqRepository;
 	faqSimilarity: FaqSimilarityService;
 	faqAnswer: FaqAnswerService;
-	webSearch: WebSearchService;
-	webBrowse: WebBrowseService;
+	websiteAudit: WebsiteAuditService;
 }
 
 /** Bind the chat actions to one account (the authenticated session's). */
@@ -110,22 +106,16 @@ export function createChatActions(deps: ChatActionsDeps, accountId: AccountId): 
 			return answerFromKnowledge(deps, accountId, input.question);
 		},
 
-		async searchWeb({ query }) {
-			// The disabled check lives here (not in the reply layer) so a disabled
-			// tool never even shapes a provider call — and the reply layer only has
-			// to format one honest outcome.
-			if (!deps.webSearch.enabled) {
-				return { enabled: false, results: [] };
+		async auditWebsite() {
+			const account = await deps.accounts.findById(accountId);
+			// Same race as `me()`: revalidation already failed closed, so only a
+			// mid-request delete lands here — the reply layer degrades it politely.
+			if (!account) {
+				throw new Error(`chat: account ${accountId} no longer exists`);
 			}
-			return { enabled: true, results: await deps.webSearch.search(query) };
-		},
-
-		async browsePage({ url }) {
-			if (!deps.webBrowse.enabled) {
-				return { enabled: false, content: '' };
-			}
-			const page = await deps.webBrowse.browse(url);
-			return { enabled: true, content: page.content };
+			// The audit only needs the count, so ask for the smallest page.
+			const { total } = await deps.faqs.list({ accountId, page: 1, pageSize: 1 });
+			return deps.websiteAudit.audit({ account, faqCount: total });
 		},
 	};
 }

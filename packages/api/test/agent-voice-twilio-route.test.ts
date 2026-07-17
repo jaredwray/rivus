@@ -12,8 +12,7 @@ import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
 import { signTwilioRequest } from '../src/services/twilio';
-import { NoopWebBrowse } from '../src/services/web-browse';
-import { NoopWebSearch } from '../src/services/web-search';
+import { createWebsiteAuditService } from '../src/services/website-audit';
 import {
 	buildTestAppWithRepos,
 	RecordingMailer,
@@ -316,8 +315,7 @@ function buildVoiceApp(extraConfig: Record<string, string> = {}): FastifyInstanc
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
 		chatDecider: createDecider(),
-		webSearch: new NoopWebSearch(),
-		webBrowse: new NoopWebBrowse(),
+		websiteAudit: createWebsiteAuditService({}),
 		ping: async () => ({ ready: true }),
 	});
 }
@@ -444,8 +442,7 @@ describe('POST /v1/channels/voice/twilio/* — signature', () => {
 			faqSimilarity: new NoopFaqSimilarityService(),
 			faqAnswer: new NoopFaqAnswerService(),
 			chatDecider: createDecider(),
-			webSearch: new NoopWebSearch(),
-			webBrowse: new NoopWebBrowse(),
+			websiteAudit: createWebsiteAuditService({}),
 			ping: async () => ({ ready: true }),
 		});
 		app = built;

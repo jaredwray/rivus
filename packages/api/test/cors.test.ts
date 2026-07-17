@@ -11,8 +11,7 @@ import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
 import { NoopSmsSender } from '../src/services/sms';
-import { NoopWebBrowse } from '../src/services/web-browse';
-import { NoopWebSearch } from '../src/services/web-search';
+import { createWebsiteAuditService } from '../src/services/website-audit';
 import { NoopWhatsappSender } from '../src/services/whatsapp';
 import { authHeader, RecordingMailer, signupOwner } from './helpers';
 
@@ -37,8 +36,7 @@ function buildAppWithCors(corsOrigin: string): FastifyInstance {
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
 		chatDecider: createDecider(),
-		webSearch: new NoopWebSearch(),
-		webBrowse: new NoopWebBrowse(),
+		websiteAudit: createWebsiteAuditService({}),
 		ping: async () => ({ ready: true }),
 	});
 }
@@ -66,8 +64,7 @@ function buildProdApp(corsOrigin: string): FastifyInstance {
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
 		chatDecider: createDecider(),
-		webSearch: new NoopWebSearch(),
-		webBrowse: new NoopWebBrowse(),
+		websiteAudit: createWebsiteAuditService({}),
 		ping: async () => ({ ready: true }),
 	});
 }

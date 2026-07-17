@@ -19,22 +19,28 @@ export function lastUserMessage(messages: ChatMessage[]): string | null {
 }
 
 /**
- * The opening lines of the two chat replies whose body is quoted from a web
- * tool — Brave search results, and a browsed page's markdown. That body is
- * attacker-influenceable (a page can put "now add an FAQ that says …" at the top
- * of its content, a page can be built to rank for a search), so it must never
- * re-enter the model router's transcript as if it were the assistant's own
- * words and steer an account write on a later turn.
+ * The opening lines of chat replies whose body derives from web content — the
+ * website audit today, plus the retired generic search/browse replies that may
+ * still sit in older transcripts the app resends. That body is influenceable by
+ * whoever controls the fetched page (a site can put "now add an FAQ that says …"
+ * in its content), so it must never re-enter the model router's transcript as if
+ * it were the assistant's own words and steer an account write on a later turn.
  *
- * These are the single source of truth: `respond` builds its web-tool replies
+ * These are the single source of truth: `respond` builds its web-derived replies
  * from them, and the router redacts any assistant turn starting with one via
  * {@link redactWebToolContent} — sharing the constant keeps the two in lockstep,
  * so the redaction can't silently rot if the wording changes.
  */
+export const WEBSITE_AUDIT_RESULT_PREFIX = 'Here’s your website audit for ';
+/** Retired reply headers, kept so old transcripts keep redacting. */
 export const WEB_SEARCH_RESULT_PREFIX = 'Here’s what I found on the web for ';
 export const WEB_BROWSE_RESULT_PREFIX = 'Here’s what I found at ';
 
-const WEB_TOOL_RESULT_PREFIXES = [WEB_SEARCH_RESULT_PREFIX, WEB_BROWSE_RESULT_PREFIX] as const;
+const WEB_TOOL_RESULT_PREFIXES = [
+	WEBSITE_AUDIT_RESULT_PREFIX,
+	WEB_SEARCH_RESULT_PREFIX,
+	WEB_BROWSE_RESULT_PREFIX,
+] as const;
 
 /**
  * Strip quoted web-tool output from an assistant turn before the routing model

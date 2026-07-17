@@ -54,14 +54,11 @@ export type Intent =
 	 */
 	| { kind: 'faq_answer'; question: string }
 	/**
-	 * Search the public web for `query` (the Brave-backed tool). The rule-based
-	 * parser produces this only for explicit phrasing ("search the web for …",
-	 * "google …"); the model router also picks it for questions that clearly need
-	 * the live internet.
+	 * Audit the account's own website (the one purpose the web tools serve):
+	 * fetch it, check it for the essentials, and report. Carries no arguments —
+	 * the target always comes from the account record, never the message.
 	 */
-	| { kind: 'web_search'; query: string }
-	/** Open and read the web page at `url` (the ZenRows-backed tool). */
-	| { kind: 'web_browse'; url: string }
+	| { kind: 'website_audit' }
 	| { kind: 'unknown' };
 
 /** The subject a conversation is on, carried forward to resolve bare follow-ups. */
@@ -127,75 +124,18 @@ export function isExistenceCheck(text: string): boolean {
 	return EXISTENCE_CHECK.test(text.toLowerCase());
 }
 
-/** An absolute http(s) address anywhere in the message — the browse tool's target. */
-const URL_IN_TEXT = /\bhttps?:\/\/[^\s<>"'`]+/i;
-
-/** The first pasted web address, with clinging punctuation removed. */
-export function extractUrl(text: string): string | null {
-	const match = URL_IN_TEXT.exec(text);
-	if (!match) {
-		return null;
-	}
-	return trimClingingPunctuation(match[0]);
-}
-
-const CLOSER_TO_OPENER: Readonly<Record<string, string>> = { ')': '(', ']': '[', '}': '{' };
-
 /**
- * Strip sentence punctuation and wrapping quotes/brackets that cling to a
- * pasted link ("read https://x.com/pricing.", "(see https://x.com)"). A closing
- * bracket is only stripped while it is UNBALANCED — one with a matching opener
- * inside the URL is part of it, so "…/wiki/Function_(mathematics)" and IPv6
- * hosts ("http://[::1]/") survive intact. Strips loop because the leftovers of
- * one kind can expose the other ("(…/pricing).").
+ * An explicit ask to audit the business's website or online presence. Verb-
+ * gated on purpose: plain website questions ("what's our website?") must stay
+ * on the company record, so only auditing verbs near a site noun — or the
+ * literal "website audit" — route here.
  */
-function trimClingingPunctuation(raw: string): string {
-	let url = raw;
-	for (;;) {
-		const trimmed = url.replace(/[.,;:!?…]+$/, '').replace(/["'”’»>]+$/, '');
-		const tail = trimmed.at(-1) ?? '';
-		const opener = CLOSER_TO_OPENER[tail];
-		const unbalanced =
-			opener !== undefined && trimmed.split(tail).length > trimmed.split(opener).length;
-		const next = unbalanced ? trimmed.slice(0, -1) : trimmed;
-		if (next === url) {
-			return next;
-		}
-		url = next;
-	}
-}
+const WEBSITE_AUDIT =
+	/\b(?:audit|review|analy[sz]e|assess|evaluate|inspect|grade)\b.{0,40}\b(?:web ?site|site|web ?page|homepage|online presence)\b|\b(?:web ?site|site)\s+audit\b/i;
 
-/**
- * Explicit web-search phrasing, deliberately narrow: "search"/"find"/"look up"
- * alone stay on the knowledge base; only naming the web/internet — or using a
- * search engine as a verb — routes out to it. That keeps every query the FAQ
- * flows used to get, while "search the web for X" reliably reaches the web.
- * Each pattern captures the query itself.
- */
-const WEB_SEARCH_PATTERNS: readonly RegExp[] = [
-	// The connector groups require their own trailing whitespace so a query that
-	// merely starts with "for"/"about" ("…web form builder tools") keeps its
-	// first word instead of losing it to a half-matched connector.
-	/\bsearch\s+(?:(?:on|in)\s+)?(?:the\s+)?(?:web|internet)\b\s*(?:(?:for|about|on)\s+)?(.+)$/i,
-	/\bsearch\s+online\s+(?:(?:for|about)\s+)?(.+)$/i,
-	/\b(?:google|web[ -]?search)\s+(?:for\s+)?(.+)$/i,
-	/\b(?:look\s?up|find|research|search\s+for)\s+(.+?)\s+(?:online|on\s+the\s+(?:web|internet))[\s?.!]*$/i,
-];
-
-/** The query of an explicit web-search ask, or null when the message isn't one. */
-function extractWebSearchQuery(text: string): string | null {
-	for (const pattern of WEB_SEARCH_PATTERNS) {
-		const captured = pattern
-			.exec(text)?.[1]
-			?.trim()
-			.replace(/^["“„]+|["”“]+$/g, '')
-			.replace(/[?.!]+$/, '')
-			.trim();
-		if (captured) {
-			return captured;
-		}
-	}
-	return null;
+/** True when the message explicitly asks for the website audit. */
+function isWebsiteAuditAsk(lower: string): boolean {
+	return WEBSITE_AUDIT.test(lower);
 }
 
 /** Strip a leading article so an extracted topic reads cleanly. */
@@ -378,16 +318,15 @@ export function parseIntent(raw: string, context: IntentContext = {}): Intent {
 		return { kind: 'greeting' };
 	}
 
-	// Web asks are read up front, for two reasons. The broad HELP probe must not
-	// swallow a turn that names a concrete tool to run ("help me search the web
-	// for permit rules" wants the search, not the capabilities menu). And an
-	// inferred FAQ context must not claim them either (its SEARCH_VERB would
-	// otherwise take "search the web for prices" mid-FAQ-conversation). An
-	// explicit knowledge-base mention still outranks them below.
-	const browseUrl = extractUrl(text);
-	const webQuery = extractWebSearchQuery(text);
+	// The audit ask is read up front, for two reasons. The broad HELP probe must
+	// not swallow a turn that names the concrete tool to run ("help me audit my
+	// website" wants the audit, not the capabilities menu). And an inferred FAQ
+	// context must not claim it either (an audit verb + "about/for" phrasing
+	// would otherwise satisfy hasFaqAction mid-FAQ-conversation). An explicit
+	// knowledge-base mention still outranks it below.
+	const auditAsk = isWebsiteAuditAsk(lower);
 
-	if (HELP.test(lower) && browseUrl === null && webQuery === null) {
+	if (HELP.test(lower) && !auditAsk) {
 		return { kind: 'help' };
 	}
 	// A bare greeting with nothing else asked. Strip trailing punctuation first so
@@ -414,8 +353,7 @@ export function parseIntent(raw: string, context: IntentContext = {}): Intent {
 		hasFaqAction(lower) &&
 		companyFields.length === 0 &&
 		!companyGeneric &&
-		browseUrl === null &&
-		webQuery === null;
+		!auditAsk;
 	if (FAQ_CONTEXT.test(lower) || faqByContext) {
 		if (UPDATE_VERB.test(lower)) {
 			return { kind: 'faq_update', ...parseFaqUpdate(text) };
@@ -437,14 +375,11 @@ export function parseIntent(raw: string, context: IntentContext = {}): Intent {
 		return { kind: 'faq_list' };
 	}
 
-	// A pasted link is a browse ask wherever it appears — checked before the
-	// company branch because a URL's own text can trip a field probe (the host
-	// in "https://site.com" matches the website patterns).
-	if (browseUrl !== null) {
-		return { kind: 'web_browse', url: browseUrl };
-	}
-	if (webQuery !== null) {
-		return { kind: 'web_search', query: webQuery };
+	// Checked before the company branch: the audit phrasing necessarily names the
+	// website, which would otherwise trip the company-field probe and answer with
+	// the URL instead of running the audit.
+	if (auditAsk) {
+		return { kind: 'website_audit' };
 	}
 
 	if (companyFields.length > 0) {

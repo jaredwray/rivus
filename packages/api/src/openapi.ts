@@ -11,8 +11,7 @@ import { NoopFaqAnswerService } from './services/faq-answer';
 import { NoopFaqSimilarityService } from './services/faq-similarity';
 import { createNotificationService } from './services/notifications';
 import { NoopSmsSender } from './services/sms';
-import { NoopWebBrowse } from './services/web-browse';
-import { NoopWebSearch } from './services/web-search';
+import { createWebsiteAuditService } from './services/website-audit';
 import { NoopWhatsappSender } from './services/whatsapp';
 
 /**
@@ -63,8 +62,7 @@ async function main(): Promise<void> {
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
 		chatDecider: createDecider(),
-		webSearch: new NoopWebSearch(),
-		webBrowse: new NoopWebBrowse(),
+		websiteAudit: createWebsiteAuditService(config),
 		ping: async () => ({ ready: true }),
 	});
 
