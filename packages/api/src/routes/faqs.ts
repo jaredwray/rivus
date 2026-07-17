@@ -19,15 +19,7 @@ import {
 	faqSimilarityResponseSchema,
 	idParamsSchema,
 } from '../http-schemas';
-
-// Matches the service's own candidate cap and the list is newest-first, so a
-// single page covers exactly what the duplicate check will consider — fetching
-// more would only load rows the service discards.
-const SIMILARITY_CANDIDATE_LIMIT = 50;
-// The newest page of FAQs handed to the answering service as the knowledge base.
-// Its own cap is smaller, but a full page keeps the candidate set newest-first and
-// complete for a small business.
-const ANSWER_CANDIDATE_LIMIT = 100;
+import { answerFromKnowledge, findSimilarFaq } from '../services/knowledge';
 
 export const faqRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
@@ -91,25 +83,9 @@ export const faqRoutes: FastifyPluginAsync = async (fastify) => {
 		async (request) => {
 			const accountId = request.user.accountId as AccountId;
 			const { question, answer } = request.body;
-
-			// The newest page of FAQs is the candidate set the duplicate check scores.
-			const { faqs: candidates } = await faqs.list({
-				accountId,
-				page: 1,
-				pageSize: SIMILARITY_CANDIDATE_LIMIT,
-			});
-
-			const match = await faqSimilarity.findSimilar({ question, answer }, candidates);
-			if (!match) {
-				return { match: null, reason: '', merged: null };
-			}
-			// Re-resolve the id against this account as a final guard before returning.
-			const existing = await faqs.findById(accountId, match.faqId);
-			if (!existing) {
-				return { match: null, reason: '', merged: null };
-			}
-			const merged = await faqSimilarity.mergeSuggestion({ question, answer }, existing);
-			return { match: existing, reason: match.reason, merged };
+			// Shared with the chat assistant (services/knowledge.ts) so both surfaces
+			// apply the same candidate-set policy and account-scoping guards.
+			return findSimilarFaq({ faqs, faqSimilarity }, accountId, { question, answer });
 		},
 	);
 
@@ -132,27 +108,9 @@ export const faqRoutes: FastifyPluginAsync = async (fastify) => {
 		async (request) => {
 			const accountId = request.user.accountId as AccountId;
 			const { question } = request.body;
-
-			// The newest page of FAQs is the knowledge base the answer is grounded in.
-			const { faqs: page } = await faqs.list({
-				accountId,
-				page: 1,
-				pageSize: ANSWER_CANDIDATE_LIMIT,
-			});
-			// Only published FAQs are customer-facing. Drafts are staged and not yet
-			// live, so the answer must never be grounded in — or cite — draft content
-			// (e.g. unreleased pricing or policies).
-			const candidates = page.filter((faq) => faq.status === 'published');
-
-			const result = await faqAnswer.answer({ question }, candidates);
-			// Resolve the cited ids back to questions for the response, scoped to this
-			// account's candidates — a final guard against a stray id leaking through.
-			const byId = new Map(candidates.map((faq) => [faq.id, faq]));
-			const sources = result.sources
-				.map((id) => byId.get(id))
-				.filter((faq): faq is (typeof candidates)[number] => faq !== undefined)
-				.map((faq) => ({ id: faq.id, question: faq.question }));
-			return { answered: result.answered, answer: result.answer, sources };
+			// Shared with the chat assistant (services/knowledge.ts) so both surfaces
+			// ground answers in the same published-only candidate set.
+			return answerFromKnowledge({ faqs, faqAnswer }, accountId, question);
 		},
 	);
 

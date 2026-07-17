@@ -404,6 +404,13 @@ export const faqAnswerResponseSchema = z
 	})
 	.meta({ id: 'FaqAnswer' });
 
+/** Rivus's single chat reply to the latest turn (`POST /v1/chat`). */
+export const chatReplyResponseSchema = z
+	.object({
+		reply: z.string(),
+	})
+	.meta({ id: 'ChatReply' });
+
 /** A page of companies (accounts) for the staff company switcher. */
 export const accountListResponseSchema = z
 	.object({

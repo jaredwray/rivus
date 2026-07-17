@@ -24,6 +24,7 @@ import { agentWhatsappRoutes } from './routes/agent-whatsapp';
 import { agentWhatsappPlivoRoutes } from './routes/agent-whatsapp-plivo';
 import { authRoutes } from './routes/auth';
 import { billingRoutes } from './routes/billing';
+import { chatRoutes } from './routes/chat';
 import { conversationRoutes } from './routes/conversations';
 import { customerRoutes } from './routes/customers';
 import { faqRoutes } from './routes/faqs';
@@ -214,6 +215,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
 	app.register(healthRoutes);
 	app.register(authRoutes, { prefix: '/v1/auth' });
+	// The Rivus chat (optionally authenticated — see routes/chat.ts).
+	app.register(chatRoutes, { prefix: '/v1/chat' });
 	app.register(memberRoutes, { prefix: '/v1/members' });
 	app.register(accountRoutes, { prefix: '/v1/account' });
 	app.register(accountChannelRoutes, { prefix: '/v1/account' });

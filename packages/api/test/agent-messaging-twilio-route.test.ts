@@ -7,6 +7,7 @@ import { createInMemoryRepositories } from '../src/repositories/memory';
 import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
 import { parseTwilioInbound, type TwilioInboundResult } from '../src/services/agent/twilio-inbound';
 import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
+import { createDecider } from '../src/services/chat/decide';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
@@ -392,6 +393,7 @@ function buildTwilioApp(extraConfig: Record<string, string> = {}): FastifyInstan
 		notifier: createNotificationService({ notifications: repos.notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
+		chatDecider: createDecider(),
 		ping: async () => ({ ready: true }),
 	});
 }

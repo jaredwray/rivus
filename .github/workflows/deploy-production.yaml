@@ -32,31 +32,11 @@ jobs:
       - run: pnpm test:coverage
       - run: pnpm build
 
-  deploy-agent:
-    name: Deploy agent
-    needs: validate
-    runs-on: ubuntu-latest
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      # The agent verifies the API's session tokens, so it must share the same
-      # JWT_SECRET. Required in production — without it the agent treats every
-      # request as anonymous and authenticated chat never works.
-      PROD_JWT_SECRET: ${{ secrets.PROD_JWT_SECRET }}
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: ./.github/actions/setup
-      - name: Require the shared JWT secret
-        run: |
-          if [ -z "$PROD_JWT_SECRET" ]; then
-            echo "::error::Set PROD_JWT_SECRET (the same value as the API) before deploying the agent."
-            exit 1
-          fi
-      - run: pnpm --filter @rivus/agent exec wrangler deploy --env production
-      # Keep the agent's JWT_SECRET in sync with the API so it can verify tokens.
-      - name: Sync the shared JWT secret
-        run: |
-          printf '%s' "$PROD_JWT_SECRET" | pnpm --filter @rivus/agent exec wrangler secret put JWT_SECRET --env production
+  # The standalone agent Worker is no longer deployed: chat moved into the API
+  # (`POST /v1/chat`). The already-deployed `rivus-agent` Worker is left frozen
+  # for old native builds until it is retired (see AGENT_MIGRATION.md); if
+  # JWT_SECRET rotates during that window, update the frozen Worker by hand
+  # (`wrangler secret put JWT_SECRET --env production` in packages/agent).
 
   deploy-docs:
     name: Deploy docs
@@ -85,10 +65,9 @@ jobs:
       # Inlined into the Expo web bundle; the explicit `production` value keeps the
       # staff-only account seeder out of the production app (it never renders).
       EXPO_PUBLIC_RIVUS_ENV: production
-      # Baked into the Expo web bundle at export time.
+      # Baked into the Expo web bundle at export time. Chat (`/v1/chat`) rides
+      # on the same API base URL — there is no separate agent service anymore.
       EXPO_PUBLIC_API_URL: https://api.rivus.ai
-      # The deployed app talks to the deployed agent.
-      EXPO_PUBLIC_AGENT_URL: https://agent.rivus.ai
       # Optional: address-autocomplete key (referrer-restricted). Unset → plain field.
       EXPO_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY }}
     steps:
@@ -141,6 +120,9 @@ jobs:
       PROD_RESEND_API_KEY: ${{ secrets.PROD_RESEND_API_KEY }}
       # Optional: enables the AI duplicate-FAQ check. Unset → the check is a no-op.
       PROD_OPENAI_API_KEY: ${{ secrets.PROD_OPENAI_API_KEY }}
+      # Optional: enables the model-backed chat router (`/v1/chat`) and Anthropic
+      # as an AI-provider fallback. Unset → chat routes deterministically.
+      PROD_ANTHROPIC_API_KEY: ${{ secrets.PROD_ANTHROPIC_API_KEY }}
       # Optional: enables the agent email channel's inbound webhook. Unset → the
       # route answers 503 (the channel is off) while everything else still works.
       PROD_RESEND_WEBHOOK_SECRET: ${{ secrets.PROD_RESEND_WEBHOOK_SECRET }}
@@ -172,6 +154,11 @@ jobs:
         if: ${{ env.PROD_OPENAI_API_KEY != '' }}
         run: |
           printf '%s' "$PROD_OPENAI_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put OPENAI_API_KEY --env production
+      # Optional chat-router key — same empty-value guard as above.
+      - name: Sync optional chat-router secret
+        if: ${{ env.PROD_ANTHROPIC_API_KEY != '' }}
+        run: |
+          printf '%s' "$PROD_ANTHROPIC_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put ANTHROPIC_API_KEY --env production
       # Optional inbound-email webhook secret — same empty-value guard as above.
       # Without it the email scheduling channel stays disabled (503) after deploy.
       - name: Sync optional email-channel secret
@@ -179,15 +166,15 @@ jobs:
         run: |
           printf '%s' "$PROD_RESEND_WEBHOOK_SECRET" | pnpm --filter @rivus/api exec wrangler secret put RESEND_WEBHOOK_SECRET --env production
 
-  # The five service deploys above all ship to the single Cloudflare `production`
+  # The four service deploys above all ship to the single Cloudflare `production`
   # environment. If each of them set `environment: production`, GitHub would open
-  # one deployment record per job — five per run — which floods the Deployments
+  # one deployment record per job — four per run — which floods the Deployments
   # timeline and makes the "active" deployment race between services. Instead the
   # deploy jobs run without an environment, and this job records exactly one
   # deployment for the run, once every service has shipped.
   record-deployment:
     name: Record production deployment
-    needs: [deploy-agent, deploy-docs, deploy-app, deploy-website, deploy-api]
+    needs: [deploy-docs, deploy-app, deploy-website, deploy-api]
     runs-on: ubuntu-latest
     environment:
       name: production

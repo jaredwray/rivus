@@ -1,4 +1,5 @@
 import { Feather } from '@expo/vector-icons';
+import type { ChatMessage } from '@rivus/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
 	ActivityIndicator,
@@ -13,7 +14,8 @@ import {
 	View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { type ChatMessage, createAgentClient } from '@/src/agent/client';
+import { createApiClient } from '@/src/api/client';
+import { getApiBaseUrl } from '@/src/api/config';
 import { useAuth } from '@/src/auth/AuthContext';
 import { RivusSymbol } from '@/src/brand/RivusLogo';
 import { colors, font, radii, shadowSoft } from '@/src/theme/tokens';
@@ -32,9 +34,9 @@ interface DisplayMessage extends ChatMessage {
 }
 
 /**
- * The Rivus agent chat. It talks to the Rivus agent service (`@rivus/agent`);
- * on first open it greets you — the end-to-end proof that the app can reach the
- * agent and get a reply back.
+ * The Rivus chat. It talks to the API's `POST /v1/chat` (the in-process
+ * successor to the standalone agent service); on first open it greets you — the
+ * end-to-end proof that the app can reach Rivus and get a reply back.
  *
  * Two presentations share the same conversation logic:
  *
@@ -68,9 +70,9 @@ export function RivusChat({
 	const bottomReserve = Math.max(insets.bottom, bottomOffset);
 
 	const { session } = useAuth();
-	// Web authenticates the agent via the shared session cookie; native forwards
-	// the in-memory bearer token. Either way the agent recognises the signed-in
-	// user and can answer from their company + knowledge base.
+	// Web authenticates chat via the session cookie; native forwards the
+	// in-memory bearer token. Either way Rivus recognises the signed-in user and
+	// can answer from their company + knowledge base.
 	const token = session?.token ?? '';
 
 	// `floating` owns its open state; `fullscreen` is controlled by the host.
@@ -91,7 +93,7 @@ export function RivusChat({
 	const [status, setStatus] = useState<Status>('idle');
 
 	const client = useMemo(
-		() => createAgentClient(undefined, undefined, { withCredentials: IS_WEB }),
+		() => createApiClient(getApiBaseUrl(), undefined, { withCredentials: IS_WEB }),
 		[],
 	);
 	const scrollRef = useRef<ScrollView>(null);

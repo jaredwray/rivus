@@ -367,6 +367,46 @@ export const faqAnswerQuerySchema = z.object({
 });
 export type FaqAnswerQueryInput = z.infer<typeof faqAnswerQuerySchema>;
 
+// --- Chat (the Rivus assistant) -------------------------------------------------
+
+/**
+ * One turn of a Rivus chat conversation, as exchanged with `POST /v1/chat`.
+ * `content` may be empty (the app opens with an empty transcript to get the
+ * greeting), and the cap is roomy enough to paste a full FAQ (question + a
+ * 4000-char answer) into a single turn while still bounding a runaway payload.
+ */
+export const chatMessageSchema = z.object({
+	/** Who said it; an omitted role means the user did. */
+	role: z.enum(['user', 'assistant', 'system']).default('user'),
+	content: z.string().max(8000, { error: 'Keep each chat message under 8,000 characters.' }),
+});
+export type ChatMessage = z.infer<typeof chatMessageSchema>;
+
+/**
+ * Body of `POST /v1/chat`: the conversation so far. The server is stateless
+ * between turns, so the client resends the transcript each time; an empty (or
+ * omitted) transcript asks for the greeting. `message` is an accepted shorthand
+ * for a single user turn — when present it wins over `messages` — kept for
+ * parity with the legacy standalone agent endpoint.
+ */
+export const chatRequestSchema = z.object({
+	messages: z
+		.array(chatMessageSchema)
+		.max(200, { error: 'That conversation is too long to send — start a new chat.' })
+		.default([]),
+	message: z
+		.string()
+		.max(8000, { error: 'Keep each chat message under 8,000 characters.' })
+		.optional(),
+});
+export type ChatRequestInput = z.input<typeof chatRequestSchema>;
+
+/** What `POST /v1/chat` answers with: Rivus's single reply to the latest turn. */
+export const chatReplySchema = z.object({
+	reply: z.string(),
+});
+export type ChatReply = z.infer<typeof chatReplySchema>;
+
 // --- Notifications ------------------------------------------------------------
 
 // `NotificationType`/`NotificationReadState` are the source-of-truth unions in
