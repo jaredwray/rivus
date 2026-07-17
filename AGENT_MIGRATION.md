@@ -58,6 +58,12 @@ Facts that shape the plan:
   `company_info`, `faq_list`, `faq_search`, `faq_answer`, `faq_create`,
   `faq_update`, `unknown`. Execution is REST calls to `/v1/auth/me` and
   `/v1/faqs*`.
+- **Anonymous callers are first-class** (`assistant.ts`): a missing/invalid
+  token does not error — signed-out users get the greeting, help, and
+  friendly sign-in nudges (protected asks reply with a nudge, not a 401),
+  and anonymous turns are routed deterministically (`intent.ts`) so a
+  signed-out transcript is never sent to a model and never costs a model
+  call. Only signed-in turns use the model router.
 - The API (`packages/api`) is plain Fastify assembled by `buildApp(deps)`
   (`src/app.ts`) with DI'd repositories (in-memory for tests, Mongoose in
   prod), `@fastify/jwt` auth (`src/plugins/auth.ts`), a CSRF hook for
@@ -74,7 +80,7 @@ Facts that shape the plan:
 ```
 app: RivusChat.tsx → existing API client (src/api/client.ts, + chat method)
   POST {messages} → ${EXPO_PUBLIC_API_URL}/v1/chat   (cookie or bearer, as any API call)
-    packages/api/src/routes/chat.ts        zod-typed route, auth preHandler
+    packages/api/src/routes/chat.ts        zod-typed route, optional-auth preHandler
       → services/chat/respond.ts:
           pick action   — services/chat/decide.ts (AI-SDK, injectable via AppDeps)
                           services/chat/intent.ts (deterministic fallback, kept)
@@ -89,10 +95,17 @@ app: RivusChat.tsx → existing API client (src/api/client.ts, + chat method)
   (shared source-of-truth for API and app, per repo convention), and the
   route joins the generated `openapi.json` — the chat API becomes documented
   for free.
-- **Auth**: the route uses the API's standard JWT auth + membership scoping
-  (same preHandlers as other `/v1` routes). The agent's hand-rolled `auth.ts`
-  is retired. Web calls inherit the API client's credentialed-write handling
-  (CSRF); native uses bearer, as everywhere else.
+- **Auth is optional at the route, enforced at the actions**: the route
+  resolves the session when a valid JWT is present (cookie or bearer) but
+  does **not** 401 on its absence — anonymous callers must keep getting the
+  greeting/help/sign-in-nudge replies they get today. Once a session is
+  present, account-scoped actions apply the same membership scoping the
+  other `/v1` routes enforce. Anonymous turns also keep today's
+  deterministic routing (`intent.ts`), preserving the "signed-out
+  transcripts never reach a model" property. The agent's hand-rolled
+  `auth.ts` is retired in favor of the API's JWT verification. Web calls
+  inherit the API client's credentialed-write handling (CSRF); native uses
+  bearer, as everywhere else.
 - **Execution moves in-process**: instead of HTTP round-trips with a forwarded
   token, actions call the same service/repository code paths the FAQ routes
   use, with the authenticated account/user passed explicitly. Where that
@@ -119,11 +132,15 @@ app: RivusChat.tsx → existing API client (src/api/client.ts, + chat method)
 3. Replace the agent's `api.ts` REST calls with in-process execution against
    the FAQ services/repositories, reusing/extracting the route-level logic so
    authorization stays single-sourced.
-4. `packages/api/src/routes/chat.ts`: `POST /v1/chat`, zod-typed, standard
-   auth + membership preHandlers; register in `app.ts`; regenerate
+4. `packages/api/src/routes/chat.ts`: `POST /v1/chat`, zod-typed, with an
+   **optional-auth** preHandler (session populated when present, no 401 when
+   absent) and membership scoping enforced inside the account-scoped
+   actions; register in `app.ts`; regenerate
    `openapi.json` (docs pick it up via `packages/docs/scripts/sync-openapi.mjs`).
 5. Route tests via `app.inject()` + in-memory repositories: happy paths per
-   action, anonymous/foreign-account 401/403 paths, no-key fallback parity.
+   action; anonymous paths return greeting/help/nudge replies (never a hard
+   401) and never invoke the model; expired-session and foreign-account
+   denials; no-key fallback parity.
 
 ### Phase 2 — Switch the app
 
@@ -168,10 +185,11 @@ app: RivusChat.tsx → existing API client (src/api/client.ts, + chat method)
 
 | Risk | Mitigation |
 | --- | --- |
-| In-process execution bypasses route-level authorization | Reuse the same preHandlers/service checks the `/v1/faqs` routes use; extract shared helpers instead of duplicating; explicit 401/403 tests per action |
+| In-process execution bypasses route-level authorization | Reuse the same service checks the `/v1/faqs` routes use; extract shared helpers instead of duplicating; explicit per-action tests (anonymous → nudge reply, foreign account → denial) |
+| Strict route auth would regress the anonymous experience | Optional-auth route by design (see §3): anonymous greeting/help/nudges and their deterministic no-model routing are preserved and pinned by tests |
 | CSRF/CORS regressions when chat moves origins | Chat rides the existing API client conventions (credentialed writes already work app→API); e2e check from the app origin |
 | Old native builds have `agent.rivus.ai` + the legacy path baked in | Frozen old Worker keeps serving them through the adoption window; deletion is the last step |
-| Reply-parity regressions during the port | Golden-transcript tests: canonical prompts (greeting, help, FAQ hit/miss, unknown) asserted against current replies before the port, kept green after |
+| Reply-parity regressions during the port | Golden-transcript tests: canonical prompts (greeting, help, FAQ hit/miss, unknown) in both signed-in and anonymous variants, asserted against current replies before the port, kept green after |
 | API latency budget takes on a model call | Same model call as today minus one HTTP hop; the deterministic fallback also bounds worst-case behavior |
 | Coverage thresholds dip as code moves between packages | Tests move with the code (agent's suites port over); per-package thresholds stay untouched per repo policy |
 
@@ -186,9 +204,10 @@ app: RivusChat.tsx → existing API client (src/api/client.ts, + chat method)
   skill, driving `RivusChat` end-to-end against `/v1/chat`.
 - OpenAPI: regenerate and confirm the docs sync script picks up the chat
   route.
-- Deployed smoke per environment: authenticated `POST /v1/chat` with cookie
-  and bearer, fallback behavior with the key absent (dev), then watch old
-  Worker traffic drain before retiring it.
+- Deployed smoke per environment: `POST /v1/chat` authenticated with cookie
+  and bearer, anonymous (expect a greeting/nudge, not a 401), fallback
+  behavior with the key absent (dev), then watch old Worker traffic drain
+  before retiring it.
 
 ## 7. Out of scope
 
