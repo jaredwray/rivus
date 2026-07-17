@@ -18,6 +18,7 @@ function decision(over: Partial<AgentDecision>): AgentDecision {
 		action: 'unknown',
 		fields: [],
 		query: '',
+		url: '',
 		answerQuestion: '',
 		question: null,
 		answer: null,
@@ -102,6 +103,44 @@ describe('decisionToIntent', () => {
 		expect(
 			decisionToIntent(decision({ action: 'faq_answer', answerQuestion: 'cancellation' }), 'raw'),
 		).toEqual({ kind: 'faq_answer', question: 'cancellation' });
+	});
+
+	it('maps the web actions onto the web intents', () => {
+		expect(
+			decisionToIntent(decision({ action: 'web_search', query: 'copper prices' }), ''),
+		).toEqual({ kind: 'web_search', query: 'copper prices' });
+		expect(
+			decisionToIntent(decision({ action: 'web_browse', url: 'https://example.com/a' }), ''),
+		).toEqual({ kind: 'web_browse', url: 'https://example.com/a' });
+	});
+
+	it('falls back to the raw turn when web_search omits the terms', () => {
+		expect(decisionToIntent(decision({ action: 'web_search' }), 'latest permit rules')).toEqual({
+			kind: 'web_search',
+			query: 'latest permit rules',
+		});
+		// Nothing anywhere to search for — degrade to the general-question path.
+		expect(decisionToIntent(decision({ action: 'web_search' }), '   ')).toEqual({
+			kind: 'unknown',
+		});
+	});
+
+	it('normalizes the web_browse target and degrades without one', () => {
+		// A bare host from the model is completed to https.
+		expect(
+			decisionToIntent(decision({ action: 'web_browse', url: 'example.com/pricing' }), ''),
+		).toEqual({ kind: 'web_browse', url: 'https://example.com/pricing' });
+		// No usable model URL — fall back to the link pasted in the turn.
+		expect(
+			decisionToIntent(
+				decision({ action: 'web_browse' }),
+				'read https://example.com/pricing please',
+			),
+		).toEqual({ kind: 'web_browse', url: 'https://example.com/pricing' });
+		// A non-web scheme is refused and no pasted link rescues it.
+		expect(
+			decisionToIntent(decision({ action: 'web_browse', url: 'javascript:alert(1)' }), 'no link'),
+		).toEqual({ kind: 'unknown' });
 	});
 });
 

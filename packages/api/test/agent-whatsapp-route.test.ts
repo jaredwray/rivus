@@ -10,6 +10,8 @@ import { createDecider } from '../src/services/chat/decide';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
+import { NoopWebBrowse } from '../src/services/web-browse';
+import { NoopWebSearch } from '../src/services/web-search';
 import { signZernioPayload } from '../src/services/zernio-whatsapp';
 import {
 	buildTestAppWithRepos,
@@ -278,6 +280,8 @@ function buildWhatsappApp(extraConfig: Record<string, string> = {}): FastifyInst
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
 		chatDecider: createDecider(),
+		webSearch: new NoopWebSearch(),
+		webBrowse: new NoopWebBrowse(),
 		ping: async () => ({ ready: true }),
 	});
 }

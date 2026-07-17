@@ -5,6 +5,7 @@ import {
 	type Faq,
 	updateFaqSchema,
 } from '@rivus/core';
+import { parseHttpUrl } from '../web-browse';
 import type { ChatActions } from './actions';
 import { GREETING, lastUserMessage } from './conversation';
 import type { Decide } from './decide';
@@ -134,6 +135,10 @@ export async function respond(deps: RespondDeps): Promise<string> {
 				return await faqCreateReply(actions, intent);
 			case 'faq_answer':
 				return await knowledgeAnswerReply(actions, intent.question, claims);
+			case 'web_search':
+				return await webSearchReply(actions, intent, logger);
+			case 'web_browse':
+				return await webBrowseReply(actions, intent, logger);
 			case 'unknown':
 				return await knowledgeAnswerReply(actions, question, claims);
 		}
@@ -160,6 +165,8 @@ function helpReply(claims: AuthTokenPayload | null): string {
 		'• Tell you your company details — e.g. “what’s our website?”',
 		'• Search your knowledge base — e.g. “find FAQs about refunds”',
 		'• Update or add an FAQ — e.g. “update the FAQ about returns to say …”',
+		'• Search the web — e.g. “search the web for permit requirements in Portland”',
+		'• Read a web page — e.g. “read https://example.com/pricing”',
 	];
 	if (!claims) {
 		lines.push('', 'Sign in first and I’ll do all of this against your account.');
@@ -437,6 +444,91 @@ async function faqCreateReply(
 	}
 	const created = await actions.createFaq(parsed.data);
 	return `Added a new FAQ: “${created.question}”.`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Web tools (search + browse)                                                */
+/* -------------------------------------------------------------------------- */
+
+const WEB_SEARCH_DISABLED =
+	'Web search isn’t enabled on this server yet — an administrator can turn it on with a Brave Search API key. Meanwhile I can still help with your company details and knowledge base.';
+
+const WEB_BROWSE_DISABLED =
+	'Web browsing isn’t enabled on this server yet — an administrator can turn it on with a ZenRows API key. Meanwhile I can still help with your company details and knowledge base.';
+
+/** How much of a browsed page a chat reply quotes before trailing off. */
+const PAGE_REPLY_CHARS = 1500;
+
+async function webSearchReply(
+	actions: ChatActions,
+	intent: Extract<Intent, { kind: 'web_search' }>,
+	logger?: { warn(message: string): void },
+): Promise<string> {
+	let outcome: {
+		enabled: boolean;
+		results: Awaited<ReturnType<ChatActions['searchWeb']>>['results'];
+	};
+	try {
+		outcome = await actions.searchWeb({ query: intent.query });
+	} catch (error) {
+		// A provider outage is not a Rivus-data failure, so it gets its own honest
+		// sentence instead of the generic one — but is still logged for operators.
+		logger?.warn(`chat web search failed — ${String(error)}`);
+		return 'I couldn’t reach web search just now — please try again in a moment.';
+	}
+	if (!outcome.enabled) {
+		return WEB_SEARCH_DISABLED;
+	}
+	if (outcome.results.length === 0) {
+		return `I searched the web for “${intent.query}” and came back empty. Try rewording it?`;
+	}
+	const lines = outcome.results.map((result) => {
+		const description = snippet(result.description);
+		return description === ''
+			? `• ${result.title}\n  ${result.url}`
+			: `• ${result.title} — ${description}\n  ${result.url}`;
+	});
+	return [`Here’s what I found on the web for “${intent.query}”:`, ...lines].join('\n');
+}
+
+async function webBrowseReply(
+	actions: ChatActions,
+	intent: Extract<Intent, { kind: 'web_browse' }>,
+	logger?: { warn(message: string): void },
+): Promise<string> {
+	// Both routers only emit http(s) URLs, but a custom decider could hand us
+	// anything — refuse non-web addresses with guidance, not an error path.
+	if (parseHttpUrl(intent.url) === null) {
+		return 'I can only open full web addresses starting with http:// or https:// — e.g. “read https://example.com/pricing”.';
+	}
+	let outcome: { enabled: boolean; content: string };
+	try {
+		outcome = await actions.browsePage({ url: intent.url });
+	} catch (error) {
+		logger?.warn(`chat web browse failed — ${String(error)}`);
+		return `I couldn’t read ${intent.url} just now — the site may be down or blocking access. Please try again in a moment.`;
+	}
+	if (!outcome.enabled) {
+		return WEB_BROWSE_DISABLED;
+	}
+	const content = pageSnippet(outcome.content);
+	if (content === '') {
+		return `I opened ${intent.url} but couldn’t find any readable content there.`;
+	}
+	return `Here’s what I found at ${intent.url}:\n\n${content}`;
+}
+
+/**
+ * Cap a browsed page for a chat reply. Unlike {@link snippet} it keeps line
+ * structure — the content is markdown, and flattening it would glue headings
+ * and list items into one unreadable run.
+ */
+function pageSnippet(content: string, max = PAGE_REPLY_CHARS): string {
+	const clean = content
+		.replace(/\r\n?/g, '\n')
+		.replace(/\n{3,}/g, '\n\n')
+		.trim();
+	return clean.length <= max ? clean : `${clean.slice(0, max - 1).trimEnd()}…`;
 }
 
 /* -------------------------------------------------------------------------- */

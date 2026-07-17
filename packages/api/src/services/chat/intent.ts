@@ -53,6 +53,15 @@ export type Intent =
 	 * both the same way.
 	 */
 	| { kind: 'faq_answer'; question: string }
+	/**
+	 * Search the public web for `query` (the Brave-backed tool). The rule-based
+	 * parser produces this only for explicit phrasing ("search the web for …",
+	 * "google …"); the model router also picks it for questions that clearly need
+	 * the live internet.
+	 */
+	| { kind: 'web_search'; query: string }
+	/** Open and read the web page at `url` (the ZenRows-backed tool). */
+	| { kind: 'web_browse'; url: string }
 	| { kind: 'unknown' };
 
 /** The subject a conversation is on, carried forward to resolve bare follow-ups. */
@@ -116,6 +125,59 @@ const EXISTENCE_CHECK =
 /** True when a message reads as an existence check rather than a question to answer. */
 export function isExistenceCheck(text: string): boolean {
 	return EXISTENCE_CHECK.test(text.toLowerCase());
+}
+
+/** An absolute http(s) address anywhere in the message — the browse tool's target. */
+const URL_IN_TEXT = /\bhttps?:\/\/[^\s<>"'`]+/i;
+
+/**
+ * The first pasted web address, with clinging punctuation removed. Sentence
+ * punctuation and a closing bracket/quote stick to pasted links ("read
+ * https://x.com/pricing.", "(see https://x.com)"), and both orders occur, so
+ * each strip runs on the other's leftovers.
+ */
+export function extractUrl(text: string): string | null {
+	const match = URL_IN_TEXT.exec(text);
+	if (!match) {
+		return null;
+	}
+	return match[0]
+		.replace(/[.,;:!?…]+$/, '')
+		.replace(/[)\]}>»"'”’]+$/, '')
+		.replace(/[.,;:!?…]+$/, '');
+}
+
+/**
+ * Explicit web-search phrasing, deliberately narrow: "search"/"find"/"look up"
+ * alone stay on the knowledge base; only naming the web/internet — or using a
+ * search engine as a verb — routes out to it. That keeps every query the FAQ
+ * flows used to get, while "search the web for X" reliably reaches the web.
+ * Each pattern captures the query itself.
+ */
+const WEB_SEARCH_PATTERNS: readonly RegExp[] = [
+	// The connector groups require their own trailing whitespace so a query that
+	// merely starts with "for"/"about" ("…web form builder tools") keeps its
+	// first word instead of losing it to a half-matched connector.
+	/\bsearch\s+(?:(?:on|in)\s+)?(?:the\s+)?(?:web|internet)\b\s*(?:(?:for|about|on)\s+)?(.+)$/i,
+	/\bsearch\s+online\s+(?:(?:for|about)\s+)?(.+)$/i,
+	/\b(?:google|web[ -]?search)\s+(?:for\s+)?(.+)$/i,
+	/\b(?:look\s?up|find|research|search\s+for)\s+(.+?)\s+(?:online|on\s+the\s+(?:web|internet))[\s?.!]*$/i,
+];
+
+/** The query of an explicit web-search ask, or null when the message isn't one. */
+function extractWebSearchQuery(text: string): string | null {
+	for (const pattern of WEB_SEARCH_PATTERNS) {
+		const captured = pattern
+			.exec(text)?.[1]
+			?.trim()
+			.replace(/^["“„]+|["”“]+$/g, '')
+			.replace(/[?.!]+$/, '')
+			.trim();
+		if (captured) {
+			return captured;
+		}
+	}
+	return null;
 }
 
 /** Strip a leading article so an extracted topic reads cleanly. */
@@ -314,13 +376,25 @@ export function parseIntent(raw: string, context: IntentContext = {}): Intent {
 	);
 	const companyGeneric = COMPANY_GENERIC.test(lower);
 
+	// Web asks are read up front too: a pasted link or an explicit "search the
+	// web …" must not be swallowed by the inferred FAQ context (whose SEARCH_VERB
+	// would otherwise claim "search the web for prices" mid-FAQ-conversation).
+	// An explicit knowledge-base mention still outranks them below.
+	const browseUrl = extractUrl(text);
+	const webQuery = extractWebSearchQuery(text);
+
 	// Enter the knowledge-base branch when the message names it outright, or when the
 	// conversation is already on it and this turn carries an FAQ action. A message
 	// that names a company subject of its own (a field, or a generic "my company")
 	// always wins over an inferred FAQ context, so "tell me about our website" stays
 	// company info even mid-FAQ-conversation.
 	const faqByContext =
-		context.topic === 'faq' && hasFaqAction(lower) && companyFields.length === 0 && !companyGeneric;
+		context.topic === 'faq' &&
+		hasFaqAction(lower) &&
+		companyFields.length === 0 &&
+		!companyGeneric &&
+		browseUrl === null &&
+		webQuery === null;
 	if (FAQ_CONTEXT.test(lower) || faqByContext) {
 		if (UPDATE_VERB.test(lower)) {
 			return { kind: 'faq_update', ...parseFaqUpdate(text) };
@@ -340,6 +414,16 @@ export function parseIntent(raw: string, context: IntentContext = {}): Intent {
 		}
 		// A bare "faqs" / "knowledge base" — show the list.
 		return { kind: 'faq_list' };
+	}
+
+	// A pasted link is a browse ask wherever it appears — checked before the
+	// company branch because a URL's own text can trip a field probe (the host
+	// in "https://site.com" matches the website patterns).
+	if (browseUrl !== null) {
+		return { kind: 'web_browse', url: browseUrl };
+	}
+	if (webQuery !== null) {
+		return { kind: 'web_search', query: webQuery };
 	}
 
 	if (companyFields.length > 0) {

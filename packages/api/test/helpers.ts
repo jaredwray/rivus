@@ -12,6 +12,8 @@ import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
 import type { SmsMessage, SmsSender } from '../src/services/sms';
+import { NoopWebBrowse } from '../src/services/web-browse';
+import { NoopWebSearch } from '../src/services/web-search';
 import type { WhatsappMessage, WhatsappSender } from '../src/services/whatsapp';
 import type { AppDeps } from '../src/types';
 
@@ -117,6 +119,10 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		faqAnswer: new NoopFaqAnswerService(),
 		// The model-less decider routes chat deterministically — hermetic by default.
 		chatDecider: createDecider(),
+		// Web tools default to their "not enabled" no-ops — hermetic, and exactly
+		// what an unconfigured server does.
+		webSearch: new NoopWebSearch(),
+		webBrowse: new NoopWebBrowse(),
 		ping: async () => ({ ready: true }),
 		...overrides,
 	});
@@ -175,6 +181,8 @@ export async function buildTestAppWithRepos(overrides: Partial<AppDeps> = {}): P
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
 		chatDecider: createDecider(),
+		webSearch: new NoopWebSearch(),
+		webBrowse: new NoopWebBrowse(),
 		ping: async () => ({ ready: true }),
 		...overrides,
 	});

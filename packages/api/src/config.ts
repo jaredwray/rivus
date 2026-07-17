@@ -140,6 +140,17 @@ const envSchema = z
 		XAI_MODEL: z.string().min(1).default('grok-4-fast'),
 		ANTHROPIC_API_KEY: z.string().min(1).optional(),
 		ANTHROPIC_MODEL: z.string().min(1).default('claude-haiku-4-5'),
+		// --- Web tools (the chat assistant's search + browse) ---
+		// API key for the Brave Search API, which lets the chat assistant search
+		// the public web for itself (current prices, regulations, competitors —
+		// anything its knowledge base can't hold). When unset, web search degrades
+		// to a friendly "not enabled" reply, so it never gates boot.
+		BRAVE_SEARCH_API_KEY: z.string().min(1).optional(),
+		// API key for ZenRows, which fetches web pages for the assistant through
+		// rotating residential proxies with JavaScript rendering — so JS-heavy and
+		// bot-walled pages still come back readable. When unset, browsing degrades
+		// to a friendly "not enabled" reply, mirroring the search gate.
+		ZENROWS_API_KEY: z.string().min(1).optional(),
 	})
 	.superRefine((env, ctx) => {
 		// In production, refuse to boot with the well-known dev secret or a weak one.

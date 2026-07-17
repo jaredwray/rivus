@@ -17,10 +17,14 @@ import {
 	findSimilarFaq,
 	type KnowledgeAnswer,
 } from '../knowledge';
+import type { WebBrowseService } from '../web-browse';
+import type { WebSearchResult, WebSearchService } from '../web-search';
 
 /**
- * The account-scoped operations the chat assistant can perform, executed
- * in-process against the same repositories and AI services the `/v1` routes use.
+ * The operations the chat assistant can perform: account-scoped data reads and
+ * writes executed in-process against the same repositories and AI services the
+ * `/v1` routes use, plus its web tools (search and browse), which are gated on
+ * their provider keys and answer as "not enabled" without them.
  *
  * This replaces the standalone agent's HTTP client (`@rivus/agent`'s `api.ts`) —
  * same method surface and result shapes, no network hop, no forwarded token.
@@ -45,6 +49,10 @@ export interface ChatActions {
 	findSimilarFaq(input: { question: string; answer?: string }): Promise<FaqSimilarityCheck>;
 	/** Answer a free-text question from the account's knowledge base (AI-assisted). */
 	answerFromKnowledge(input: { question: string }): Promise<KnowledgeAnswer>;
+	/** Search the public web (Brave). `enabled` is false when no key is configured. */
+	searchWeb(input: { query: string }): Promise<{ enabled: boolean; results: WebSearchResult[] }>;
+	/** Read a web page through the browsing proxy (ZenRows), as markdown text. */
+	browsePage(input: { url: string }): Promise<{ enabled: boolean; content: string }>;
 }
 
 export interface ChatActionsDeps {
@@ -52,6 +60,8 @@ export interface ChatActionsDeps {
 	faqs: FaqRepository;
 	faqSimilarity: FaqSimilarityService;
 	faqAnswer: FaqAnswerService;
+	webSearch: WebSearchService;
+	webBrowse: WebBrowseService;
 }
 
 /** Bind the chat actions to one account (the authenticated session's). */
@@ -98,6 +108,24 @@ export function createChatActions(deps: ChatActionsDeps, accountId: AccountId): 
 
 		answerFromKnowledge(input) {
 			return answerFromKnowledge(deps, accountId, input.question);
+		},
+
+		async searchWeb({ query }) {
+			// The disabled check lives here (not in the reply layer) so a disabled
+			// tool never even shapes a provider call — and the reply layer only has
+			// to format one honest outcome.
+			if (!deps.webSearch.enabled) {
+				return { enabled: false, results: [] };
+			}
+			return { enabled: true, results: await deps.webSearch.search(query) };
+		},
+
+		async browsePage({ url }) {
+			if (!deps.webBrowse.enabled) {
+				return { enabled: false, content: '' };
+			}
+			const page = await deps.webBrowse.browse(url);
+			return { enabled: true, content: page.content };
 		},
 	};
 }

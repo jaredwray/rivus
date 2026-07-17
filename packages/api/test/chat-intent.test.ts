@@ -446,3 +446,101 @@ describe('resolveIntent — multi-turn', () => {
 		expect(resolveIntent(conversation)).toEqual({ kind: 'unknown' });
 	});
 });
+
+describe('parseIntent — web tools', () => {
+	it('routes explicit web-search phrasing to the web', () => {
+		expect(parseIntent('search the web for tankless water heaters')).toEqual({
+			kind: 'web_search',
+			query: 'tankless water heaters',
+		});
+		expect(parseIntent('can you search the internet for permit rules in Portland?')).toEqual({
+			kind: 'web_search',
+			query: 'permit rules in Portland',
+		});
+		expect(parseIntent('google local ad rates')).toEqual({
+			kind: 'web_search',
+			query: 'local ad rates',
+		});
+		expect(parseIntent('look up copper pipe prices online')).toEqual({
+			kind: 'web_search',
+			query: 'copper pipe prices',
+		});
+		expect(parseIntent('search online for review-management tools')).toEqual({
+			kind: 'web_search',
+			query: 'review-management tools',
+		});
+	});
+
+	it('does not treat a subjectless web mention as a search', () => {
+		// Nothing to search for — falls through to the knowledge-answer path.
+		expect(parseIntent('search the web')).toEqual({ kind: 'unknown' });
+		expect(parseIntent('search the web?')).toEqual({ kind: 'unknown' });
+	});
+
+	it('keeps plain searches on the knowledge base', () => {
+		// No web/internet wording, so the FAQ flows keep every query they used to get.
+		expect(parseIntent('search the faqs for refunds')).toEqual({
+			kind: 'faq_search',
+			query: 'refunds',
+			existence: false,
+		});
+		expect(parseIntent('find me something about warranties')).toEqual({ kind: 'unknown' });
+	});
+
+	it('reads a pasted link as a browse ask', () => {
+		expect(parseIntent('read https://example.com/pricing')).toEqual({
+			kind: 'web_browse',
+			url: 'https://example.com/pricing',
+		});
+		expect(parseIntent('https://example.com/pricing')).toEqual({
+			kind: 'web_browse',
+			url: 'https://example.com/pricing',
+		});
+	});
+
+	it('strips punctuation clinging to a pasted link', () => {
+		expect(parseIntent('check out https://example.com/pricing.')).toEqual({
+			kind: 'web_browse',
+			url: 'https://example.com/pricing',
+		});
+		expect(parseIntent('(see https://example.com/pricing).')).toEqual({
+			kind: 'web_browse',
+			url: 'https://example.com/pricing',
+		});
+	});
+
+	it('keeps an explicit knowledge-base command above a pasted link', () => {
+		expect(parseIntent('add an faq about https://example.com/warranty')).toEqual({
+			kind: 'faq_create',
+			question: 'https://example.com/warranty',
+			answer: null,
+		});
+	});
+
+	it('routes a web ask even mid-FAQ conversation (context does not swallow it)', () => {
+		// SEARCH_VERB would satisfy hasFaqAction, but an explicit web ask must not
+		// be pulled into the knowledge base by an inferred topic.
+		expect(parseIntent('search the web for average service prices', { topic: 'faq' })).toEqual({
+			kind: 'web_search',
+			query: 'average service prices',
+		});
+		expect(parseIntent('read https://example.com/pricing', { topic: 'faq' })).toEqual({
+			kind: 'web_browse',
+			url: 'https://example.com/pricing',
+		});
+	});
+});
+
+describe('resolveIntent — web tools in conversation', () => {
+	it('reads a bare pasted link as browse even right after FAQ turns', () => {
+		const conversation = [
+			user('how many faqs do we have?'),
+			assistant('Your knowledge base has 3 FAQs: …'),
+			user('https://example.com/pricing'),
+		];
+		expect(resolveIntent(conversation)).toEqual({
+			kind: 'web_browse',
+			url: 'https://example.com/pricing',
+		});
+	});
+});

@@ -3,8 +3,15 @@ import type { ChatMessage } from '@rivus/core';
 import { generateObject, type LanguageModel } from 'ai';
 import { z } from 'zod';
 import type { Config } from '../../config';
+import { parseHttpUrl } from '../web-browse';
 import { lastUserMessage } from './conversation';
-import { type CompanyField, type Intent, isExistenceCheck, resolveIntent } from './intent';
+import {
+	type CompanyField,
+	extractUrl,
+	type Intent,
+	isExistenceCheck,
+	resolveIntent,
+} from './intent';
 
 /**
  * The chat assistant's "understanding" layer. Given the whole conversation, it
@@ -49,12 +56,16 @@ const decisionSchema = z.object({
 		'faq_answer',
 		'faq_create',
 		'faq_update',
+		'web_search',
+		'web_browse',
 		'unknown',
 	]),
 	/** For `company_info`: which fields to report (empty = the whole record). */
 	fields: z.array(z.enum(COMPANY_FIELDS)).default([]),
-	/** For `faq_search`: what to search the knowledge base for. */
+	/** For `faq_search`/`web_search`: what to search for. */
 	query: z.string().default(''),
+	/** For `web_browse`: the absolute URL of the page to open. */
+	url: z.string().default(''),
 	/** For `faq_answer`: the question to answer from the knowledge base. */
 	answerQuestion: z.string().default(''),
 	/** For `faq_create`/`faq_update`: the FAQ's question/topic and answer text. */
@@ -119,11 +130,19 @@ const SYSTEM = [
 	'  for whichever they did not give).',
 	'- faq_update: the user explicitly asks to CHANGE an existing FAQ. Put the FAQ topic in',
 	'  `topic` and the new text in `answer` (null if not given).',
+	'- web_search: the user wants information from the live public web — current prices,',
+	'  news, weather, competitors, regulations, anything outside their own account and',
+	'  knowledge base — or explicitly asks to search the web/Google. Put the search terms',
+	'  in `query`.',
+	'- web_browse: the user wants a specific web page opened, read, or summarized (they',
+	'  pasted or named a URL). Put the absolute URL in `url`.',
 	'- unknown: none of the above and not a knowledge-base question.',
 	'',
 	'Resolve follow-ups from context: after looking at the FAQs, "what should I add?" means',
 	'faq_create with no question/answer yet; "anything about refunds?" means faq_search.',
 	'Prefer faq_answer over faq_create whenever the user is asking rather than commanding.',
+	'Questions about the user’s own business stay on faq_answer; web_search is only for',
+	'what lives on the public internet.',
 ].join('\n');
 
 // Bound what we send the router so a long or pasted conversation can't blow the
@@ -188,9 +207,43 @@ export function decisionToIntent(decision: AgentDecision, latestUserText: string
 		}
 		case 'faq_update':
 			return { kind: 'faq_update', topic: decision.topic, answer: decision.answer };
+		case 'web_search': {
+			// Fall back to the raw user text when the model didn't restate the terms.
+			const query = decision.query.trim() || latestUserText.trim();
+			return query.length > 0 ? { kind: 'web_search', query } : { kind: 'unknown' };
+		}
+		case 'web_browse': {
+			// The model's URL counts only when it is (or completes to) a real http(s)
+			// address; else fall back to a link pasted in the turn itself. No URL at
+			// all = nothing to open, so degrade to the general-question path.
+			const url = normalizeBrowseUrl(decision.url) ?? extractUrl(latestUserText);
+			return url !== null ? { kind: 'web_browse', url } : { kind: 'unknown' };
+		}
 		default:
 			return { kind: 'unknown' };
 	}
+}
+
+/**
+ * A model-provided browse target as a validated absolute URL. Models sometimes
+ * hand back a bare host ("example.com/pricing") — complete it with https://
+ * rather than bouncing the turn. Anything that still isn't http(s) (garbage, a
+ * non-web scheme) is rejected so the fetch layer never sees it.
+ */
+function normalizeBrowseUrl(value: string): string | null {
+	const trimmed = value.trim();
+	if (trimmed === '') {
+		return null;
+	}
+	const direct = parseHttpUrl(trimmed);
+	if (direct !== null) {
+		return direct;
+	}
+	// Only a dotted, space-free host is worth completing into an address.
+	if (!/^[^\s/:]+\.[^\s]+$/.test(trimmed)) {
+		return null;
+	}
+	return parseHttpUrl(`https://${trimmed}`);
 }
 
 export interface DecideDeps {

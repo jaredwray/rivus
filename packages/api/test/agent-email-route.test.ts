@@ -13,6 +13,8 @@ import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
 import { NoopSmsSender } from '../src/services/sms';
+import { NoopWebBrowse } from '../src/services/web-browse';
+import { NoopWebSearch } from '../src/services/web-search';
 import { NoopWhatsappSender } from '../src/services/whatsapp';
 import { buildTestApp, buildTestAppWithRepos, RecordingMailer, signupOwner } from './helpers';
 
@@ -629,6 +631,8 @@ describe('POST /v1/channels/email/inbound — signatures', () => {
 			faqSimilarity: new NoopFaqSimilarityService(),
 			faqAnswer: new NoopFaqAnswerService(),
 			chatDecider: createDecider(),
+			webSearch: new NoopWebSearch(),
+			webBrowse: new NoopWebBrowse(),
 			ping: async () => ({ ready: true }),
 		});
 		const response = await app.inject({

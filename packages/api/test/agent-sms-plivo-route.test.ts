@@ -11,6 +11,8 @@ import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
 import { signPlivoUrl } from '../src/services/plivo';
+import { NoopWebBrowse } from '../src/services/web-browse';
+import { NoopWebSearch } from '../src/services/web-search';
 import {
 	buildTestAppWithRepos,
 	RecordingMailer,
@@ -268,6 +270,8 @@ function buildSmsApp(extraConfig: Record<string, string> = {}): FastifyInstance 
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
 		chatDecider: createDecider(),
+		webSearch: new NoopWebSearch(),
+		webBrowse: new NoopWebBrowse(),
 		ping: async () => ({ ready: true }),
 	});
 }

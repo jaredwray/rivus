@@ -33,6 +33,11 @@ export const FORWARDED_VARS = [
 	'XAI_MODEL',
 	'ANTHROPIC_API_KEY',
 	'ANTHROPIC_MODEL',
+	// The chat assistant's web tools — search (Brave) and browse (ZenRows).
+	// Missing here = the chat reports the tool "not enabled" even when the
+	// secret is set on the Worker.
+	'BRAVE_SEARCH_API_KEY',
+	'ZENROWS_API_KEY',
 	// Messaging providers — the container reads these in `loadConfig` to pick the
 	// WhatsApp/SMS/voice sender + provisioner. Missing here = "channel not
 	// configured" in the app even when the secret is set on the Worker.

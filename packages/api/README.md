@@ -159,6 +159,30 @@ Invitation **and one-time sign-in codes** are delivered through
 The API calls Resend's HTTP API directly (no SDK) so the transport stays small
 and is testable by injecting a fake `fetch`.
 
+### Chat web tools (search + browse)
+
+The Rivus chat (`POST /v1/chat`) can reach beyond the account's own data with
+two provider-gated tools. **Web search** is backed by the
+[Brave Search API](https://brave.com/search/api/): "search the web for permit
+requirements" (or any question the model router judges to need the live
+internet) returns the top results with titles, snippets, and links. **Web
+browsing** is backed by [ZenRows](https://www.zenrows.com/): "read
+https://example.com/pricing" fetches the page through ZenRows' rotating
+residential proxies with JavaScript rendering — so JS-heavy and bot-walled
+pages still come back readable — and quotes it as markdown. Only absolute
+`http(s)` URLs are ever fetched, and pages are fetched from ZenRows'
+infrastructure, never from the API's own egress.
+
+| Variable               | Default   | Notes                                                                    |
+| ---------------------- | --------- | ------------------------------------------------------------------------ |
+| `BRAVE_SEARCH_API_KEY` | _(unset)_ | Unset: the chat answers web-search asks with a friendly "not enabled".   |
+| `ZENROWS_API_KEY`      | _(unset)_ | Unset: the chat answers browse asks with a friendly "not enabled".       |
+
+Both tools require a signed-in session (they spend paid provider credits);
+anonymous chat turns get the usual sign-in nudge. As with Resend, the providers
+are called over plain HTTP with an injectable `fetch` — see
+`src/services/web-search.ts` and `src/services/web-browse.ts`.
+
 ### Agent email channel (scheduling over email)
 
 Customers of a business can email the business's agent address —

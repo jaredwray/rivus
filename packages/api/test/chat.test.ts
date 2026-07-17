@@ -609,3 +609,118 @@ describe('POST /v1/chat — failure handling', () => {
 		expect(reply).toMatch(/couldn’t reach your Rivus data/i);
 	});
 });
+
+describe('POST /v1/chat — web tools', () => {
+	it('nudges an anonymous web search toward sign-in', async () => {
+		const app = await makeApp();
+		const { status, reply } = await chat(app, 'search the web for pipe prices');
+		expect(status).toBe(200);
+		expect(reply).toMatch(/signed in/i);
+	});
+
+	it('explains when web search is not enabled (the default no-op)', async () => {
+		const app = await makeApp();
+		const { token } = await signupOwner(app);
+		const { reply } = await chat(app, 'search the web for pipe prices', { token });
+		expect(reply).toMatch(/web search isn’t enabled/i);
+	});
+
+	it('explains when browsing is not enabled (the default no-op)', async () => {
+		const app = await makeApp();
+		const { token } = await signupOwner(app);
+		const { reply } = await chat(app, 'read https://example.com/pricing', { token });
+		expect(reply).toMatch(/web browsing isn’t enabled/i);
+	});
+
+	it('lists search results with titles, snippets, and links', async () => {
+		const app = await makeApp();
+		const { token } = await signupOwner(app);
+		const queries: string[] = [];
+		app.deps.webSearch = {
+			enabled: true,
+			async search(query) {
+				queries.push(query);
+				return [
+					{
+						title: 'Copper price index',
+						url: 'https://metals.example/copper',
+						description: 'Daily copper pricing.',
+					},
+					{ title: 'Supplier list', url: 'https://suppliers.example', description: '' },
+				];
+			},
+		};
+		const { reply } = await chat(app, 'search the web for copper pipe prices', { token });
+		expect(queries).toEqual(['copper pipe prices']);
+		expect(reply).toContain('Here’s what I found on the web for “copper pipe prices”');
+		expect(reply).toContain('Copper price index — Daily copper pricing.');
+		expect(reply).toContain('https://metals.example/copper');
+		expect(reply).toContain('• Supplier list\n  https://suppliers.example');
+	});
+
+	it('says so when the web search comes back empty', async () => {
+		const app = await makeApp();
+		const { token } = await signupOwner(app);
+		app.deps.webSearch = { enabled: true, search: async () => [] };
+		const { reply } = await chat(app, 'search the web for gorbleflux', { token });
+		expect(reply).toMatch(/came back empty/i);
+	});
+
+	it('quotes a browsed page, keeping its markdown line structure', async () => {
+		const app = await makeApp();
+		const { token } = await signupOwner(app);
+		const urls: string[] = [];
+		app.deps.webBrowse = {
+			enabled: true,
+			async browse(url) {
+				urls.push(url);
+				return { url, content: '# Pricing\n\nStarter: $10/mo' };
+			},
+		};
+		const { reply } = await chat(app, 'read https://example.com/pricing please', { token });
+		expect(urls).toEqual(['https://example.com/pricing']);
+		expect(reply).toContain('Here’s what I found at https://example.com/pricing');
+		expect(reply).toContain('# Pricing\n\nStarter: $10/mo');
+	});
+
+	it('reports an unreadable page rather than inventing content', async () => {
+		const app = await makeApp();
+		const { token } = await signupOwner(app);
+		app.deps.webBrowse = { enabled: true, browse: async (url) => ({ url, content: '   ' }) };
+		const { reply } = await chat(app, 'read https://example.com/empty', { token });
+		expect(reply).toMatch(/couldn’t find any readable content/i);
+	});
+
+	it('degrades to web-specific failure replies when a provider errors, still 200', async () => {
+		const app = await makeApp();
+		const { token } = await signupOwner(app);
+		app.deps.webSearch = {
+			enabled: true,
+			async search() {
+				throw new Error('brave down');
+			},
+		};
+		const search = await chat(app, 'search the web for anything', { token });
+		expect(search.status).toBe(200);
+		expect(search.reply).toMatch(/couldn’t reach web search/i);
+
+		app.deps.webBrowse = {
+			enabled: true,
+			async browse() {
+				throw new Error('zenrows down');
+			},
+		};
+		const browse = await chat(app, 'read https://example.com/pricing', { token });
+		expect(browse.status).toBe(200);
+		expect(browse.reply).toMatch(/couldn’t read https:\/\/example\.com\/pricing/i);
+	});
+
+	it('refuses a non-web address from a custom decider with guidance', async () => {
+		const app = await makeApp({
+			chatDecider: async () => ({ kind: 'web_browse', url: 'ftp://example.com/file' }),
+		});
+		const { token } = await signupOwner(app);
+		const { reply } = await chat(app, 'open that file share', { token });
+		expect(reply).toMatch(/only open full web addresses/i);
+	});
+});
