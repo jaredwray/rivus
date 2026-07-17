@@ -7,7 +7,12 @@ import {
 } from '@rivus/core';
 import { parseHttpUrl } from '../web-browse';
 import type { ChatActions } from './actions';
-import { GREETING, lastUserMessage } from './conversation';
+import {
+	GREETING,
+	lastUserMessage,
+	WEB_BROWSE_RESULT_PREFIX,
+	WEB_SEARCH_RESULT_PREFIX,
+} from './conversation';
 import type { Decide } from './decide';
 import { type CompanyField, type Intent, resolveIntent } from './intent';
 
@@ -488,7 +493,9 @@ async function webSearchReply(
 			? `• ${result.title}\n  ${result.url}`
 			: `• ${result.title} — ${description}\n  ${result.url}`;
 	});
-	return [`Here’s what I found on the web for “${intent.query}”:`, ...lines].join('\n');
+	// The header is built from the shared prefix so the router's redaction (which
+	// keys off it) can never drift from the wording here.
+	return [`${WEB_SEARCH_RESULT_PREFIX}“${intent.query}”:`, ...lines].join('\n');
 }
 
 async function webBrowseReply(
@@ -515,7 +522,7 @@ async function webBrowseReply(
 	if (content === '') {
 		return `I opened ${intent.url} but couldn’t find any readable content there.`;
 	}
-	return `Here’s what I found at ${intent.url}:\n\n${content}`;
+	return `${WEB_BROWSE_RESULT_PREFIX}${intent.url}:\n\n${content}`;
 }
 
 /**

@@ -4,7 +4,7 @@ import { generateObject, type LanguageModel } from 'ai';
 import { z } from 'zod';
 import type { Config } from '../../config';
 import { parseHttpUrl } from '../web-browse';
-import { lastUserMessage } from './conversation';
+import { lastUserMessage, redactWebToolContent } from './conversation';
 import {
 	type CompanyField,
 	extractUrl,
@@ -166,10 +166,14 @@ function transcript(messages: ChatMessage[]): string {
 	return messages
 		.slice(-MAX_TRANSCRIPT_MESSAGES)
 		.map((message) => {
+			// Quoted web-tool output (search results, browsed page markdown) is
+			// stripped from assistant turns before it reaches the model, so an
+			// attacker-controlled page can't smuggle routing instructions into a later
+			// turn's prompt. Clipping runs on the redacted text.
+			const source =
+				message.role === 'assistant' ? redactWebToolContent(message.content) : message.content;
 			const content =
-				message.content.length > MAX_MESSAGE_CHARS
-					? `${message.content.slice(0, MAX_MESSAGE_CHARS - 1)}…`
-					: message.content;
+				source.length > MAX_MESSAGE_CHARS ? `${source.slice(0, MAX_MESSAGE_CHARS - 1)}…` : source;
 			return `${ROLE_LABEL[message.role]}: ${content}`;
 		})
 		.join('\n');
