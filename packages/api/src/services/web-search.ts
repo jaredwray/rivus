@@ -36,6 +36,11 @@ const BRAVE_SEARCH_ENDPOINT = 'https://api.search.brave.com/res/v1/web/search';
 /** How many results one search asks for — a chat reply only ever shows a handful. */
 const RESULT_COUNT = 5;
 
+// Deadline on the provider call. A stalled upstream must fail into the chat's
+// "couldn't reach web search" reply instead of pinning the request (and the
+// container) until the transport gives up on its own.
+const SEARCH_TIMEOUT_MS = 15_000;
+
 export interface BraveWebSearchOptions {
 	apiKey: string;
 	/** Injectable fetch; defaults to the global. */
@@ -46,7 +51,10 @@ export interface BraveWebSearchOptions {
 
 /** The slice of Brave's response the chat reads; everything else is ignored. */
 interface BraveSearchBody {
-	web?: { results?: Array<{ title?: unknown; url?: unknown; description?: unknown }> };
+	// Entries stay `unknown` on purpose: the payload is an external response, so
+	// each one is narrowed at runtime (a `null` or primitive entry is dropped,
+	// never property-accessed).
+	web?: { results?: unknown[] };
 }
 
 /**
@@ -82,6 +90,7 @@ export class BraveWebSearch implements WebSearchService {
 					accept: 'application/json',
 					'x-subscription-token': this.apiKey,
 				},
+				signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
 			},
 		);
 		if (!response.ok) {
@@ -111,11 +120,19 @@ function parseBraveResults(body: string): WebSearchResult[] {
 		if (results.length >= RESULT_COUNT) {
 			break;
 		}
-		if (typeof entry.title === 'string' && typeof entry.url === 'string') {
+		if (typeof entry !== 'object' || entry === null) {
+			continue;
+		}
+		const { title, url, description } = entry as {
+			title?: unknown;
+			url?: unknown;
+			description?: unknown;
+		};
+		if (typeof title === 'string' && typeof url === 'string') {
 			results.push({
-				title: entry.title,
-				url: entry.url,
-				description: typeof entry.description === 'string' ? entry.description : '',
+				title,
+				url,
+				description: typeof description === 'string' ? description : '',
 			});
 		}
 	}

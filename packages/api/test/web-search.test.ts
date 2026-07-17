@@ -10,7 +10,7 @@ import { BraveWebSearch, createWebSearchService, NoopWebSearch } from '../src/se
 
 interface RecordedCall {
 	url: string;
-	init: { method: string; headers: Record<string, string>; body?: string };
+	init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal };
 }
 
 /** A scripted fetch that records what it was asked and answers one response. */
@@ -50,6 +50,8 @@ describe('BraveWebSearch', () => {
 		expect(call?.init.method).toBe('GET');
 		expect(call?.init.headers['x-subscription-token']).toBe('brave-key');
 		expect(call?.init.headers.accept).toBe('application/json');
+		// A deadline always rides along so a stalled provider can't pin the request.
+		expect(call?.init.signal).toBeInstanceOf(AbortSignal);
 	});
 
 	it('URL-encodes the query', async () => {
@@ -73,6 +75,10 @@ describe('BraveWebSearch', () => {
 		const body = JSON.stringify({
 			web: {
 				results: [
+					// Non-object entries must be dropped, not property-accessed.
+					null,
+					'not an object',
+					42,
 					{ title: 'No url here' },
 					{ url: 'https://untitled.example' },
 					{ title: 'Fine', url: 'https://fine.example' },

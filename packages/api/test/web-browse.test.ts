@@ -15,7 +15,7 @@ import {
 
 interface RecordedCall {
 	url: string;
-	init: { method: string; headers: Record<string, string>; body?: string };
+	init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal };
 }
 
 /** A scripted fetch that records what it was asked and answers one response. */
@@ -48,6 +48,8 @@ describe('ZenrowsBrowser', () => {
 		expect(requested.searchParams.get('premium_proxy')).toBe('true');
 		expect(requested.searchParams.get('response_type')).toBe('markdown');
 		expect(calls[0]?.init.method).toBe('GET');
+		// A deadline always rides along so a stalled provider can't pin the request.
+		expect(calls[0]?.init.signal).toBeInstanceOf(AbortSignal);
 	});
 
 	it.each([

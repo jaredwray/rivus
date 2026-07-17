@@ -130,21 +130,39 @@ export function isExistenceCheck(text: string): boolean {
 /** An absolute http(s) address anywhere in the message — the browse tool's target. */
 const URL_IN_TEXT = /\bhttps?:\/\/[^\s<>"'`]+/i;
 
-/**
- * The first pasted web address, with clinging punctuation removed. Sentence
- * punctuation and a closing bracket/quote stick to pasted links ("read
- * https://x.com/pricing.", "(see https://x.com)"), and both orders occur, so
- * each strip runs on the other's leftovers.
- */
+/** The first pasted web address, with clinging punctuation removed. */
 export function extractUrl(text: string): string | null {
 	const match = URL_IN_TEXT.exec(text);
 	if (!match) {
 		return null;
 	}
-	return match[0]
-		.replace(/[.,;:!?…]+$/, '')
-		.replace(/[)\]}>»"'”’]+$/, '')
-		.replace(/[.,;:!?…]+$/, '');
+	return trimClingingPunctuation(match[0]);
+}
+
+const CLOSER_TO_OPENER: Readonly<Record<string, string>> = { ')': '(', ']': '[', '}': '{' };
+
+/**
+ * Strip sentence punctuation and wrapping quotes/brackets that cling to a
+ * pasted link ("read https://x.com/pricing.", "(see https://x.com)"). A closing
+ * bracket is only stripped while it is UNBALANCED — one with a matching opener
+ * inside the URL is part of it, so "…/wiki/Function_(mathematics)" and IPv6
+ * hosts ("http://[::1]/") survive intact. Strips loop because the leftovers of
+ * one kind can expose the other ("(…/pricing).").
+ */
+function trimClingingPunctuation(raw: string): string {
+	let url = raw;
+	for (;;) {
+		const trimmed = url.replace(/[.,;:!?…]+$/, '').replace(/["'”’»>]+$/, '');
+		const tail = trimmed.at(-1) ?? '';
+		const opener = CLOSER_TO_OPENER[tail];
+		const unbalanced =
+			opener !== undefined && trimmed.split(tail).length > trimmed.split(opener).length;
+		const next = unbalanced ? trimmed.slice(0, -1) : trimmed;
+		if (next === url) {
+			return next;
+		}
+		url = next;
+	}
 }
 
 /**
@@ -359,7 +377,17 @@ export function parseIntent(raw: string, context: IntentContext = {}): Intent {
 	if (lower.length === 0) {
 		return { kind: 'greeting' };
 	}
-	if (HELP.test(lower)) {
+
+	// Web asks are read up front, for two reasons. The broad HELP probe must not
+	// swallow a turn that names a concrete tool to run ("help me search the web
+	// for permit rules" wants the search, not the capabilities menu). And an
+	// inferred FAQ context must not claim them either (its SEARCH_VERB would
+	// otherwise take "search the web for prices" mid-FAQ-conversation). An
+	// explicit knowledge-base mention still outranks them below.
+	const browseUrl = extractUrl(text);
+	const webQuery = extractWebSearchQuery(text);
+
+	if (HELP.test(lower) && browseUrl === null && webQuery === null) {
 		return { kind: 'help' };
 	}
 	// A bare greeting with nothing else asked. Strip trailing punctuation first so
@@ -375,13 +403,6 @@ export function parseIntent(raw: string, context: IntentContext = {}): Intent {
 		([field]) => field,
 	);
 	const companyGeneric = COMPANY_GENERIC.test(lower);
-
-	// Web asks are read up front too: a pasted link or an explicit "search the
-	// web …" must not be swallowed by the inferred FAQ context (whose SEARCH_VERB
-	// would otherwise claim "search the web for prices" mid-FAQ-conversation).
-	// An explicit knowledge-base mention still outranks them below.
-	const browseUrl = extractUrl(text);
-	const webQuery = extractWebSearchQuery(text);
 
 	// Enter the knowledge-base branch when the message names it outright, or when the
 	// conversation is already on it and this turn carries an FAQ action. A message

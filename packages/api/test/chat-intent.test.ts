@@ -509,6 +509,36 @@ describe('parseIntent — web tools', () => {
 		});
 	});
 
+	it('keeps a balanced closing bracket that belongs to the URL', () => {
+		expect(parseIntent('read https://en.wikipedia.org/wiki/Function_(mathematics)')).toEqual({
+			kind: 'web_browse',
+			url: 'https://en.wikipedia.org/wiki/Function_(mathematics)',
+		});
+		// …even wrapped in sentence punctuation of its own.
+		expect(parseIntent('(read https://en.wikipedia.org/wiki/Function_(mathematics)).')).toEqual({
+			kind: 'web_browse',
+			url: 'https://en.wikipedia.org/wiki/Function_(mathematics)',
+		});
+		// An IPv6 host's closing bracket is balanced, not clinging punctuation.
+		expect(parseIntent('open http://[::1]')).toEqual({
+			kind: 'web_browse',
+			url: 'http://[::1]',
+		});
+	});
+
+	it('runs the tool when a help-worded turn names a concrete web ask', () => {
+		expect(parseIntent('help me search the web for permit rules')).toEqual({
+			kind: 'web_search',
+			query: 'permit rules',
+		});
+		expect(parseIntent('can you help me read https://example.com/pricing')).toEqual({
+			kind: 'web_browse',
+			url: 'https://example.com/pricing',
+		});
+		// A bare capabilities question still gets the menu.
+		expect(parseIntent('what can you do?')).toEqual({ kind: 'help' });
+	});
+
 	it('keeps an explicit knowledge-base command above a pasted link', () => {
 		expect(parseIntent('add an faq about https://example.com/warranty')).toEqual({
 			kind: 'faq_create',

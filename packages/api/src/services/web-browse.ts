@@ -39,6 +39,12 @@ const ZENROWS_ENDPOINT = 'https://api.zenrows.com/v1/';
 // A rendered article is well under this; only pathological pages are clipped.
 const MAX_CONTENT_CHARS = 12_000;
 
+// Deadline on the provider call. Generous because `js_render` + residential
+// proxying legitimately takes tens of seconds on heavy pages, but a stalled
+// upstream must still fail into the chat's "couldn't read that page" reply
+// instead of pinning the request until the transport gives up on its own.
+const BROWSE_TIMEOUT_MS = 60_000;
+
 export interface ZenrowsBrowserOptions {
 	apiKey: string;
 	/** Injectable fetch; defaults to the global. */
@@ -80,6 +86,7 @@ export class ZenrowsBrowser implements WebBrowseService {
 		const response = await this.fetchImpl(`${this.endpoint}?${params.toString()}`, {
 			method: 'GET',
 			headers: {},
+			signal: AbortSignal.timeout(BROWSE_TIMEOUT_MS),
 		});
 		if (!response.ok) {
 			const detail = await response.text().catch(() => '');
