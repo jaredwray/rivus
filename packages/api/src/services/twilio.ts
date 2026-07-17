@@ -6,8 +6,11 @@ import type { Config } from '../config';
 import {
 	type ChannelProvisioner,
 	NoopChannelProvisioner,
+	NoopNumberReleaser,
+	type NumberReleaser,
 	type ProvisionedIdentifier,
 	type ProvisionInput,
+	type ReleaseOutcome,
 } from './channel-provisioning';
 import type { FetchLike } from './resend-mailer';
 import { NoopSmsSender, type SmsMessage, type SmsSender } from './sms';
@@ -359,6 +362,67 @@ export class TwilioProvisioner implements ChannelProvisioner {
 		}
 		return { sid: parsed.data.sid, phoneNumber: parsed.data.phone_number || number };
 	}
+}
+
+/**
+ * Releases a rented number back to Twilio (`DELETE IncomingPhoneNumbers/{PN…}`,
+ * which answers 204 and stops the rental's billing). Backs the dev-only
+ * "release & reset" admin flow. The DELETE is scoped to the configured account,
+ * so a 404 is ambiguous — already released (e.g. by hand in the console), or
+ * rented by a *different* Twilio account and still billing there — and is
+ * reported as `not_found` for the caller to resolve, never as a release.
+ */
+export class TwilioNumberReleaser implements NumberReleaser {
+	private readonly apiUrl: string;
+	private readonly accountSid: string;
+	private readonly headers: Record<string, string>;
+	private readonly fetchImpl: FetchLike;
+
+	constructor(options: TwilioOptions) {
+		this.apiUrl = options.apiUrl;
+		this.accountSid = options.accountSid;
+		this.headers = basicAuth(options.accountSid, options.authToken);
+		this.fetchImpl = options.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
+	}
+
+	async release(providerRef: string, logger?: FastifyBaseLogger): Promise<ReleaseOutcome> {
+		logger?.info({ providerRef }, 'releasing a Twilio number');
+		const response = await this.fetchImpl(
+			accountUrl(this.apiUrl, this.accountSid, `/IncomingPhoneNumbers/${providerRef}.json`),
+			{ method: 'DELETE', headers: this.headers },
+		);
+		if (response.status === 404) {
+			// Ambiguous by design: this account's scope has no such number — which is
+			// true after a console release, but also when the number was rented by a
+			// different Twilio account (rotated TWILIO_ACCOUNT_SID) and still bills.
+			logger?.warn({ providerRef }, 'Twilio does not know this number under this account');
+			return 'not_found';
+		}
+		if (!response.ok) {
+			const body = await response.text().catch(() => '');
+			logger?.error({ status: response.status, providerRef, body }, 'Twilio refused the release');
+			throw new Error(
+				`Twilio refused to release ${providerRef} (status ${response.status})${body ? `: ${body}` : ''}`,
+			);
+		}
+		return 'released';
+	}
+}
+
+/** A number releaser for the config: real Twilio when credentials are present, else a no-op. */
+export function createTwilioNumberReleaser(
+	config: TwilioCredentials,
+	fetchImpl?: FetchLike,
+): NumberReleaser {
+	if (!config.TWILIO_ACCOUNT_SID || !config.TWILIO_AUTH_TOKEN) {
+		return new NoopNumberReleaser();
+	}
+	return new TwilioNumberReleaser({
+		accountSid: config.TWILIO_ACCOUNT_SID,
+		authToken: config.TWILIO_AUTH_TOKEN,
+		apiUrl: config.TWILIO_API_URL,
+		fetchImpl,
+	});
 }
 
 /**

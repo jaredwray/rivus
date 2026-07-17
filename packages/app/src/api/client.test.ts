@@ -633,6 +633,38 @@ describe('createApiClient', () => {
 		});
 	});
 
+	describe('releaseNumber', () => {
+		it('POSTs to the dev-only release route and returns the released numbers with the reset account', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse({ released: ['+14155550100'], forgotten: [], account: makeAccount() }),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.releaseNumber('staff-token');
+
+			expect(result.released).toEqual(['+14155550100']);
+			expect(result.forgotten).toEqual([]);
+			expect(result.account.channels.whatsapp).toMatchObject({ enabled: false, address: '' });
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/admin/release-number`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer staff-token' });
+			// Forgetting unknown numbers is opt-in, so the default is explicit false.
+			expect(JSON.parse(String(init.body))).toEqual({ clearUnknown: false });
+		});
+
+		it('sends clearUnknown when asked to forget a number Twilio does not know', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse({ released: [], forgotten: ['+14155550100'], account: makeAccount() }),
+			);
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.releaseNumber('staff-token', { clearUnknown: true });
+			expect(result.forgotten).toEqual(['+14155550100']);
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(JSON.parse(String(init.body))).toEqual({ clearUnknown: true });
+		});
+	});
+
 	describe('cancelAccount', () => {
 		it('POSTs to the cancel endpoint and returns the canceled account', async () => {
 			const account = {

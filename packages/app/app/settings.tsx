@@ -266,6 +266,136 @@ function DevSandboxCard() {
 	);
 }
 
+/**
+ * A development-only, Rivus-staff-only "start over" for phone numbers: releases
+ * every Twilio-rented number this account holds and resets the WhatsApp, SMS,
+ * and voice channels to off with no number, so the next enable rents a fresh
+ * one — the escape hatch when a dev number lands in a broken state (dead
+ * inbound routing, webhooks missed at purchase). Releasing is irreversible
+ * (the number returns to Twilio's pool), hence the two-step confirm. Gated
+ * exactly like {@link DevSeedCard}, with the same server-side enforcement.
+ */
+function DevReleaseCard() {
+	const { session, releaseNumber, isStaff } = useAuth();
+	const { width } = useWindowDimensions();
+	const narrow = width < 520;
+	const [busy, setBusy] = useState(false);
+	const [confirming, setConfirming] = useState(false);
+	const [done, setDone] = useState<string | null>(null);
+	const [error, setError] = useState<string | null>(null);
+	// Set when the API answers "Twilio doesn't know this number" (409): it was
+	// console-released — or it belongs to a different Twilio account and may
+	// still bill there. Forgetting it is a second, separate decision.
+	const [unknownPrompt, setUnknownPrompt] = useState<string | null>(null);
+
+	const visible = Boolean(session) && isStaff && isSeedingEnabled();
+	const channels = session?.account.channels;
+	// Anything to reset? Any phone channel holding a number (rented, sandbox, or
+	// dev fake) counts; with all three empty there's nothing to do.
+	const hasNumbers = Boolean(
+		channels && [channels.whatsapp, channels.sms, channels.voice].some((c) => c.address !== ''),
+	);
+
+	async function onRelease(clearUnknown = false) {
+		if (busy || !session) {
+			return;
+		}
+		setError(null);
+		setDone(null);
+		setUnknownPrompt(null);
+		setBusy(true);
+		try {
+			const { released, forgotten } = await releaseNumber(
+				clearUnknown ? { clearUnknown } : undefined,
+			);
+			const parts = [
+				released.length > 0 ? ` Released ${released.join(' and ')}.` : '',
+				forgotten.length > 0
+					? ` Forgot ${forgotten.join(' and ')} (already gone from this Twilio account).`
+					: '',
+			].join('');
+			setDone(
+				parts
+					? `Reset all phone channels.${parts}`
+					: 'Reset all phone channels (nothing was rented).',
+			);
+			setConfirming(false);
+		} catch (caught) {
+			const message = messageFor(caught, 'Could not release the number.');
+			if (caught instanceof ApiError && caught.status === 409 && /doesn't know/.test(message)) {
+				setUnknownPrompt(message);
+			} else {
+				setError(message);
+			}
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	if (!visible || !session) {
+		return null;
+	}
+
+	return (
+		<Card style={[styles.card, styles.devCard]}>
+			<SectionLabel style={styles.devLabel}>Developer · release number</SectionLabel>
+			<Txt style={styles.rowSub}>
+				Hand {session.account.name}’s rented number back to Twilio and switch WhatsApp, texting, and
+				phone calls off with no number, so the next enable starts over with a fresh rental.
+				Releasing can’t be undone — the number returns to Twilio’s pool. Visible only in
+				development, to Rivus staff.
+			</Txt>
+
+			{error ? <Txt style={styles.errorTxt}>{error}</Txt> : null}
+			{done ? <Txt style={styles.savedTxt}>{done}</Txt> : null}
+
+			{unknownPrompt ? (
+				<>
+					<Txt style={styles.errorTxt}>{unknownPrompt}</Txt>
+					<View style={[styles.confirmRow, narrow && styles.confirmRowNarrow]}>
+						<DangerButton
+							label={busy ? 'Forgetting…' : 'It’s gone — forget the number'}
+							icon="alert-triangle"
+							loading={busy}
+							onPress={() => onRelease(true)}
+							style={[styles.confirmBtn, narrow && styles.confirmBtnNarrow]}
+						/>
+						<OutlineButton
+							label="Keep the record"
+							disabled={busy}
+							onPress={() => setUnknownPrompt(null)}
+							style={[styles.confirmBtn, narrow && styles.confirmBtnNarrow]}
+						/>
+					</View>
+				</>
+			) : confirming ? (
+				<View style={[styles.confirmRow, narrow && styles.confirmRowNarrow]}>
+					<DangerButton
+						label={busy ? 'Releasing…' : 'Yes, release & reset'}
+						icon="alert-triangle"
+						loading={busy}
+						onPress={() => onRelease()}
+						style={[styles.confirmBtn, narrow && styles.confirmBtnNarrow]}
+					/>
+					<OutlineButton
+						label="Keep the number"
+						disabled={busy}
+						onPress={() => setConfirming(false)}
+						style={[styles.confirmBtn, narrow && styles.confirmBtnNarrow]}
+					/>
+				</View>
+			) : (
+				<OutlineButton
+					label="Release number & reset channels"
+					tone="danger"
+					disabled={!hasNumbers}
+					onPress={() => setConfirming(true)}
+				/>
+			)}
+		</Card>
+	);
+}
+
 export default function SettingsScreen() {
 	useDocumentTitle('Settings');
 	const { session, client, updateAccount, cancelAccount, setChannelEnabled } = useAuth();
@@ -366,6 +496,7 @@ export default function SettingsScreen() {
 				</Card>
 				<DevSeedCard />
 				<DevSandboxCard />
+				<DevReleaseCard />
 			</ScrollView>
 		);
 	}
@@ -592,6 +723,7 @@ export default function SettingsScreen() {
 
 			<DevSeedCard />
 			<DevSandboxCard />
+			<DevReleaseCard />
 		</ScrollView>
 	);
 }

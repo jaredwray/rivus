@@ -4,7 +4,7 @@ import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createInMemoryRepositories } from './repositories/memory';
 import { NoopReceivedEmailReader } from './services/agent/email/received';
-import { NoopChannelProvisioner } from './services/channel-provisioning';
+import { NoopChannelProvisioner, NoopNumberReleaser } from './services/channel-provisioning';
 import { createDecider } from './services/chat/decide';
 import { NoopMailer } from './services/email';
 import { NoopFaqAnswerService } from './services/faq-answer';
@@ -56,6 +56,7 @@ async function main(): Promise<void> {
 		whatsappProvisioner: new NoopChannelProvisioner(),
 		smsSender: new NoopSmsSender(),
 		smsProvisioner: new NoopChannelProvisioner(),
+		numberReleaser: new NoopNumberReleaser(),
 		notifier: createNotificationService({ notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),

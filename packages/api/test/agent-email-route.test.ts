@@ -7,7 +7,7 @@ import { createInMemoryRepositories } from '../src/repositories/memory';
 import type { ReceivedEmailContent } from '../src/services/agent/email/received';
 import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
 import { signWebhookPayload } from '../src/services/agent/email/webhook';
-import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
+import { NoopChannelProvisioner, NoopNumberReleaser } from '../src/services/channel-provisioning';
 import { createDecider } from '../src/services/chat/decide';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
@@ -624,6 +624,7 @@ describe('POST /v1/channels/email/inbound — signatures', () => {
 			whatsappProvisioner: new NoopChannelProvisioner(),
 			smsSender: new NoopSmsSender(),
 			smsProvisioner: new NoopChannelProvisioner(),
+			numberReleaser: new NoopNumberReleaser(),
 			notifier: createNotificationService({ notifications: repos.notifications }),
 			faqSimilarity: new NoopFaqSimilarityService(),
 			faqAnswer: new NoopFaqAnswerService(),

@@ -29,6 +29,7 @@ import {
 } from './services/messaging-provider';
 import { createNotificationService } from './services/notifications';
 import { createMailer } from './services/resend-mailer';
+import { createTwilioNumberReleaser } from './services/twilio';
 
 /** Connect to Mongo, build the app with Mongo-backed repositories, and listen. */
 export async function start(): Promise<void> {
@@ -57,6 +58,7 @@ export async function start(): Promise<void> {
 		whatsappProvisioner: createWhatsappProvisioner(config),
 		smsSender: createSmsSender(config),
 		smsProvisioner: createSmsProvisioner(config),
+		numberReleaser: createTwilioNumberReleaser(config),
 		notifier: createNotificationService({ notifications }),
 		faqSimilarity: createFaqSimilarityService(config),
 		faqAnswer: createFaqAnswerService(config),
