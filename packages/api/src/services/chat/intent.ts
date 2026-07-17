@@ -125,17 +125,43 @@ export function isExistenceCheck(text: string): boolean {
 }
 
 /**
- * An explicit ask to audit the business's website or online presence. Verb-
- * gated on purpose: plain website questions ("what's our website?") must stay
- * on the company record, so only auditing verbs near a site noun — or the
- * literal "website audit" — route here.
+ * An explicit ask to audit the business's website or online presence. Two
+ * deliberate constraints keep it from firing on the wrong turns:
+ *
+ * - The noun must be UNAMBIGUOUS — "website"/"web page"/"homepage"/"online
+ *   presence", or the fixed phrase "site/website audit", or an audit verb on the
+ *   first-person "our/my site". A bare "site" alone is excluded because the
+ *   trades businesses Rivus serves say "job site"/"site access"/"site
+ *   conditions", which must not be mistaken for their web presence.
+ * - Verb and noun must be CLOSE (within a short window), so an unrelated verb and
+ *   a passing website mention in the same message don't combine into a false audit.
+ *
+ * Plain website questions ("what's our website?") carry no audit verb and stay
+ * on the company record.
  */
-const WEBSITE_AUDIT =
-	/\b(?:audit|review|analy[sz]e|assess|evaluate|inspect|grade)\b.{0,40}\b(?:web ?site|site|web ?page|homepage|online presence)\b|\b(?:web ?site|site)\s+audit\b/i;
+const AUDIT_VERB = String.raw`(?:audit|review|analy[sz]e|analysis|assess|evaluate|inspect|check(?:\s+over)?|grade|critique|look\s+over|go\s+over)`;
+const WEBSITE_NOUN = String.raw`(?:web\s?sites?|web\s?pages?|home\s?pages?|landing\s+pages?|online\s+presence)`;
+const WEBSITE_AUDIT = new RegExp(
+	`\\b${AUDIT_VERB}\\b[^.?!]{0,25}\\b${WEBSITE_NOUN}\\b` +
+		`|\\b${WEBSITE_NOUN}\\b[^.?!]{0,25}\\b${AUDIT_VERB}\\b` +
+		`|\\b(?:web\\s?site|site)\\s+audit\\b` +
+		`|\\b${AUDIT_VERB}\\s+(?:our|my)\\s+site\\b`,
+	'i',
+);
 
-/** True when the message explicitly asks for the website audit. */
+/**
+ * How-to / advice framing at the START of the turn ("how do I audit my
+ * website?", "should I review our site?"). The user wants guidance, not a real
+ * (paid) audit run, so these fall through to the knowledge-answer path. Anchored
+ * to the start so an audit request that merely *mentions* improving something
+ * ("review our site and tell me how to improve it") still runs.
+ */
+const AUDIT_ADVICE =
+	/^\s*(?:how\s+(?:do|would|can|should|might|to)\b|should\s+(?:i|we)\b|is\s+it\s+worth\b|why\s+(?:should|would)\b|what(?:'s| is)\s+the\s+best\s+way\b)/i;
+
+/** True when the message explicitly asks Rivus to run the website audit. */
 function isWebsiteAuditAsk(lower: string): boolean {
-	return WEBSITE_AUDIT.test(lower);
+	return WEBSITE_AUDIT.test(lower) && !AUDIT_ADVICE.test(lower);
 }
 
 /** Strip a leading article so an extracted topic reads cleanly. */

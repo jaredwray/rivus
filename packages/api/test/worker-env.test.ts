@@ -66,10 +66,10 @@ describe('FORWARDED_VARS', () => {
 		}
 	});
 
-	it('forwards the chat web-tool keys (search + browse)', () => {
+	it('forwards the website-audit keys (ZenRows + Brave)', () => {
 		// Same trap as the messaging vars: set on the Worker but not forwarded =
-		// the chat forever answers "web search/browsing isn't enabled".
-		for (const key of ['BRAVE_SEARCH_API_KEY', 'ZENROWS_API_KEY']) {
+		// the chat forever answers "website audits aren't enabled".
+		for (const key of ['ZENROWS_API_KEY', 'BRAVE_SEARCH_API_KEY']) {
 			expect(FORWARDED_VARS).toContain(key);
 		}
 	});

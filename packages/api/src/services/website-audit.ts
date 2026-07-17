@@ -56,10 +56,23 @@ export interface WebsiteAuditService {
 // one extra audit.
 const AUDIT_COOLDOWN_MS = 10 * 60_000;
 
+// Bound the cooldown map so it can't grow without limit on a long-lived
+// container: once it's large, drop entries whose cooldown has already expired
+// (they're inert). Audits are cooldown-gated, so this sweep runs rarely and
+// keeps the live size near the number of accounts audited within one window.
+const MAX_COOLDOWN_ENTRIES = 10_000;
+
 /**
  * The account's website as a fetchable absolute URL. Profiles commonly store a
  * bare host ("example.com") — complete it with https rather than refusing the
- * audit; anything that still isn't http(s) is treated as "no website".
+ * audit; anything that still isn't a public http(s) host is treated as "no
+ * website".
+ *
+ * The host must be a real public domain: no raw IPs, loopback, or dotless hosts.
+ * `account.website` is already validated at write time (core's `websiteSchema`
+ * requires a lettered-TLD domain) and the fetch is performed by ZenRows, not
+ * this API — so this is defense-in-depth, keeping an internal-metadata address
+ * from ever being produced here even if a future path fetched it directly.
  */
 export function websiteUrl(website: string): string | null {
 	const trimmed = website.trim();
@@ -67,14 +80,30 @@ export function websiteUrl(website: string): string | null {
 		return null;
 	}
 	const direct = parseHttpUrl(trimmed);
-	if (direct !== null) {
-		return direct;
-	}
-	// Only a dotted, space-free host is worth completing into an address.
-	if (!/^[^\s/:]+\.[^\s]+$/.test(trimmed)) {
+	const normalized =
+		direct ??
+		// Only a dotted, space-free host is worth completing into an address.
+		(/^[^\s/:]+\.[^\s]+$/.test(trimmed) ? parseHttpUrl(`https://${trimmed}`) : null);
+	if (normalized === null) {
 		return null;
 	}
-	return parseHttpUrl(`https://${trimmed}`);
+	return isPublicHost(new URL(normalized).hostname) ? normalized : null;
+}
+
+/**
+ * Whether `host` is a public domain name rather than a raw IP, loopback, or
+ * dotless internal host. A real business website is a dotted name; an IP literal
+ * (v4 starts with a digit; v6 contains `:`) or `localhost` is never one.
+ */
+function isPublicHost(host: string): boolean {
+	const lower = host.toLowerCase();
+	if (lower === 'localhost' || lower.endsWith('.localhost')) {
+		return false;
+	}
+	if (lower.includes(':') || /^\d/.test(lower)) {
+		return false;
+	}
+	return lower.includes('.');
 }
 
 /** Digit-only form of a phone number, for provider-agnostic comparison. */
@@ -82,22 +111,82 @@ function digitsOf(value: string): string {
 	return value.replace(/\D/g, '');
 }
 
-/** Phone-number-looking runs in the page, as digit strings (7–15 digits). */
-function phonesIn(content: string): string[] {
-	const matches = content.match(/\+?\d[\d\s().-]{5,18}\d/g) ?? [];
-	return matches.map(digitsOf).filter((digits) => digits.length >= 7 && digits.length <= 15);
+/**
+ * Whether the account's phone number appears on the page. The whole page is
+ * reduced to one digit stream and searched for the profile number's significant
+ * suffix (its last 10 digits, or all of them when shorter), so formatting,
+ * punctuation, and a leading country code don't matter. We deliberately don't
+ * try to detect a *different* number on the site: telling a real phone apart
+ * from an order number, price, or date in free markdown isn't reliable, and a
+ * false "your number is stale" is worse than a missed one.
+ */
+function phoneOnPage(profilePhone: string, content: string): boolean {
+	const profileDigits = digitsOf(profilePhone);
+	if (profileDigits.length < 7) {
+		return false;
+	}
+	const suffix = profileDigits.slice(-10);
+	return digitsOf(content).includes(suffix);
 }
 
-/** Whether two phone numbers plausibly refer to the same line (compare last 10 digits). */
-function samePhone(a: string, b: string): boolean {
-	const tailA = a.slice(-10);
-	const tailB = b.slice(-10);
-	return tailA !== '' && tailA === tailB;
+/** Escape a literal string for safe embedding in a RegExp. */
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-const EMAIL_IN_TEXT = /[\w.+-]+@[\w-]+\.[\w.-]+/;
+/**
+ * Whether `needle` appears in `haystack` as a whole token, not inside a larger
+ * word — so a name like "Flow" isn't matched by "workflow". Boundaries are
+ * non-alphanumeric (Unicode-aware, so accented names and multi-word names work).
+ * It can't tell a name apart from an identical common word ("Bloom" vs "in full
+ * bloom") — no string match can — but it removes the substring-in-word noise.
+ */
+function containsWord(haystack: string, needle: string): boolean {
+	const trimmed = needle.trim().toLowerCase();
+	if (trimmed === '') {
+		return false;
+	}
+	return new RegExp(
+		`(?:^|[^\\p{L}\\p{N}])${escapeRegExp(trimmed)}(?:[^\\p{L}\\p{N}]|$)`,
+		'iu',
+	).test(haystack.toLowerCase());
+}
+
+/**
+ * Whether the profile's street address appears on the page, matched loosely: the
+ * street NUMBER plus the first significant word that follows it must both appear
+ * as tokens. That absorbs abbreviation differences ("St"/"Street", "SE"/
+ * "Southeast") and ignores a name-first address line, without exact-substring
+ * brittleness. Returns null when no street number is on file (nothing to match).
+ */
+function addressOnPage(address: string, content: string): boolean | null {
+	const tokens = address.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+	const numberIndex = tokens.findIndex((token) => /^\d{1,6}$/.test(token));
+	if (numberIndex < 0) {
+		return null;
+	}
+	const streetNumber = tokens[numberIndex] as string;
+	const streetWord = tokens
+		.slice(numberIndex + 1)
+		.find((token) => token.length > 3 && !/^\d+$/.test(token));
+	if (streetWord === undefined) {
+		return null;
+	}
+	return containsWord(content, streetNumber) && containsWord(content, streetWord);
+}
+
+// A real-looking email address. The negative lookahead drops asset filenames
+// like "logo@2x.png" (the "TLD" would be an image/asset extension), which the
+// contact check would otherwise mistake for a way to get in touch.
+const EMAIL_IN_TEXT =
+	/[\w.+-]+@[\w-]+\.(?!png|jpe?g|gif|svg|webp|avif|ico|css|js|json|woff2?|ttf|eot|mp[34]|pdf)[a-z]{2,24}\b/i;
+// Contact-affordance wording, distinct from an incidental word — a real email,
+// or a phrase that signals a contact route.
+const CONTACT_IN_TEXT = /\b(?:contact us|contact form|get in touch|email us|reach us|call us)\b/i;
+// Business-hours wording in CONTEXT — never the bare word "hours" (which also
+// shows up in "24 hours", "after hours", "saved hundreds of hours").
 const HOURS_IN_TEXT =
-	/\b(?:hours|opening times|open (?:mon|tue|wed|thu|fri|sat|sun|daily|weekdays|weekends))\b/i;
+	/\b(?:business|opening|store|office|trading|working|shop)\s+hours\b|\bhours\s+of\s+operation\b|\bopening times\b|\bhours?\s*:\s*\S|\bopen(?:ing)?\s+(?:mon|tue|wed|thu|fri|sat|sun|daily|weekdays?|weekends?)/i;
 
 /**
  * The content-based checks, pure over the fetched markdown so they're
@@ -105,10 +194,10 @@ const HOURS_IN_TEXT =
  */
 export function contentChecks(account: Account, content: string, faqCount: number): AuditCheck[] {
 	const checks: AuditCheck[] = [];
-	const lower = content.toLowerCase();
 
+	const name = account.name.trim();
 	checks.push(
-		account.name.trim() !== '' && lower.includes(account.name.trim().toLowerCase())
+		name !== '' && containsWord(content, name)
 			? { id: 'name', label: `Your business name “${account.name}” is on the page`, passed: true }
 			: {
 					id: 'name',
@@ -117,53 +206,31 @@ export function contentChecks(account: Account, content: string, faqCount: numbe
 				},
 	);
 
-	const profilePhone = digitsOf(account.phone);
-	const sitePhones = phonesIn(content);
-	if (profilePhone.length >= 7) {
-		if (sitePhones.some((phone) => samePhone(phone, profilePhone))) {
-			checks.push({
-				id: 'phone',
-				label: 'The phone number on the site matches your Rivus profile',
-				passed: true,
-			});
-		} else if (sitePhones.length > 0) {
-			checks.push({
-				id: 'phone',
-				label:
-					'The phone number on the site doesn’t match the one on your Rivus profile — one of them is stale',
-				passed: false,
-			});
-		} else {
-			checks.push({
-				id: 'phone',
-				label: 'Your phone number isn’t on the site — add it so customers can call',
-				passed: false,
-			});
-		}
-	} else {
+	// Only judge the phone when the profile has a usable number to look for.
+	if (digitsOf(account.phone).length >= 7) {
 		checks.push(
-			sitePhones.length > 0
-				? {
-						id: 'phone',
-						label:
-							'A phone number is on the site — add it to your Rivus profile too so they stay in sync',
-						passed: true,
-					}
+			phoneOnPage(account.phone, content)
+				? { id: 'phone', label: 'Your phone number is on the site', passed: true }
 				: {
 						id: 'phone',
-						label:
-							'No phone number found on the site (or your Rivus profile) — customers expect one',
+						label: 'Your phone number isn’t on the site — add it so customers can call',
 						passed: false,
 					},
 		);
+	} else {
+		checks.push({
+			id: 'phone',
+			label:
+				'Add a phone number to your Rivus profile so I can check it’s on your site and customers can call',
+			passed: false,
+		});
 	}
 
-	// Only judge the address when the profile has one to compare against; the
-	// street line (before the first comma) is the part a site plausibly prints.
-	const streetLine = account.address.split(',')[0]?.trim() ?? '';
-	if (streetLine.length > 3) {
+	// Only judge the address when the profile has a street number to match on.
+	const addressResult = addressOnPage(account.address, content);
+	if (addressResult !== null) {
 		checks.push(
-			lower.includes(streetLine.toLowerCase())
+			addressResult
 				? { id: 'address', label: 'Your address is on the site', passed: true }
 				: {
 						id: 'address',
@@ -174,7 +241,7 @@ export function contentChecks(account: Account, content: string, faqCount: numbe
 	}
 
 	checks.push(
-		EMAIL_IN_TEXT.test(content) || /\bcontact\b/i.test(content)
+		EMAIL_IN_TEXT.test(content) || CONTACT_IN_TEXT.test(content)
 			? {
 					id: 'contact',
 					label: 'There’s a way to get in touch (contact info present)',
@@ -224,6 +291,15 @@ function bareHost(url: string): string | null {
 	}
 }
 
+/**
+ * Whether two hosts belong to the same site, so a bare domain and any of its
+ * subdomains match (`example.com` ⇔ `shop.example.com`) — a search listing on a
+ * subdomain still counts as the site showing up.
+ */
+function sameSite(a: string, b: string): boolean {
+	return a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
+}
+
 export interface WebsiteAuditServiceOptions {
 	/** Injected for tests; default to the config-gated real services. */
 	webSearch?: WebSearchService;
@@ -264,6 +340,13 @@ export function createWebsiteAuditService(
 				return { kind: 'cooldown', retryInMinutes };
 			}
 			// Stamped before fetching: an unreachable site spent a provider call too.
+			if (lastRunAt.size >= MAX_COOLDOWN_ENTRIES) {
+				for (const [id, at] of lastRunAt) {
+					if (startedAt - at >= AUDIT_COOLDOWN_MS) {
+						lastRunAt.delete(id);
+					}
+				}
+			}
 			lastRunAt.set(account.id, startedAt);
 
 			let content: string;
@@ -286,7 +369,10 @@ export function createWebsiteAuditService(
 				try {
 					const results = await webSearch.search(account.name);
 					if (host !== null) {
-						const found = results.some((result) => bareHost(result.url) === host);
+						const found = results.some((result) => {
+							const resultHost = bareHost(result.url);
+							return resultHost !== null && sameSite(resultHost, host);
+						});
 						checks.push(
 							found
 								? {

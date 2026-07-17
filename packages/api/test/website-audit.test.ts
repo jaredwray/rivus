@@ -97,6 +97,14 @@ describe('websiteUrl', () => {
 		expect(websiteUrl('ftp://example.com')).toBeNull();
 		expect(websiteUrl('not a website')).toBeNull();
 	});
+
+	it('rejects raw-IP, loopback, and dotless hosts (SSRF defense-in-depth)', () => {
+		expect(websiteUrl('169.254.169.254')).toBeNull();
+		expect(websiteUrl('https://127.0.0.1')).toBeNull();
+		expect(websiteUrl('http://localhost')).toBeNull();
+		expect(websiteUrl('https://[::1]/')).toBeNull();
+		expect(websiteUrl('http://intranet')).toBeNull();
+	});
 });
 
 describe('contentChecks', () => {
@@ -118,38 +126,51 @@ describe('contentChecks', () => {
 		expect(checkById(checks, 'name')?.passed).toBe(false);
 	});
 
-	it('matches the profile phone across formatting differences', () => {
-		const checks = contentChecks(account({ phone: '+1 503 555 0142' }), GOOD_SITE, 0);
-		expect(checkById(checks, 'phone')?.passed).toBe(true);
+	it('does not match a name that only appears inside a larger word', () => {
+		// "Flow" must not be found by "workflow" — whole-word match only.
+		const checks = contentChecks(account({ name: 'Flow' }), 'our workflow is great', 0);
+		expect(checkById(checks, 'name')?.passed).toBe(false);
 	});
 
-	it('flags a site phone that differs from the profile as stale', () => {
+	it('matches the profile phone across formatting and country-code differences', () => {
+		// 11-digit country-coded profile vs 10-digit site rendering (and vice versa).
+		expect(
+			checkById(contentChecks(account({ phone: '+1 503 555 0142' }), GOOD_SITE, 0), 'phone')
+				?.passed,
+		).toBe(true);
+		// 7-digit local profile number vs the 10-digit number printed on the site.
+		expect(
+			checkById(contentChecks(account({ phone: '555-0142' }), GOOD_SITE, 0), 'phone')?.passed,
+		).toBe(true);
+	});
+
+	it('does not invent a phone conflict from non-phone digit runs', () => {
+		// An invoice/order number must NOT be treated as a competing phone number.
 		const checks = contentChecks(
 			account(),
-			'Cascade Plumbing — call (503) 555-9999 today!\ncontact',
+			'Cascade Plumbing. Invoice #100200300400. contact us',
 			0,
 		);
 		const phone = checkById(checks, 'phone');
 		expect(phone?.passed).toBe(false);
-		expect(phone?.label).toMatch(/doesn’t match/);
+		expect(phone?.label).toMatch(/isn’t on the site/);
 	});
 
-	it('fails when neither the site nor the profile has a phone', () => {
-		const checks = contentChecks(account({ phone: '' }), 'Cascade Plumbing. contact', 0);
-		expect(checkById(checks, 'phone')?.passed).toBe(false);
-	});
-
-	it('passes (with a sync nudge) when the site has a phone the profile lacks', () => {
+	it('nudges to add a profile phone when none is on file', () => {
 		const checks = contentChecks(account({ phone: '' }), GOOD_SITE, 0);
 		const phone = checkById(checks, 'phone');
-		expect(phone?.passed).toBe(true);
-		expect(phone?.label).toMatch(/add it to your Rivus profile/);
+		expect(phone?.passed).toBe(false);
+		expect(phone?.label).toMatch(/add a phone number to your rivus profile/i);
 	});
 
-	it('only judges the address when the profile has one', () => {
+	it('only judges the address when the profile has a street number', () => {
+		// No address on file, and a name-only "address" with no street number, both skip.
 		expect(checkById(contentChecks(account({ address: '' }), GOOD_SITE, 0), 'address')).toBe(
 			undefined,
 		);
+		expect(
+			checkById(contentChecks(account({ address: 'Downtown Portland' }), GOOD_SITE, 0), 'address'),
+		).toBe(undefined);
 		const failing = contentChecks(
 			account({ address: '99 Elsewhere Ave, Salem, OR' }),
 			GOOD_SITE,
@@ -158,9 +179,41 @@ describe('contentChecks', () => {
 		expect(checkById(failing, 'address')?.passed).toBe(false);
 	});
 
+	it('matches an address across abbreviation differences', () => {
+		// Profile "410 SE Morrison St" vs site "410 Southeast Morrison Street".
+		const checks = contentChecks(account(), '410 Southeast Morrison Street, Portland', 0);
+		expect(checkById(checks, 'address')?.passed).toBe(true);
+	});
+
+	it('does not pass the address off a name-first line without the street', () => {
+		// streetLine would be the business name; matching it on the page must not
+		// count as the address being present.
+		const checks = contentChecks(
+			account({ address: 'Cascade Plumbing, 410 SE Morrison St' }),
+			'# Cascade Plumbing\nWe fix pipes.',
+			0,
+		);
+		expect(checkById(checks, 'address')?.passed).toBe(false);
+	});
+
 	it('fails hours and contact when a site offers neither', () => {
 		const checks = contentChecks(account(), 'Cascade Plumbing\n(503) 555-0142', 0);
 		expect(checkById(checks, 'hours')?.passed).toBe(false);
+		expect(checkById(checks, 'contact')?.passed).toBe(false);
+	});
+
+	it('does not pass hours on an incidental "hours" mention', () => {
+		const checks = contentChecks(
+			account(),
+			'Cascade Plumbing — we’ve saved customers 1000s of hours',
+			0,
+		);
+		expect(checkById(checks, 'hours')?.passed).toBe(false);
+	});
+
+	it('does not pass contact off an image-asset filename', () => {
+		// "logo@2x.png" looks email-shaped but is a retina asset, not a contact.
+		const checks = contentChecks(account(), 'Cascade Plumbing ![logo](logo@2x.png)', 0);
 		expect(checkById(checks, 'contact')?.passed).toBe(false);
 	});
 
@@ -244,6 +297,21 @@ describe('createWebsiteAuditService', () => {
 		});
 		const outcome = await service.audit({ account: account(), faqCount: 1 });
 		expect(search.queries).toEqual(['Cascade Plumbing']);
+		if (outcome.kind !== 'report') {
+			throw new Error(`expected a report, got ${outcome.kind}`);
+		}
+		expect(checkById(outcome.report.checks, 'presence')?.passed).toBe(true);
+	});
+
+	it('passes presence when the listing is on a subdomain of the site', async () => {
+		// A shop./m. subdomain result still counts as the site showing up.
+		const service = createWebsiteAuditService(CONFIG, {
+			webBrowse: browsing(GOOD_SITE),
+			webSearch: searching([
+				{ title: 'Shop', url: 'https://shop.cascadeplumbing.example/deals', description: '' },
+			]),
+		});
+		const outcome = await service.audit({ account: account(), faqCount: 1 });
 		if (outcome.kind !== 'report') {
 			throw new Error(`expected a report, got ${outcome.kind}`);
 		}
