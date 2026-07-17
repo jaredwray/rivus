@@ -18,6 +18,7 @@ import type {
 } from './repositories/types';
 import type { ReceivedEmailReader } from './services/agent/email/received';
 import type { ChannelProvisioner } from './services/channel-provisioning';
+import type { Decide } from './services/chat/decide';
 import type { Mailer } from './services/email';
 import type { FaqAnswerService } from './services/faq-answer';
 import type { FaqSimilarityService } from './services/faq-similarity';
@@ -71,6 +72,8 @@ export interface AppDeps {
 	faqSimilarity: FaqSimilarityService;
 	/** AI answering of questions from the knowledge base (deterministic when no key is set). */
 	faqAnswer: FaqAnswerService;
+	/** Routes a chat turn to an action (model-backed when a key is set, rule-based otherwise). */
+	chatDecider: Decide;
 	/** Readiness check for downstream dependencies (e.g. the database). */
 	ping: () => Promise<ReadinessResult>;
 }
@@ -82,6 +85,13 @@ declare module 'fastify' {
 	interface FastifyInstance {
 		deps: AppDeps;
 		authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+		/**
+		 * Re-check a verified token's session against the DB (membership, account
+		 * state). Requires `request.user` to be populated (i.e. after `jwtVerify`);
+		 * throws 401 when the session no longer holds up. `authenticate` = verify +
+		 * this; the optionally-authenticated chat route calls it directly.
+		 */
+		revalidateSession: (request: FastifyRequest) => Promise<void>;
 		/** Build an `onRequest` guard allowing only the given roles (run after `authenticate`). */
 		requireRole: (...roles: Role[]) => RoleGuard;
 		/** `onRequest` guard allowing only Rivus staff (run after `authenticate`). */

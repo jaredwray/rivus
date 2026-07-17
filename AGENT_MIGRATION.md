@@ -1,6 +1,18 @@
 # Migration plan: retire the Cloudflare Agents SDK — chat agent moves into `@rivus/api` on the AI SDK
 
-Status: **proposed** · Scope: `@rivus/agent` → `@rivus/api`, plus the app's agent client, CI, and docs
+Status: **in progress — code landed (PR #126); operational retirement pending** ·
+Scope: `@rivus/agent` → `@rivus/api`, plus the app's agent client, CI, and docs
+
+**Implemented:** chat wire schemas in `@rivus/core`; the ported chat services
+(`packages/api/src/services/chat/`), shared knowledge helpers
+(`services/knowledge.ts`), and the optional-auth `POST /v1/chat` route with its
+hermetic test suite; the app now chats through the API client
+(`packages/app/src/agent/` deleted, `EXPO_PUBLIC_AGENT_URL` gone); the
+`deploy-agent` CI jobs are removed and `deploy-api` now syncs an optional
+`ANTHROPIC_API_KEY`; docs updated. **Remaining (ops):** create the
+`DEV/PROD_ANTHROPIC_API_KEY` GitHub secrets (copy the value the agent Workers
+used); run the adoption window; then Phase 3 steps 2–3 below (retire the frozen
+Workers/domains, narrow `COOKIE_DOMAIN`, delete `packages/agent`).
 
 ## 1. Context and decision
 
@@ -120,7 +132,7 @@ app: RivusChat.tsx → existing API client (src/api/client.ts, + chat method)
 
 ## 4. Phases
 
-### Phase 1 — Port the agent into the API (additive; nothing removed yet)
+### Phase 1 — Port the agent into the API (additive; nothing removed yet) ✅
 
 1. `@rivus/core`: add the chat wire schemas (`ChatMessage`, `ChatRequest`,
    `ChatReply`) with tests (core holds 100% coverage).
@@ -142,7 +154,7 @@ app: RivusChat.tsx → existing API client (src/api/client.ts, + chat method)
    401) and never invoke the model; expired-session and foreign-account
    denials; no-key fallback parity.
 
-### Phase 2 — Switch the app
+### Phase 2 — Switch the app ✅
 
 1. Add `chat` to the existing API client (`packages/app/src/api/client.ts`)
    using the core schemas; point `RivusChat.tsx` at it.
@@ -153,21 +165,28 @@ app: RivusChat.tsx → existing API client (src/api/client.ts, + chat method)
    env blocks in `.github/workflows/deploy-{development,production}.yaml`
    (base URL is the existing `EXPO_PUBLIC_API_URL`).
 
-### Phase 3 — Retire the agent service
+### Phase 3 — Retire the agent service (step 1 ✅; steps 2–3 are ops follow-ups)
 
-1. Remove the `deploy-agent` jobs (and their `wrangler secret put JWT_SECRET`
+1. ✅ Remove the `deploy-agent` jobs (and their `wrangler secret put JWT_SECRET`
    sync steps) from both deploy workflows; drop `deploy-agent` from the
    `record-deployment` `needs` lists. The deployed Workers freeze but keep
-   serving old native builds during the adoption window.
+   serving old native builds during the adoption window. **Caveat:** the sync
+   step was what kept the agent's `JWT_SECRET` matching the API's — if the
+   secret rotates during the window, push it to the frozen Workers by hand
+   (`wrangler secret put JWT_SECRET --env <environment>` in `packages/agent`),
+   or authenticated chat on old builds silently degrades to signed-out replies.
 2. After native adoption is confirmed (or immediately, if chat has only ever
    shipped on web): delete the `rivus-agent` / `rivus-agent-dev` Workers, the
    Durable Object namespace (only vestigial state inside), and the
-   `dev-agent.rivus.ai` / `agent.rivus.ai` custom domains. Rollback before
-   this point is trivial: the old service is untouched and the app can be
-   re-pointed by env var.
-3. Delete `packages/agent` from the repo; sweep docs: `DEPLOYMENT.md`,
-   `AGENTS.md`, `CLAUDE.md`, root `README.md`, `packages/agent/README.md`
-   (goes away), `.env.example`.
+   `dev-agent.rivus.ai` / `agent.rivus.ai` custom domains. Then narrow the
+   session cookie: the API sets `COOKIE_DOMAIN=.rivus.ai` solely so the sibling
+   agent host received it — remove the var so the cookie goes host-only, and
+   expire the old domain-scoped cookie at sign-in so stale copies don't linger
+   until natural expiry. Rollback before this point is trivial: the old service
+   is untouched and the app can be re-pointed by env var.
+3. Delete `packages/agent` from the repo (kept in-tree until step 2 completes,
+   solely so the frozen Workers can be redeployed in an emergency); final docs
+   sweep removes the legacy notes added in this phase.
 
 ### Phase 4 (optional, when wanted) — Grow the agent with the AI SDK
 

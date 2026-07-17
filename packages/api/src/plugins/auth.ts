@@ -49,16 +49,13 @@ export default fp(
 			cookie: { cookieName: SESSION_COOKIE, signed: false },
 		});
 
-		app.decorate('authenticate', async (request: FastifyRequest, _reply: FastifyReply) => {
-			try {
-				await request.jwtVerify();
-			} catch {
-				throw app.httpErrors.unauthorized('Authentication required');
-			}
-			// The token embeds accountId + role for speed, but membership and account
-			// state can change after issuance. Revalidate against the DB so a removed
-			// user loses access immediately, a role change takes effect without waiting
-			// for expiry, and a canceled (soft-deleted) account locks everyone out.
+		// The token embeds accountId + role for speed, but membership and account
+		// state can change after issuance. Revalidation checks the DB so a removed
+		// user loses access immediately, a role change takes effect without waiting
+		// for expiry, and a canceled (soft-deleted) account locks everyone out.
+		// Split from `authenticate` so optionally-authenticated routes (the chat)
+		// can run the same checks without the hard 401 on a missing token.
+		app.decorate('revalidateSession', async (request: FastifyRequest) => {
 			const [membership, account] = await Promise.all([
 				app.deps.memberships.findByAccountAndUser(request.user.accountId, request.user.sub),
 				app.deps.accounts.findById(request.user.accountId),
@@ -90,6 +87,15 @@ export default fp(
 					throw app.httpErrors.unauthorized('Your access to this account has been revoked');
 				}
 			}
+		});
+
+		app.decorate('authenticate', async (request: FastifyRequest, _reply: FastifyReply) => {
+			try {
+				await request.jwtVerify();
+			} catch {
+				throw app.httpErrors.unauthorized('Authentication required');
+			}
+			await app.revalidateSession(request);
 		});
 
 		// Role check reads `request.user` (populated by `authenticate`), so list it

@@ -17,7 +17,15 @@ validate the monorepo, then deploy all four packages in parallel:
 | `@rivus/app`     | Worker **Static Assets** (Expo web export) | `dev-app.rivus.ai`          | `app.rivus.ai`    |
 | `@rivus/website` | Worker via **OpenNext** (Next.js)          | `dev.rivus.ai`              | `rivus.ai`        |
 | `@rivus/docs`    | Worker **Static Assets** (Docula build)    | `dev-docs.rivus.ai`         | `docs.rivus.ai`   |
-| `@rivus/agent`   | Worker + **Agent** (Durable Object)        | `dev-agent.rivus.ai`        | `agent.rivus.ai`  |
+
+The Rivus chat is served by the API (`POST /v1/chat`) — there is no separate
+agent service anymore. The legacy `@rivus/agent` Workers (`dev-agent.rivus.ai` /
+`agent.rivus.ai`) are **frozen, not deployed by CI**: they keep serving app
+builds that still have the old URL baked in, until they're retired per
+[AGENT_MIGRATION.md](./AGENT_MIGRATION.md). If `JWT_SECRET` rotates during that
+window, push it to the frozen Workers by hand (`wrangler secret put JWT_SECRET
+--env <environment>` in `packages/agent`), or authenticated chat on old builds
+silently degrades to signed-out replies.
 
 Each package owns a `wrangler.jsonc` with `development` and `production` named
 environments (`wrangler deploy --env <name>`). Development names are suffixed
@@ -128,6 +136,8 @@ with `NODE_ENV=production` and would crash-loop without them.
 | ---------------------- | ----------- | --------------------------------------------------------- |
 | `DEV_OPENAI_API_KEY`   | development | OpenAI key for the knowledge-base AI features (duplicate check, question answering, and embedding retrieval). Pushed as the `OPENAI_API_KEY` Worker secret by `deploy-api`. |
 | `PROD_OPENAI_API_KEY`  | production  | Same, for production. |
+| `DEV_ANTHROPIC_API_KEY`  | development | Anthropic key for the model-backed chat router (`POST /v1/chat`) and as an AI-provider fallback. Pushed as the `ANTHROPIC_API_KEY` Worker secret by `deploy-api`. Unset → chat routes deterministically (rule-based), which still works. |
+| `PROD_ANTHROPIC_API_KEY` | production  | Same, for production. The routing model is `ANTHROPIC_MODEL` (a non-secret `vars` entry / config default, `claude-haiku-4-5`). |
 | `DEV_RESEND_WEBHOOK_SECRET`  | development | Svix signing secret for Resend's inbound-email webhook. Pushed as the `RESEND_WEBHOOK_SECRET` Worker secret by `deploy-api`, enabling the agent email scheduling channel (`POST /v1/channels/email/inbound`). |
 | `PROD_RESEND_WEBHOOK_SECRET` | production  | Same, for production. |
 
@@ -168,9 +178,8 @@ Swap `--env development` for `--env production` (and the matching API URLs) to
 target production.
 
 ```bash
-pnpm --filter @rivus/agent   exec wrangler deploy --env development
 pnpm --filter @rivus/docs    build && pnpm --filter @rivus/docs exec wrangler deploy --env development
-EXPO_PUBLIC_API_URL=https://dev-api.rivus.ai EXPO_PUBLIC_AGENT_URL=https://dev-agent.rivus.ai \
+EXPO_PUBLIC_API_URL=https://dev-api.rivus.ai \
   pnpm --filter @rivus/app export:web && \
   pnpm --filter @rivus/app exec wrangler deploy --env development
 NEXT_PUBLIC_API_URL=https://dev-api.rivus.ai \

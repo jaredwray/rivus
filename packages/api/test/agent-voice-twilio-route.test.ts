@@ -7,6 +7,7 @@ import { createInMemoryRepositories } from '../src/repositories/memory';
 import { runVoiceTurn, VOICE_LINES } from '../src/routes/agent-voice-shared';
 import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
 import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
+import { createDecider } from '../src/services/chat/decide';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
@@ -311,6 +312,7 @@ function buildVoiceApp(extraConfig: Record<string, string> = {}): FastifyInstanc
 		notifier: createNotificationService({ notifications: repos.notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
+		chatDecider: createDecider(),
 		ping: async () => ({ ready: true }),
 	});
 }
@@ -435,6 +437,7 @@ describe('POST /v1/channels/voice/twilio/* — signature', () => {
 			notifier: createNotificationService({ notifications: repos.notifications }),
 			faqSimilarity: new NoopFaqSimilarityService(),
 			faqAnswer: new NoopFaqAnswerService(),
+			chatDecider: createDecider(),
 			ping: async () => ({ ready: true }),
 		});
 		app = built;

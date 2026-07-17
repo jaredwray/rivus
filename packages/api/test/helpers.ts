@@ -6,6 +6,7 @@ import { loadConfig } from '../src/config';
 import { createInMemoryRepositories, type InMemoryRepositories } from '../src/repositories/memory';
 import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
 import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
+import { createDecider } from '../src/services/chat/decide';
 import type { AgentEmail, InviteEmail, Mailer, VerificationEmail } from '../src/services/email';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
@@ -113,6 +114,8 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		// Default to the no-op AI services so tests stay hermetic (no model/network).
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
+		// The model-less decider routes chat deterministically — hermetic by default.
+		chatDecider: createDecider(),
 		ping: async () => ({ ready: true }),
 		...overrides,
 	});
@@ -169,6 +172,7 @@ export async function buildTestAppWithRepos(overrides: Partial<AppDeps> = {}): P
 		notifier: createNotificationService({ notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
+		chatDecider: createDecider(),
 		ping: async () => ({ ready: true }),
 		...overrides,
 	});

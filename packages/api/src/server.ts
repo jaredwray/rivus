@@ -18,6 +18,7 @@ import {
 	MongoVerificationCodeRepository,
 } from './repositories/mongo';
 import { createReceivedEmailReader } from './services/agent/email/received';
+import { createDeciderFromConfig } from './services/chat/decide';
 import { createFaqAnswerService } from './services/faq-answer';
 import { createFaqSimilarityService } from './services/faq-similarity';
 import {
@@ -59,6 +60,7 @@ export async function start(): Promise<void> {
 		notifier: createNotificationService({ notifications }),
 		faqSimilarity: createFaqSimilarityService(config),
 		faqAnswer: createFaqAnswerService(config),
+		chatDecider: createDeciderFromConfig(config),
 		// Real readiness: run an actual query so "connected but unauthorized" reports
 		// unready (503, with the reason) instead of falsely healthy.
 		ping: checkDatabaseReady,
