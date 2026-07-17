@@ -187,6 +187,13 @@ anonymous turns get the usual sign-in nudge. The engine is
 an injectable `fetch` (`src/services/web-search.ts`, `src/services/web-browse.ts`),
 reachable only through the audit.
 
+**On signup**, a new account with a website automatically gets a **welcome
+audit**: after the account is created (`POST /v1/auth/verify`), Rivus runs the
+audit once and drops a summary into the owner's notifications (the bell) — the
+✓/✗ headline plus the top things to fix, or an "I couldn't reach your website"
+note. It's fire-and-forget, so it never delays signup, and it's a no-op when no
+website is on file or ZenRows isn't configured.
+
 ### Agent email channel (scheduling over email)
 
 Customers of a business can email the business's agent address —

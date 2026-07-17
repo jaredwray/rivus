@@ -1,6 +1,7 @@
 import type { AccountId, CreateNotificationInput, Job, Role, UserId } from '@rivus/core';
 import type { FastifyBaseLogger } from 'fastify';
 import type { NotificationRepository } from '../repositories/types';
+import type { WebsiteAuditReport } from './website-audit';
 
 /**
  * Turns domain events into per-user notifications. Routes call these methods
@@ -62,6 +63,15 @@ export interface ConversationNeedsReviewArgs extends BaseArgs {
 	contactName: string;
 }
 
+export interface WebsiteAuditReadyArgs extends BaseArgs {
+	/** The account owner (from signup) — the recipient of the welcome audit. */
+	ownerId: UserId;
+	/** The audit report to summarize, or null when the site couldn't be loaded. */
+	report: WebsiteAuditReport | null;
+	/** The URL that was audited (used for the "couldn't reach it" message). */
+	url: string;
+}
+
 export interface NotificationService {
 	/** A job was created; notify its assignee when it isn't the creator. */
 	jobCreated(args: JobEventArgs): Promise<void>;
@@ -75,12 +85,18 @@ export interface NotificationService {
 	roleChanged(args: RoleChangedArgs): Promise<void>;
 	/** Rivus paused a conversation for a human; alert every member except the actor. */
 	conversationNeedsReview(args: ConversationNeedsReviewArgs): Promise<void>;
+	/** The welcome website audit finished at signup; summarize it for the new owner. */
+	websiteAuditReady(args: WebsiteAuditReadyArgs): Promise<void>;
 }
 
 /** Where each notification type deep-links in the app. */
 const SCHEDULE_LINK = '/schedule';
 const TEAM_LINK = '/team';
 const INBOX_LINK = '/inbox';
+const SETTINGS_LINK = '/settings';
+
+/** How many failing checks the welcome-audit notification lists before "…and N more". */
+const MAX_AUDIT_SUGGESTIONS = 3;
 
 const ROLE_LABELS: Record<Role, string> = {
 	owner: 'an Owner',
@@ -277,6 +293,55 @@ class NotificationServiceImpl implements NotificationService {
 				logger,
 			);
 		}
+	}
+
+	async websiteAuditReady({
+		accountId,
+		ownerId,
+		report,
+		url,
+		logger,
+	}: WebsiteAuditReadyArgs): Promise<void> {
+		if (report === null) {
+			await this.emit(
+				accountId,
+				ownerId,
+				{
+					type: 'system',
+					title: 'I couldn’t reach your website',
+					body: `I tried to review ${url} but couldn’t load it — it may be down or blocking visitors. Once it’s reachable, ask me to “audit my website”.`,
+					linkHref: SETTINGS_LINK,
+				},
+				logger,
+			);
+			return;
+		}
+		const failed = report.checks.filter((check) => !check.passed);
+		const passed = report.checks.length - failed.length;
+		const lines = [
+			`I reviewed ${report.url} — ${passed} of ${report.checks.length} checks look good.`,
+		];
+		if (failed.length === 0) {
+			lines.push('', 'Everything I checked looks great. 🎉');
+		} else {
+			const shown = failed.slice(0, MAX_AUDIT_SUGGESTIONS);
+			lines.push('', 'Top things to improve:', ...shown.map((check) => `• ${check.label}`));
+			const remaining = failed.length - shown.length;
+			if (remaining > 0) {
+				lines.push('', `…and ${remaining} more. Ask me to “audit my website” for the full list.`);
+			}
+		}
+		await this.emit(
+			accountId,
+			ownerId,
+			{
+				type: 'system',
+				title: 'Your website audit is ready',
+				body: lines.join('\n'),
+				linkHref: SETTINGS_LINK,
+			},
+			logger,
+		);
 	}
 }
 
