@@ -5,6 +5,7 @@ import { loadConfig } from './config';
 import { createInMemoryRepositories } from './repositories/memory';
 import { NoopReceivedEmailReader } from './services/agent/email/received';
 import { NoopChannelProvisioner, NoopNumberReleaser } from './services/channel-provisioning';
+import { createDecider } from './services/chat/decide';
 import { NoopMailer } from './services/email';
 import { NoopFaqAnswerService } from './services/faq-answer';
 import { NoopFaqSimilarityService } from './services/faq-similarity';
@@ -59,6 +60,7 @@ async function main(): Promise<void> {
 		notifier: createNotificationService({ notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
+		chatDecider: createDecider(),
 		ping: async () => ({ ready: true }),
 	});
 

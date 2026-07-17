@@ -10,7 +10,7 @@ packages/
   core/      # @rivus/core   — shared types, Zod schemas, utilities (tsdown lib)
   api/       # @rivus/api    — Fastify REST API on MongoDB Atlas (Mongoose) + JWT
   website/   # @rivus/website— Next.js 16 marketing site
-  agent/     # @rivus/agent  — Cloudflare Agent (Durable Object) the app chats with
+  agent/     # @rivus/agent  — legacy chat Worker, frozen (chat now lives in the API at /v1/chat)
   docs/      # @rivus/docs   — Docula site (docs, changelog, API reference)
   app/       # @rivus/app    — Expo app (iOS / Android / Web)
 ```

@@ -28,25 +28,11 @@ jobs:
       - run: pnpm test:coverage
       - run: pnpm build
 
-  deploy-agent:
-    name: Deploy agent
-    needs: validate
-    runs-on: ubuntu-latest
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      # Shared with the API so the agent can verify its session tokens.
-      DEV_JWT_SECRET: ${{ secrets.DEV_JWT_SECRET }}
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: ./.github/actions/setup
-      - run: pnpm --filter @rivus/agent exec wrangler deploy --env development
-      # Keep the agent's JWT_SECRET in sync with the API. Skipped until the GitHub
-      # secret exists (until then the agent just treats every request as anonymous).
-      - name: Sync the shared JWT secret
-        if: ${{ env.DEV_JWT_SECRET != '' }}
-        run: |
-          printf '%s' "$DEV_JWT_SECRET" | pnpm --filter @rivus/agent exec wrangler secret put JWT_SECRET --env development
+  # The standalone agent Worker is no longer deployed: chat moved into the API
+  # (`POST /v1/chat`). The already-deployed `rivus-agent-dev` Worker is left
+  # frozen for old native builds until it is retired (see AGENT_MIGRATION.md);
+  # if JWT_SECRET rotates during that window, update the frozen Worker by hand
+  # (`wrangler secret put JWT_SECRET --env development` in packages/agent).
 
   deploy-docs:
     name: Deploy docs
@@ -75,10 +61,9 @@ jobs:
       # Inlined into the Expo web bundle; lets the dev app show the staff-only
       # account seeder in Settings (the API enforces the same gate server-side).
       EXPO_PUBLIC_RIVUS_ENV: development
-      # Baked into the Expo web bundle at export time.
+      # Baked into the Expo web bundle at export time. Chat (`/v1/chat`) rides
+      # on the same API base URL — there is no separate agent service anymore.
       EXPO_PUBLIC_API_URL: https://dev-api.rivus.ai
-      # The deployed app talks to the deployed agent.
-      EXPO_PUBLIC_AGENT_URL: https://dev-agent.rivus.ai
       # Optional: address-autocomplete key (referrer-restricted). Unset → plain field.
       EXPO_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY }}
     steps:
@@ -133,6 +118,9 @@ jobs:
       DEV_RESEND_API_KEY: ${{ secrets.DEV_RESEND_API_KEY }}
       # Optional: enables the AI duplicate-FAQ check. Unset → the check is a no-op.
       DEV_OPENAI_API_KEY: ${{ secrets.DEV_OPENAI_API_KEY }}
+      # Optional: enables the model-backed chat router (`/v1/chat`) and Anthropic
+      # as an AI-provider fallback. Unset → chat routes deterministically.
+      DEV_ANTHROPIC_API_KEY: ${{ secrets.DEV_ANTHROPIC_API_KEY }}
       # Optional: enables the agent email channel's inbound webhook. Unset → the
       # route answers 503 (the channel is off) while everything else still works.
       DEV_RESEND_WEBHOOK_SECRET: ${{ secrets.DEV_RESEND_WEBHOOK_SECRET }}
@@ -149,11 +137,15 @@ jobs:
           printf '%s' "$DEV_MONGODB_URI" | pnpm --filter @rivus/api exec wrangler secret put MONGODB_URI --env development
           printf '%s' "$DEV_JWT_SECRET" | pnpm --filter @rivus/api exec wrangler secret put JWT_SECRET --env development
           printf '%s' "$DEV_RESEND_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put RESEND_API_KEY --env development
-      # Optional AI key — pushed only when the GitHub secret is set.
+      # Optional AI keys — each pushed only when its GitHub secret is set.
       - name: Sync optional AI secret
         if: ${{ env.DEV_OPENAI_API_KEY != '' }}
         run: |
           printf '%s' "$DEV_OPENAI_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put OPENAI_API_KEY --env development
+      - name: Sync optional chat-router secret
+        if: ${{ env.DEV_ANTHROPIC_API_KEY != '' }}
+        run: |
+          printf '%s' "$DEV_ANTHROPIC_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put ANTHROPIC_API_KEY --env development
       # Optional inbound-email webhook secret — pushed only when set, so an empty
       # value never reaches the container (min(1) would crash-loop it).
       - name: Sync optional email-channel secret
@@ -161,15 +153,15 @@ jobs:
         run: |
           printf '%s' "$DEV_RESEND_WEBHOOK_SECRET" | pnpm --filter @rivus/api exec wrangler secret put RESEND_WEBHOOK_SECRET --env development
 
-  # The five service deploys above all ship to the single Cloudflare `development`
+  # The four service deploys above all ship to the single Cloudflare `development`
   # environment. If each of them set `environment: development`, GitHub would open
-  # one deployment record per job — five per run — which floods the Deployments
+  # one deployment record per job — four per run — which floods the Deployments
   # timeline and makes the "active" deployment race between services. Instead the
   # deploy jobs run without an environment, and this job records exactly one
   # deployment for the run, once every service has shipped.
   record-deployment:
     name: Record development deployment
-    needs: [deploy-agent, deploy-docs, deploy-app, deploy-website, deploy-api]
+    needs: [deploy-docs, deploy-app, deploy-website, deploy-api]
     runs-on: ubuntu-latest
     environment:
       name: development

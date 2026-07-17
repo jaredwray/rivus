@@ -625,6 +625,97 @@
         }
       }
     },
+    "/v1/chat/": {
+      "get": {
+        "summary": "Rivus's greeting (a no-auth smoke test)",
+        "tags": [
+          "chat"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatReply"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Chat with Rivus",
+        "tags": [
+          "chat"
+        ],
+        "description": "Send the conversation so far and receive Rivus’s reply. Authentication is optional: signed-in sessions (bearer token or session cookie) can ask about their company and search or update their knowledge base; anonymous callers are greeted and nudged to sign in.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "messages": {
+                    "default": [],
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "role": {
+                          "default": "user",
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "assistant",
+                            "system"
+                          ]
+                        },
+                        "content": {
+                          "type": "string",
+                          "maxLength": 8000
+                        }
+                      },
+                      "required": [
+                        "content"
+                      ]
+                    }
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 8000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/members/": {
       "get": {
         "summary": "List members and pending invites for your account",

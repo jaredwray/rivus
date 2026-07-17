@@ -1,5 +1,13 @@
 # @rivus/agent
 
+> **⚠️ LEGACY — FROZEN.** The Rivus chat moved into `@rivus/api` as
+> `POST /v1/chat` (see [AGENT_MIGRATION.md](../../AGENT_MIGRATION.md)); the
+> app no longer calls this service and CI no longer deploys it. The deployed
+> Workers (`dev-agent.rivus.ai` / `agent.rivus.ai`) stay up only for app builds
+> that predate the migration, and this package stays in-tree only so they can
+> be redeployed in an emergency until they're retired. Don't add features here —
+> the chat's logic now lives in `packages/api/src/services/chat/`.
+
 The Rivus AI agent, built on [Cloudflare Agents](https://developers.cloudflare.com/agents/).
 A Cloudflare Agent is a **Durable Object** with conversation state built in, so
 each chat is its own addressable, stateful instance rather than a stateless

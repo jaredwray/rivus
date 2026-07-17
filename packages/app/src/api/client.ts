@@ -5,12 +5,15 @@ import {
 	acceptInviteSchema,
 	accountStatusSchema,
 	approveReplySchema,
+	type ChatMessage,
+	type ChatReply,
 	type Conversation,
 	type ConversationDetail,
 	type ConversationId,
 	type ConversationStatus,
 	type Customer,
 	type CustomerId,
+	chatRequestSchema,
 	conversationChannelSchema,
 	conversationListQuerySchema,
 	conversationStatusSchema,
@@ -359,6 +362,9 @@ export interface FaqListResponse {
 	meta: PaginationMeta;
 }
 
+// Rivus's single chat reply (see {@link RivusApiClient.chat}).
+const chatReplyResponseSchema = z.object({ reply: z.string() }) satisfies z.ZodType<ChatReply>;
+
 const customerResponseSchema = z.object({
 	id: customerId(),
 	accountId: accountId(),
@@ -659,6 +665,14 @@ export interface RivusApiClient {
 	updateFaq(token: string, id: FaqId, input: UpdateFaqInput): Promise<Faq>;
 	/** Delete one of the account's FAQs. */
 	deleteFaq(token: string, id: FaqId): Promise<void>;
+	/**
+	 * Chat with Rivus: send the conversation so far, get its single reply back.
+	 * Auth is optional — signed-in callers (bearer on native, session cookie on
+	 * web) get answers from their company and knowledge base, anonymous callers
+	 * get the greeting and a sign-in nudge. The token trails (and is optional)
+	 * because chat is the one call that works signed out.
+	 */
+	chat(messages: ChatMessage[], token?: string): Promise<ChatReply>;
 	/** List the account's customers (CRM contacts). */
 	listCustomers(token: string, query?: Partial<PaginationQuery>): Promise<CustomerListResponse>;
 	/** Create a customer for the account. */
@@ -1023,6 +1037,11 @@ export function createApiClient(
 				method: 'DELETE',
 				headers: authHeaders(token),
 			});
+		},
+
+		async chat(messages: ChatMessage[], token?: string) {
+			const payload = parseInput(chatRequestSchema, { messages });
+			return request('/v1/chat', chatReplyResponseSchema, jsonInit('POST', payload, token));
 		},
 
 		async listCustomers(token: string, query?: Partial<PaginationQuery>) {

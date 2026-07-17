@@ -8,6 +8,9 @@ import {
 	agentSlotSchema,
 	agentThreadStateSchema,
 	approveReplySchema,
+	chatMessageSchema,
+	chatReplySchema,
+	chatRequestSchema,
 	conversationChannelSchema,
 	conversationListQuerySchema,
 	conversationStatusSchema,
@@ -1037,5 +1040,50 @@ describe('publicCustomerSignupSchema', () => {
 			balance: 500,
 		});
 		expect(parsed).not.toHaveProperty('balance');
+	});
+});
+
+describe('chat schemas', () => {
+	it('parses a full transcript and defaults an omitted role to user', () => {
+		const parsed = chatRequestSchema.parse({
+			messages: [
+				{ content: 'hi' },
+				{ role: 'assistant', content: 'Hello!' },
+				{ role: 'user', content: 'what can you do?' },
+			],
+		});
+		expect(parsed.messages).toEqual([
+			{ role: 'user', content: 'hi' },
+			{ role: 'assistant', content: 'Hello!' },
+			{ role: 'user', content: 'what can you do?' },
+		]);
+	});
+
+	it('defaults an omitted transcript to empty (the greeting request)', () => {
+		expect(chatRequestSchema.parse({})).toEqual({ messages: [] });
+	});
+
+	it('accepts the single-message shorthand alongside messages', () => {
+		const parsed = chatRequestSchema.parse({ message: 'hello there' });
+		expect(parsed.message).toBe('hello there');
+		expect(parsed.messages).toEqual([]);
+	});
+
+	it('allows an empty content string (the app greets with an empty turn)', () => {
+		expect(chatMessageSchema.parse({ content: '' })).toEqual({ role: 'user', content: '' });
+	});
+
+	it('rejects an unknown role and over-long content', () => {
+		expect(chatMessageSchema.safeParse({ role: 'robot', content: 'hi' }).success).toBe(false);
+		expect(chatMessageSchema.safeParse({ content: 'x'.repeat(8001) }).success).toBe(false);
+	});
+
+	it('rejects an over-long transcript', () => {
+		const messages = Array.from({ length: 201 }, () => ({ content: 'hi' }));
+		expect(chatRequestSchema.safeParse({ messages }).success).toBe(false);
+	});
+
+	it('round-trips a reply', () => {
+		expect(chatReplySchema.parse({ reply: 'Hello!' })).toEqual({ reply: 'Hello!' });
 	});
 });

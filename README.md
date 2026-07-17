@@ -19,7 +19,7 @@ app — all sharing one core library and one toolchain.
 | [`@rivus/core`](./packages/core)     | TypeScript, Zod                         | Shared domain types, schemas, and utilities                          |
 | [`@rivus/api`](./packages/api)       | Fastify, Mongoose (MongoDB Atlas), JWT  | REST API with an OpenAPI document generated from its route schemas   |
 | [`@rivus/website`](./packages/website) | Next.js 16 (App Router), React 19     | Marketing site                                                       |
-| [`@rivus/agent`](./packages/agent)   | Cloudflare Agents (Durable Objects)     | The Rivus AI agent the app chats with                               |
+| [`@rivus/agent`](./packages/agent)   | Cloudflare Agents (Durable Objects)     | Legacy chat Worker, frozen — chat now lives in the API (`/v1/chat`) |
 | [`@rivus/docs`](./packages/docs)     | Docula                                  | Docs, changelog, and the API reference                              |
 | [`@rivus/app`](./packages/app)       | Expo (iOS / Android / Web)              | Cross-platform client application                                   |
 
@@ -73,8 +73,10 @@ pnpm --filter @rivus/website dev
   (in-memory for tests, Mongoose for production), and its Zod schemas generate
   the OpenAPI document the **docs** site renders as its API reference.
 - The **website** and **app** both read `*_PUBLIC_API_URL` to talk to the API.
-- The **agent** is a Cloudflare Agent (Durable Object) the **app** chats with via
-  a floating "Rivus" launcher; it reads `EXPO_PUBLIC_AGENT_URL` to reach it.
+- The **Rivus chat** (the app's floating launcher) is an API endpoint
+  (`POST /v1/chat`) — optionally authenticated, answering from the account's
+  company record and knowledge base. The old standalone agent Worker is frozen
+  pending retirement (see [AGENT_MIGRATION.md](./AGENT_MIGRATION.md)).
 
 ## Supply chain & CI
 

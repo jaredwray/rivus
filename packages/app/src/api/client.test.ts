@@ -993,6 +993,70 @@ describe('createApiClient', () => {
 		});
 	});
 
+	describe('chat', () => {
+		it('POSTs the conversation with the bearer token and parses the reply', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ reply: 'Hello! 👋' }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.chat([{ role: 'user', content: 'hi' }], 'owner-token');
+
+			expect(result).toEqual({ reply: 'Hello! 👋' });
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${BASE}/v1/chat`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer owner-token' });
+			expect(JSON.parse(init.body as string)).toEqual({
+				messages: [{ role: 'user', content: 'hi' }],
+			});
+		});
+
+		it('omits the bearer header without a token (web relies on the session cookie)', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ reply: 'Hello!' }));
+
+			const client = createApiClient(BASE, fetchMock, { withCredentials: true });
+			await client.chat([]);
+
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(init.headers).not.toMatchObject({ Authorization: expect.anything() });
+			// Cookie mode: credentials ride along exactly like every other client call.
+			expect(init.credentials).toBe('include');
+		});
+
+		it('sends an empty transcript as-is (the greeting request)', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ reply: 'Hello!' }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.chat([]);
+
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(JSON.parse(init.body as string)).toEqual({ messages: [] });
+		});
+
+		it('rejects an over-long transcript locally before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			const messages = Array.from({ length: 201 }, () => ({
+				role: 'user' as const,
+				content: 'hi',
+			}));
+			await expect(client.chat(messages)).rejects.toThrow(/too long/i);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it('surfaces an HTTP failure as an ApiError', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse(
+					{ error: 'Internal Server Error', message: 'boom', statusCode: 500 },
+					{ status: 500 },
+				),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client.chat([{ role: 'user', content: 'hi' }]).catch((e) => e);
+			expect(error).toBeInstanceOf(ApiError);
+			expect(error.status).toBe(500);
+		});
+	});
+
 	describe('listCustomers', () => {
 		it('returns parsed customers and sends the bearer auth header', async () => {
 			const customers = [makeCustomer(), makeCustomer()];

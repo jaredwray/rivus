@@ -47,8 +47,12 @@
 				// allowed could otherwise read cookie-authenticated responses.
 				"CORS_ORIGIN": "https://dev-app.rivus.ai,https://dev.rivus.ai",
 				// Scope the session cookie to the shared parent domain so it reaches the
-				// app and the agent (dev-app/dev-agent.rivus.ai). Only the app origin is
-				// granted credentialed CORS, so siblings can't read authenticated data.
+				// app and the frozen legacy agent Worker (dev-app/dev-agent.rivus.ai) —
+				// old app builds still chat through the latter. Once that Worker is
+				// retired (see AGENT_MIGRATION.md), narrow this to a host-only cookie by
+				// removing the var (and expire the old domain-scoped cookie on sign-in).
+				// Only the app origin is granted credentialed CORS, so siblings can't
+				// read authenticated data.
 				"COOKIE_DOMAIN": ".rivus.ai",
 				// Base URL for the accept-invite / sign-in-code links in emails.
 				"APP_URL": "https://dev-app.rivus.ai",
@@ -98,8 +102,10 @@
 				"RIVUS_ENV": "production",
 				"CORS_ORIGIN": "https://app.rivus.ai,https://rivus.ai,https://www.rivus.ai",
 				// Scope the session cookie to the shared parent domain so it reaches the
-				// app and the agent (app/agent.rivus.ai), enabling web chat with an
-				// authenticated agent.
+				// app and the frozen legacy agent Worker (app/agent.rivus.ai) — old app
+				// builds still chat through the latter. Once that Worker is retired (see
+				// AGENT_MIGRATION.md), narrow this to a host-only cookie by removing the
+				// var (and expire the old domain-scoped cookie on sign-in).
 				"COOKIE_DOMAIN": ".rivus.ai",
 				// Base URL for the accept-invite / sign-in-code links in emails.
 				"APP_URL": "https://app.rivus.ai",
