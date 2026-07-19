@@ -33,7 +33,7 @@ export function Pricing() {
 								{tier.cta}
 							</a>
 							<ul className="plan__features">
-								{tier.features.map((feature) => (
+								{[...tier.capacity, ...tier.features].map((feature) => (
 									<li key={feature}>
 										<CheckIcon size={18} />
 										{feature}

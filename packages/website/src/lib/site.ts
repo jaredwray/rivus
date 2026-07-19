@@ -260,14 +260,17 @@ export interface PricingTier {
 	cta: string;
 	/** Where the tier's CTA goes; defaults to the sign-up section. */
 	ctaHref?: string;
+	/** What the plan covers — users, locations, per-location pricing. */
+	capacity: string[];
+	/** Product features; identical on every tier — every plan gets everything. */
 	features: string[];
 	featured?: boolean;
 	badge?: string;
 }
 
 /**
- * The full product — every plan ships every feature. Tiers differ only by how
- * many users and locations they cover.
+ * The full product — every plan ships every feature. Tiers differ only by
+ * capacity (how many users and locations they cover).
  */
 const allPlanFeatures = [
 	'All channels answered 24/7',
@@ -285,7 +288,8 @@ export const pricingTiers: PricingTier[] = [
 		price: '$149',
 		period: '/mo',
 		cta: 'Start free',
-		features: ['1 user · 1 location', ...allPlanFeatures],
+		capacity: ['1 user · 1 location'],
+		features: allPlanFeatures,
 	},
 	{
 		name: 'Team',
@@ -295,7 +299,8 @@ export const pricingTiers: PricingTier[] = [
 		cta: 'Start free',
 		featured: true,
 		badge: 'Most popular',
-		features: ['Unlimited users · 1 location', ...allPlanFeatures],
+		capacity: ['Unlimited users · 1 location'],
+		features: allPlanFeatures,
 	},
 	{
 		name: 'Multi-location',
@@ -304,11 +309,8 @@ export const pricingTiers: PricingTier[] = [
 		period: '/mo',
 		priceNote: 'for the first location',
 		cta: 'Start free',
-		features: [
-			'Unlimited users · unlimited locations',
-			'$249/mo per additional location',
-			...allPlanFeatures,
-		],
+		capacity: ['Unlimited users · unlimited locations', '$249/mo per additional location'],
+		features: allPlanFeatures,
 	},
 ];
 

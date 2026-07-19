@@ -1,12 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-	apiUrl,
-	type Feature,
-	featureAnchor,
-	features,
-	type PricingTier,
-	pricingTiers,
-} from './site';
+import { apiUrl, type Feature, featureAnchor, features, pricingTiers } from './site';
 
 describe('site content', () => {
 	it('derives a url-safe anchor from a feature title', () => {
@@ -35,14 +28,13 @@ describe('site content', () => {
 		}
 	});
 
-	it('ships the same feature set on every tier — plans differ only by users and locations', () => {
-		// Capacity and per-location pricing lines mention users/locations; the
-		// product features that remain must be identical across all tiers.
-		const productFeatures = (tier: PricingTier) =>
-			tier.features.filter((feature) => !/user|location/i.test(feature));
-		const [first, ...rest] = pricingTiers.map(productFeatures);
-		for (const other of rest) {
-			expect(other).toEqual(first);
+	it('ships the same feature set on every tier — plans differ only by capacity', () => {
+		const [first, ...rest] = pricingTiers;
+		if (!first) throw new Error('no pricing tiers defined');
+		expect(first.features.length).toBeGreaterThan(0);
+		for (const tier of rest) {
+			expect(tier.features).toEqual(first.features);
+			expect(tier.capacity.length).toBeGreaterThan(0);
 		}
 	});
 
