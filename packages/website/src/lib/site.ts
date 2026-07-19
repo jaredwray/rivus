@@ -255,6 +255,8 @@ export interface PricingTier {
 	audience: string;
 	price: string;
 	period?: string;
+	/** Fine print directly under the price (e.g. what the base price covers). */
+	priceNote?: string;
 	cta: string;
 	/** Where the tier's CTA goes; defaults to the sign-up section. */
 	ctaHref?: string;
@@ -263,6 +265,19 @@ export interface PricingTier {
 	badge?: string;
 }
 
+/**
+ * The full product — every plan ships every feature. Tiers differ only by how
+ * many users and locations they cover.
+ */
+const allPlanFeatures = [
+	'All channels answered 24/7',
+	'Scheduling & reminders',
+	'QuickBooks billing',
+	'Reviews & FAQs',
+	'Google & Facebook ads',
+	'Newsletter & campaigns',
+];
+
 export const pricingTiers: PricingTier[] = [
 	{
 		name: 'Solo',
@@ -270,12 +285,7 @@ export const pricingTiers: PricingTier[] = [
 		price: '$149',
 		period: '/mo',
 		cta: 'Start free',
-		features: [
-			'All channels answered 24/7',
-			'Scheduling & reminders',
-			'QuickBooks billing',
-			'Reviews & FAQs',
-		],
+		features: ['1 user · 1 location', ...allPlanFeatures],
 	},
 	{
 		name: 'Team',
@@ -285,24 +295,19 @@ export const pricingTiers: PricingTier[] = [
 		cta: 'Start free',
 		featured: true,
 		badge: 'Most popular',
-		features: [
-			'Everything in Solo',
-			'Up to 10 team members',
-			'Google & Facebook ads',
-			'Newsletter & campaigns',
-		],
+		features: ['Unlimited users · 1 location', ...allPlanFeatures],
 	},
 	{
 		name: 'Multi-location',
 		audience: 'For franchises & chains',
-		price: "Let's talk",
-		cta: 'Contact sales',
-		ctaHref: '/contact',
+		price: '$349',
+		period: '/mo',
+		priceNote: 'for the first location',
+		cta: 'Start free',
 		features: [
-			'Everything in Team',
-			'Unlimited locations & seats',
-			'Dedicated success manager',
-			'SLA & priority support',
+			'Unlimited users · unlimited locations',
+			'$249/mo per additional location',
+			...allPlanFeatures,
 		],
 	},
 ];

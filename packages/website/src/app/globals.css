@@ -1740,6 +1740,15 @@ button:focus-visible {
 	color: #a8a4bd;
 }
 
+.plan__price-note {
+	font-size: 13px;
+	color: var(--sub);
+}
+
+.plan--featured .plan__price-note {
+	color: #a8a4bd;
+}
+
 .plan__cta {
 	display: block;
 	text-align: center;

@@ -11,7 +11,7 @@ export function Pricing() {
 				</div>
 				<div className="price-note">
 					<CheckIcon size={17} />
-					Free onboarding specialist on every plan
+					Every feature on every plan — plus a free onboarding specialist
 				</div>
 				<div className="price-grid">
 					{pricingTiers.map((tier) => (
@@ -25,6 +25,7 @@ export function Pricing() {
 								</span>
 								{tier.period ? <span className="plan__period">{tier.period}</span> : null}
 							</div>
+							{tier.priceNote ? <div className="plan__price-note">{tier.priceNote}</div> : null}
 							<a
 								className={tier.featured ? 'btn btn--primary plan__cta' : 'btn btn--soft plan__cta'}
 								href={tier.ctaHref ?? signupUrl}
