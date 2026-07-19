@@ -159,7 +159,7 @@ export const accounts: Account[] = [
 		loc: 'Boise, ID',
 		initials: 'R',
 		plan: 'Multi-location',
-		mrr: '$1,180',
+		mrr: '$1,096',
 		channels: 'Phone · SMS · Email · WA',
 		specialist: 'Aisha N.',
 		status: 'active',
