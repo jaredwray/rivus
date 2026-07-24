@@ -21,6 +21,23 @@ describe('site content', () => {
 		expect(pricingTiers.filter((tier) => tier.featured)).toHaveLength(1);
 	});
 
+	it('publishes a real monthly price on every tier — no contact-sales pricing', () => {
+		for (const tier of pricingTiers) {
+			expect(tier.price).toMatch(/^\$\d/);
+			expect(tier.period).toBe('/mo');
+		}
+	});
+
+	it('ships the same feature set on every tier — plans differ only by capacity', () => {
+		const [first, ...rest] = pricingTiers;
+		if (!first) throw new Error('no pricing tiers defined');
+		expect(first.features.length).toBeGreaterThan(0);
+		for (const tier of rest) {
+			expect(tier.features).toEqual(first.features);
+			expect(tier.capacity.length).toBeGreaterThan(0);
+		}
+	});
+
 	it('falls back to a local api url', () => {
 		expect(apiUrl).toMatch(/^https?:\/\//);
 	});

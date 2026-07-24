@@ -1666,7 +1666,6 @@ button:focus-visible {
 	display: grid;
 	grid-template-columns: repeat(3, 1fr);
 	gap: 20px;
-	align-items: start;
 }
 
 .plan {
@@ -1737,6 +1736,15 @@ button:focus-visible {
 }
 
 .plan--featured .plan__period {
+	color: #a8a4bd;
+}
+
+.plan__price-note {
+	font-size: 13px;
+	color: var(--sub);
+}
+
+.plan--featured .plan__price-note {
 	color: #a8a4bd;
 }
 
