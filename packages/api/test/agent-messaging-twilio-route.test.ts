@@ -12,6 +12,7 @@ import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
 import { signTwilioRequest } from '../src/services/twilio';
+import { createWebsiteAuditService } from '../src/services/website-audit';
 import {
 	buildTestAppWithRepos,
 	RecordingMailer,
@@ -395,6 +396,7 @@ function buildTwilioApp(extraConfig: Record<string, string> = {}): FastifyInstan
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
 		chatDecider: createDecider(),
+		websiteAudit: createWebsiteAuditService({}),
 		ping: async () => ({ ready: true }),
 	});
 }

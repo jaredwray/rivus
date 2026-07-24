@@ -446,3 +446,92 @@ describe('resolveIntent — multi-turn', () => {
 		expect(resolveIntent(conversation)).toEqual({ kind: 'unknown' });
 	});
 });
+
+describe('parseIntent — website audit', () => {
+	it('routes explicit audit asks', () => {
+		expect(parseIntent('audit my website')).toEqual({ kind: 'website_audit' });
+		expect(parseIntent('can you audit our site?')).toEqual({ kind: 'website_audit' });
+		expect(parseIntent('run a website audit')).toEqual({ kind: 'website_audit' });
+		expect(parseIntent('review my website please')).toEqual({ kind: 'website_audit' });
+		expect(parseIntent('analyze our online presence')).toEqual({ kind: 'website_audit' });
+	});
+
+	it('routes "check" and "analysis" phrasings (parity with the model router)', () => {
+		expect(parseIntent('check my website')).toEqual({ kind: 'website_audit' });
+		expect(parseIntent('can you check over our site?')).toEqual({ kind: 'website_audit' });
+		expect(parseIntent('run an analysis of our website')).toEqual({ kind: 'website_audit' });
+		expect(parseIntent('review my homepage')).toEqual({ kind: 'website_audit' });
+	});
+
+	it('does not fire on trades "job site" phrasing (bare "site" is excluded)', () => {
+		// Rivus serves trades businesses; "site" here means a job site, not the web,
+		// so these must not run an audit (they fall through to other handling — the
+		// pre-existing "site" company-field probe — never website_audit).
+		expect(parseIntent('can you inspect the site access for the Morrison job?').kind).not.toBe(
+			'website_audit',
+		);
+		expect(parseIntent('assess the site conditions').kind).not.toBe('website_audit');
+	});
+
+	it('treats a how-to / advice question as a question, not an audit run', () => {
+		// These want guidance (answered from the knowledge base), not a paid audit.
+		expect(parseIntent('how do I audit my website?')).toEqual({
+			kind: 'company_info',
+			fields: ['website'],
+		});
+		expect(parseIntent('should I review our website?')).toEqual({
+			kind: 'company_info',
+			fields: ['website'],
+		});
+		// …but an audit command that merely mentions improvement still runs.
+		expect(parseIntent('review our website and tell me how to improve it')).toEqual({
+			kind: 'website_audit',
+		});
+	});
+
+	it('keeps plain website questions on the company record', () => {
+		// No auditing verb — the user wants the URL, not a report.
+		expect(parseIntent('what is our website?')).toEqual({
+			kind: 'company_info',
+			fields: ['website'],
+		});
+		expect(parseIntent('show me my website')).toEqual({
+			kind: 'company_info',
+			fields: ['website'],
+		});
+	});
+
+	it('wins over the help probe when the turn names the audit', () => {
+		expect(parseIntent('help me audit my website')).toEqual({ kind: 'website_audit' });
+		// A bare capabilities question still gets the menu.
+		expect(parseIntent('what can you do?')).toEqual({ kind: 'help' });
+	});
+
+	it('is not stolen by an inferred FAQ context', () => {
+		// "inspect … for …" would satisfy hasFaqAction via the preposition, but an
+		// explicit audit ask must run the audit even mid-FAQ-conversation.
+		expect(parseIntent('inspect the website for problems', { topic: 'faq' })).toEqual({
+			kind: 'website_audit',
+		});
+	});
+
+	it('still yields to an explicit knowledge-base command', () => {
+		// The FAQ branch keeps priority; the create parser trims the leading "our".
+		expect(parseIntent('add an faq about our website audit service')).toEqual({
+			kind: 'faq_create',
+			question: 'website audit service',
+			answer: null,
+		});
+	});
+});
+
+describe('resolveIntent — website audit in conversation', () => {
+	it('routes an audit ask regardless of the conversation topic', () => {
+		const conversation = [
+			user('how many faqs do we have?'),
+			assistant('Your knowledge base has 3 FAQs: …'),
+			user('now audit my website'),
+		];
+		expect(resolveIntent(conversation)).toEqual({ kind: 'website_audit' });
+	});
+});

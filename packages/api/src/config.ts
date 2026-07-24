@@ -140,6 +140,18 @@ const envSchema = z
 		XAI_MODEL: z.string().min(1).default('grok-4-fast'),
 		ANTHROPIC_API_KEY: z.string().min(1).optional(),
 		ANTHROPIC_MODEL: z.string().min(1).default('claude-haiku-4-5'),
+		// --- Web tools (the chat's website audit — their one purpose) ---
+		// These power "audit my website" and nothing else: there is no generic web
+		// search or page fetching.
+		// ZenRows fetches the account's OWN website through rotating residential
+		// proxies with JavaScript rendering, so JS-heavy and bot-walled sites still
+		// load. When unset, the audit degrades to a friendly "not enabled" reply, so
+		// it never gates boot.
+		ZENROWS_API_KEY: z.string().min(1).optional(),
+		// The Brave Search API adds the audit's presence check — whether the site
+		// surfaces when searching the business name. When unset, the audit still
+		// runs; only that one check is skipped.
+		BRAVE_SEARCH_API_KEY: z.string().min(1).optional(),
 	})
 	.superRefine((env, ctx) => {
 		// In production, refuse to boot with the well-known dev secret or a weak one.

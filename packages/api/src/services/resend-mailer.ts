@@ -17,6 +17,8 @@ export type FetchLike = (
 		headers: Record<string, string>;
 		/** Absent for bodyless requests (GET) — `fetch` rejects a GET with a body. */
 		body?: string;
+		/** Optional deadline (e.g. `AbortSignal.timeout(…)`); the global fetch honors it. */
+		signal?: AbortSignal;
 	},
 ) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
 

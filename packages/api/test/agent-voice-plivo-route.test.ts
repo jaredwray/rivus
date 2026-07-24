@@ -13,6 +13,7 @@ import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
 import { signPlivoUrl } from '../src/services/plivo';
+import { createWebsiteAuditService } from '../src/services/website-audit';
 import {
 	buildTestAppWithRepos,
 	RecordingMailer,
@@ -289,6 +290,7 @@ function buildVoiceApp(extraConfig: Record<string, string> = {}): FastifyInstanc
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
 		chatDecider: createDecider(),
+		websiteAudit: createWebsiteAuditService({}),
 		ping: async () => ({ ready: true }),
 	});
 }

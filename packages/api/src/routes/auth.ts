@@ -1,4 +1,5 @@
 import {
+	type Account,
 	type AccountId,
 	acceptInviteSchema,
 	isRivusStaffEmail,
@@ -37,6 +38,7 @@ import {
 	generateVerificationCode,
 	MAX_VERIFICATION_ATTEMPTS,
 } from '../services/verification';
+import { websiteUrl } from '../services/website-audit';
 
 /** How many times to regenerate a slug when concurrent signups collide. */
 const SLUG_RETRY_LIMIT = 5;
@@ -53,9 +55,49 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 		verificationCodes,
 		mailer,
 		notifier,
+		websiteAudit,
 	} = app.deps;
 	/** The account's inbound agent-address domain, returned with every session. */
 	const agentEmailDomain = config.AGENT_EMAIL_DOMAIN;
+
+	/**
+	 * Kick off a welcome website audit for a brand-new account and surface the
+	 * result as a notification. Best-effort and NON-blocking: signup must return
+	 * the session immediately, so a slow, failing, or unconfigured audit can never
+	 * affect it. A notification is emitted only when the site was actually reviewed
+	 * (a report) or couldn't be loaded (unreachable); a missing website or a
+	 * disabled provider is a silent no-op. A new account has no FAQs yet (count 0).
+	 */
+	function scheduleWelcomeAudit(request: FastifyRequest, ownerId: UserId, account: Account): void {
+		// No website on file → nothing to audit; skip before spending a provider call.
+		if (websiteUrl(account.website) === null) {
+			return;
+		}
+		void (async () => {
+			try {
+				const outcome = await websiteAudit.audit({ account, faqCount: 0 });
+				if (outcome.kind === 'report') {
+					await notifier.websiteAuditReady({
+						accountId: account.id,
+						ownerId,
+						report: outcome.report,
+						url: outcome.report.url,
+						logger: request.log,
+					});
+				} else if (outcome.kind === 'unreachable') {
+					await notifier.websiteAuditReady({
+						accountId: account.id,
+						ownerId,
+						report: null,
+						url: outcome.url,
+						logger: request.log,
+					});
+				}
+			} catch (err) {
+				request.log.error({ err }, 'welcome website audit failed');
+			}
+		})();
+	}
 
 	/**
 	 * Deliver a code without blocking the response on it. Decoupling delivery keeps
@@ -241,6 +283,9 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 					accountId: account.id,
 					role: membership.role,
 				});
+				// Give the new owner a welcome website audit in their notifications —
+				// fire-and-forget so it never delays the signup response.
+				scheduleWelcomeAudit(request, user.id, account);
 				return reply.code(201).send({
 					token,
 					user: toPublicUser(user),

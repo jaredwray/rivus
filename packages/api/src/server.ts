@@ -30,6 +30,7 @@ import {
 import { createNotificationService } from './services/notifications';
 import { createMailer } from './services/resend-mailer';
 import { createTwilioNumberReleaser } from './services/twilio';
+import { createWebsiteAuditService } from './services/website-audit';
 
 /** Connect to Mongo, build the app with Mongo-backed repositories, and listen. */
 export async function start(): Promise<void> {
@@ -63,6 +64,7 @@ export async function start(): Promise<void> {
 		faqSimilarity: createFaqSimilarityService(config),
 		faqAnswer: createFaqAnswerService(config),
 		chatDecider: createDeciderFromConfig(config),
+		websiteAudit: createWebsiteAuditService(config),
 		// Real readiness: run an actual query so "connected but unauthorized" reports
 		// unready (503, with the reason) instead of falsely healthy.
 		ping: checkDatabaseReady,

@@ -17,10 +17,13 @@ import {
 	findSimilarFaq,
 	type KnowledgeAnswer,
 } from '../knowledge';
+import type { WebsiteAuditOutcome, WebsiteAuditService } from '../website-audit';
 
 /**
- * The account-scoped operations the chat assistant can perform, executed
- * in-process against the same repositories and AI services the `/v1` routes use.
+ * The operations the chat assistant can perform: account-scoped data reads and
+ * writes executed in-process against the same repositories and AI services the
+ * `/v1` routes use, plus the website audit — the one purpose-bound use of the
+ * web tools, gated on its provider keys and answering "not enabled" without them.
  *
  * This replaces the standalone agent's HTTP client (`@rivus/agent`'s `api.ts`) —
  * same method surface and result shapes, no network hop, no forwarded token.
@@ -45,6 +48,8 @@ export interface ChatActions {
 	findSimilarFaq(input: { question: string; answer?: string }): Promise<FaqSimilarityCheck>;
 	/** Answer a free-text question from the account's knowledge base (AI-assisted). */
 	answerFromKnowledge(input: { question: string }): Promise<KnowledgeAnswer>;
+	/** Audit the account's own website (its URL comes from the profile, never the chat). */
+	auditWebsite(): Promise<WebsiteAuditOutcome>;
 }
 
 export interface ChatActionsDeps {
@@ -52,6 +57,7 @@ export interface ChatActionsDeps {
 	faqs: FaqRepository;
 	faqSimilarity: FaqSimilarityService;
 	faqAnswer: FaqAnswerService;
+	websiteAudit: WebsiteAuditService;
 }
 
 /** Bind the chat actions to one account (the authenticated session's). */
@@ -98,6 +104,18 @@ export function createChatActions(deps: ChatActionsDeps, accountId: AccountId): 
 
 		answerFromKnowledge(input) {
 			return answerFromKnowledge(deps, accountId, input.question);
+		},
+
+		async auditWebsite() {
+			const account = await deps.accounts.findById(accountId);
+			// Same race as `me()`: revalidation already failed closed, so only a
+			// mid-request delete lands here — the reply layer degrades it politely.
+			if (!account) {
+				throw new Error(`chat: account ${accountId} no longer exists`);
+			}
+			// The audit only needs the count, so ask for the smallest page.
+			const { total } = await deps.faqs.list({ accountId, page: 1, pageSize: 1 });
+			return deps.websiteAudit.audit({ account, faqCount: total });
 		},
 	};
 }

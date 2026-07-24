@@ -36,6 +36,10 @@ export interface Env {
 	XAI_MODEL?: string;
 	ANTHROPIC_API_KEY?: string;
 	ANTHROPIC_MODEL?: string;
+	// The chat's website audit (both optional; ZenRows fetches the site, Brave
+	// adds the presence check — unset = the audit says it's not enabled).
+	ZENROWS_API_KEY?: string;
+	BRAVE_SEARCH_API_KEY?: string;
 	// Messaging channels (WhatsApp / SMS / voice). Twilio is the primary provider,
 	// Plivo is retained during the migration, and zernio is the WhatsApp-only
 	// alternative. All optional — an unset provider degrades to a no-op, and only

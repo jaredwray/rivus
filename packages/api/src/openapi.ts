@@ -11,6 +11,7 @@ import { NoopFaqAnswerService } from './services/faq-answer';
 import { NoopFaqSimilarityService } from './services/faq-similarity';
 import { createNotificationService } from './services/notifications';
 import { NoopSmsSender } from './services/sms';
+import { createWebsiteAuditService } from './services/website-audit';
 import { NoopWhatsappSender } from './services/whatsapp';
 
 /**
@@ -61,6 +62,7 @@ async function main(): Promise<void> {
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
 		chatDecider: createDecider(),
+		websiteAudit: createWebsiteAuditService(config),
 		ping: async () => ({ ready: true }),
 	});
 

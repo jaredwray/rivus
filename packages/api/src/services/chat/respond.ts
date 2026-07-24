@@ -5,8 +5,9 @@ import {
 	type Faq,
 	updateFaqSchema,
 } from '@rivus/core';
+import type { WebsiteAuditOutcome, WebsiteAuditReport } from '../website-audit';
 import type { ChatActions } from './actions';
-import { GREETING, lastUserMessage } from './conversation';
+import { GREETING, lastUserMessage, WEBSITE_AUDIT_RESULT_PREFIX } from './conversation';
 import type { Decide } from './decide';
 import { type CompanyField, type Intent, resolveIntent } from './intent';
 
@@ -134,6 +135,8 @@ export async function respond(deps: RespondDeps): Promise<string> {
 				return await faqCreateReply(actions, intent);
 			case 'faq_answer':
 				return await knowledgeAnswerReply(actions, intent.question, claims);
+			case 'website_audit':
+				return await websiteAuditReply(actions, logger);
 			case 'unknown':
 				return await knowledgeAnswerReply(actions, question, claims);
 		}
@@ -160,6 +163,7 @@ function helpReply(claims: AuthTokenPayload | null): string {
 		'• Tell you your company details — e.g. “what’s our website?”',
 		'• Search your knowledge base — e.g. “find FAQs about refunds”',
 		'• Update or add an FAQ — e.g. “update the FAQ about returns to say …”',
+		'• Audit your website — e.g. “audit my website” checks it for the essentials',
 	];
 	if (!claims) {
 		lines.push('', 'Sign in first and I’ll do all of this against your account.');
@@ -437,6 +441,52 @@ async function faqCreateReply(
 	}
 	const created = await actions.createFaq(parsed.data);
 	return `Added a new FAQ: “${created.question}”.`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Website audit                                                              */
+/* -------------------------------------------------------------------------- */
+
+const AUDIT_DISABLED =
+	'Website audits aren’t enabled on this server yet — an administrator can turn them on with a ZenRows API key. Meanwhile I can still help with your company details and knowledge base.';
+
+async function websiteAuditReply(
+	actions: ChatActions,
+	logger?: { warn(message: string): void },
+): Promise<string> {
+	let outcome: WebsiteAuditOutcome;
+	try {
+		outcome = await actions.auditWebsite();
+	} catch (error) {
+		// A provider outage is not a Rivus-data failure, so it gets its own honest
+		// sentence instead of the generic one — but is still logged for operators.
+		logger?.warn(`chat website audit failed — ${String(error)}`);
+		return 'I couldn’t run the website audit just now — please try again in a moment.';
+	}
+	switch (outcome.kind) {
+		case 'disabled':
+			return AUDIT_DISABLED;
+		case 'no_website':
+			return 'You haven’t added a website to your profile yet, so there’s nothing to audit. Add it in Settings and ask me again.';
+		case 'cooldown':
+			return `I audited your website just recently — give it about ${outcome.retryInMinutes} more minute${outcome.retryInMinutes === 1 ? '' : 's'} and I’ll run a fresh one.`;
+		case 'unreachable':
+			// Built on the shared prefix so the router's redaction covers it too.
+			return `${WEBSITE_AUDIT_RESULT_PREFIX}${outcome.url}:\n\n✗ I couldn’t load the site — it may be down, blocking access, or serving nothing readable. That’s the first thing to fix; ask me again once it loads.`;
+		case 'report':
+			return formatAuditReport(outcome.report);
+	}
+}
+
+/** Render the audit as ✓/✗ lines under the shared (router-redacted) header. */
+function formatAuditReport(report: WebsiteAuditReport): string {
+	const lines = report.checks.map((check) => `${check.passed ? '✓' : '✗'} ${check.label}`);
+	const failed = report.checks.filter((check) => !check.passed).length;
+	const coda =
+		failed === 0
+			? 'Everything I checked looks good. 🎉'
+			: `${failed} thing${failed === 1 ? '' : 's'} to fix — start with the ✗ items above.`;
+	return [`${WEBSITE_AUDIT_RESULT_PREFIX}${report.url}:`, '', ...lines, '', coda].join('\n');
 }
 
 /* -------------------------------------------------------------------------- */

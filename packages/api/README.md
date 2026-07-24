@@ -159,6 +159,41 @@ Invitation **and one-time sign-in codes** are delivered through
 The API calls Resend's HTTP API directly (no SDK) so the transport stays small
 and is testable by injecting a fake `fetch`.
 
+### Chat website audit (the web tools' one purpose)
+
+The Rivus chat (`POST /v1/chat`) can **audit the account's own website** —
+"audit my website" fetches the site, checks it for the essentials a customer
+looks for (business name, phone, address, hours, a way to get in touch),
+compares them against the Rivus profile and knowledge base, and reports ✓/✗
+lines with concrete fixes. When Brave is configured it also checks **online
+presence**: whether the site surfaces in a web search for the business name.
+
+The audit is the *only* thing the web tools do — there is no generic "search
+the web" or "read this URL" action. The browse target always comes from the
+account record (never the message), the fetch happens from
+[ZenRows](https://www.zenrows.com/)' rotating residential proxies with
+JavaScript rendering (so JS-heavy and bot-walled sites still load, and the
+target never sees the API's egress), and a per-account cooldown keeps repeated
+asks from burning provider credits.
+
+| Variable               | Default   | Notes                                                                                 |
+| ---------------------- | --------- | ------------------------------------------------------------------------------------- |
+| `ZENROWS_API_KEY`      | _(unset)_ | Fetches the site. Unset: the chat answers audit asks with a friendly "not enabled".   |
+| `BRAVE_SEARCH_API_KEY` | _(unset)_ | Adds the presence check. Unset: the audit still runs; only that one check is skipped. |
+
+The audit requires a signed-in session (it spends paid provider credits);
+anonymous turns get the usual sign-in nudge. The engine is
+`src/services/website-audit.ts`; the providers are called over plain HTTP with
+an injectable `fetch` (`src/services/web-search.ts`, `src/services/web-browse.ts`),
+reachable only through the audit.
+
+**On signup**, a new account with a website automatically gets a **welcome
+audit**: after the account is created (`POST /v1/auth/verify`), Rivus runs the
+audit once and drops a summary into the owner's notifications (the bell) — the
+✓/✗ headline plus the top things to fix, or an "I couldn't reach your website"
+note. It's fire-and-forget, so it never delays signup, and it's a no-op when no
+website is on file or ZenRows isn't configured.
+
 ### Agent email channel (scheduling over email)
 
 Customers of a business can email the business's agent address —

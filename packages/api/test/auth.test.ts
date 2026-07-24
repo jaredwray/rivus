@@ -7,6 +7,11 @@ import { ConflictError } from '../src/repositories/errors';
 import { createInMemoryRepositories } from '../src/repositories/memory';
 import { hashSecret } from '../src/services/hash';
 import { MAX_VERIFICATION_ATTEMPTS } from '../src/services/verification';
+import type {
+	WebsiteAuditInput,
+	WebsiteAuditOutcome,
+	WebsiteAuditService,
+} from '../src/services/website-audit';
 import {
 	addMember,
 	authHeader,
@@ -934,5 +939,107 @@ describe('session cookie', () => {
 		await requestSignup(app, signupBody({ email }));
 		const verified = await verifyCode(app, email, latestCodeFor(app, email));
 		expect(setCookieHeader(verified)).not.toMatch(/Domain=/i);
+	});
+});
+
+describe('signup triggers a welcome website audit', () => {
+	function auditReturning(
+		outcome: WebsiteAuditOutcome,
+	): WebsiteAuditService & { calls: WebsiteAuditInput[] } {
+		const calls: WebsiteAuditInput[] = [];
+		return {
+			calls,
+			async audit(input) {
+				calls.push(input);
+				return outcome;
+			},
+		};
+	}
+
+	/** Sign up (with a website, so the audit fires), then flush the fire-and-forget audit. */
+	async function signupThenFlush(
+		websiteAudit: WebsiteAuditService & { calls: WebsiteAuditInput[] },
+	) {
+		const { app, repos } = await buildTestAppWithRepos({ websiteAudit });
+		const base = signupBody();
+		const body = { ...base, business: { ...base.business, website: 'https://acme.example' } };
+		await requestSignup(app, body);
+		const verified = await verifyCode(app, body.email, latestCodeFor(app, body.email));
+		expect(verified.statusCode).toBe(201);
+		const { user, account } = verified.json<{ user: { id: string }; account: { id: string } }>();
+		// The audit + notification run after the response; drain the microtask chain.
+		await new Promise((resolve) => setImmediate(resolve));
+		const { notifications } = await repos.notifications.list({
+			accountId: account.id as AccountId,
+			userId: user.id as UserId,
+			page: 1,
+			pageSize: 20,
+			unreadOnly: false,
+		});
+		await app.close();
+		return { notifications, calls: websiteAudit.calls };
+	}
+
+	it('notifies the new owner with the audit summary (a new account has no FAQs yet)', async () => {
+		const audit = auditReturning({
+			kind: 'report',
+			report: {
+				url: 'https://acme.example/',
+				checks: [
+					{ id: 'name', label: 'Your business name is on the page', passed: true },
+					{ id: 'phone', label: 'Your phone number isn’t on the site — add it', passed: false },
+				],
+			},
+		});
+		const { notifications, calls } = await signupThenFlush(audit);
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.faqCount).toBe(0);
+		expect(notifications).toHaveLength(1);
+		expect(notifications[0]?.title).toBe('Your website audit is ready');
+		expect(notifications[0]?.body).toContain('Your phone number isn’t on the site');
+	});
+
+	it('does not run the audit at all when no website is on file', async () => {
+		const audit = auditReturning({ kind: 'disabled' });
+		const { app } = await buildTestAppWithRepos({ websiteAudit: audit });
+		// signupBody() carries no website, so the audit is skipped before any call.
+		const body = signupBody();
+		await requestSignup(app, body);
+		const verified = await verifyCode(app, body.email, latestCodeFor(app, body.email));
+		expect(verified.statusCode).toBe(201);
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(audit.calls).toHaveLength(0);
+		await app.close();
+	});
+
+	it('notifies about an unreachable site', async () => {
+		const { notifications } = await signupThenFlush(
+			auditReturning({ kind: 'unreachable', url: 'https://acme.example/' }),
+		);
+		expect(notifications).toHaveLength(1);
+		expect(notifications[0]?.title).toMatch(/couldn’t reach your website/i);
+	});
+
+	it('stays silent when there is no website or the audit is disabled', async () => {
+		expect(
+			(await signupThenFlush(auditReturning({ kind: 'no_website' }))).notifications,
+		).toHaveLength(0);
+		expect(
+			(await signupThenFlush(auditReturning({ kind: 'disabled' }))).notifications,
+		).toHaveLength(0);
+	});
+
+	it('never lets an audit failure break signup', async () => {
+		const throwing: WebsiteAuditService & { calls: WebsiteAuditInput[] } = {
+			calls: [],
+			async audit(input) {
+				this.calls.push(input);
+				throw new Error('audit boom');
+			},
+		};
+		// Signup still succeeds (201) and simply produces no notification.
+		const { notifications, calls } = await signupThenFlush(throwing);
+		expect(calls).toHaveLength(1);
+		expect(notifications).toHaveLength(0);
 	});
 });

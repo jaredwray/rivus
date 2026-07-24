@@ -556,6 +556,78 @@ describe('createNotificationService', () => {
 		expect(await unreadFor(repos, ACTOR)).toHaveLength(0);
 	});
 
+	it('websiteAuditReady summarizes a report, listing the failing checks as suggestions', async () => {
+		const repos = createInMemoryRepositories();
+		const notifier = createNotificationService({ notifications: repos.notifications });
+		await notifier.websiteAuditReady({
+			accountId: ACCOUNT,
+			ownerId: ACTOR,
+			url: 'https://acme.example/',
+			report: {
+				url: 'https://acme.example/',
+				checks: [
+					{ id: 'name', label: 'Your business name is on the page', passed: true },
+					{ id: 'phone', label: 'Your phone number isn’t on the site — add it', passed: false },
+					{ id: 'hours', label: 'No business hours found', passed: false },
+				],
+			},
+		});
+		const [note] = await unreadFor(repos, ACTOR);
+		expect(note?.type).toBe('system');
+		expect(note?.title).toBe('Your website audit is ready');
+		expect(note?.body).toContain('1 of 3 checks look good');
+		expect(note?.body).toContain('• Your phone number isn’t on the site — add it');
+		expect(note?.body).toContain('• No business hours found');
+	});
+
+	it('websiteAuditReady caps the suggestions and celebrates a clean report', async () => {
+		const repos = createInMemoryRepositories();
+		const notifier = createNotificationService({ notifications: repos.notifications });
+		// Five failing checks → only the first three are listed, then "…and 2 more".
+		await notifier.websiteAuditReady({
+			accountId: ACCOUNT,
+			ownerId: ACTOR,
+			url: 'https://acme.example/',
+			report: {
+				url: 'https://acme.example/',
+				checks: Array.from({ length: 5 }, (_, i) => ({
+					id: `c${i}`,
+					label: `Fix number ${i}`,
+					passed: false,
+				})),
+			},
+		});
+		const clean = await unreadFor(repos, ACTOR);
+		expect(clean[0]?.body).toContain('…and 2 more');
+
+		const repos2 = createInMemoryRepositories();
+		const notifier2 = createNotificationService({ notifications: repos2.notifications });
+		await notifier2.websiteAuditReady({
+			accountId: ACCOUNT,
+			ownerId: ACTOR,
+			url: 'https://acme.example/',
+			report: {
+				url: 'https://acme.example/',
+				checks: [{ id: 'name', label: 'All good', passed: true }],
+			},
+		});
+		expect((await unreadFor(repos2, ACTOR))[0]?.body).toMatch(/looks great/i);
+	});
+
+	it('websiteAuditReady reports an unreachable site instead of a report', async () => {
+		const repos = createInMemoryRepositories();
+		const notifier = createNotificationService({ notifications: repos.notifications });
+		await notifier.websiteAuditReady({
+			accountId: ACCOUNT,
+			ownerId: ACTOR,
+			url: 'https://acme.example/',
+			report: null,
+		});
+		const [note] = await unreadFor(repos, ACTOR);
+		expect(note?.title).toMatch(/couldn’t reach your website/i);
+		expect(note?.body).toContain('https://acme.example/');
+	});
+
 	it('swallows a repository failure (best-effort), with and without a logger', async () => {
 		const throwingRepo: NotificationRepository = {
 			create: async () => {

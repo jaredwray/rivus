@@ -53,6 +53,12 @@ export type Intent =
 	 * both the same way.
 	 */
 	| { kind: 'faq_answer'; question: string }
+	/**
+	 * Audit the account's own website (the one purpose the web tools serve):
+	 * fetch it, check it for the essentials, and report. Carries no arguments —
+	 * the target always comes from the account record, never the message.
+	 */
+	| { kind: 'website_audit' }
 	| { kind: 'unknown' };
 
 /** The subject a conversation is on, carried forward to resolve bare follow-ups. */
@@ -116,6 +122,46 @@ const EXISTENCE_CHECK =
 /** True when a message reads as an existence check rather than a question to answer. */
 export function isExistenceCheck(text: string): boolean {
 	return EXISTENCE_CHECK.test(text.toLowerCase());
+}
+
+/**
+ * An explicit ask to audit the business's website or online presence. Two
+ * deliberate constraints keep it from firing on the wrong turns:
+ *
+ * - The noun must be UNAMBIGUOUS — "website"/"web page"/"homepage"/"online
+ *   presence", or the fixed phrase "site/website audit", or an audit verb on the
+ *   first-person "our/my site". A bare "site" alone is excluded because the
+ *   trades businesses Rivus serves say "job site"/"site access"/"site
+ *   conditions", which must not be mistaken for their web presence.
+ * - Verb and noun must be CLOSE (within a short window), so an unrelated verb and
+ *   a passing website mention in the same message don't combine into a false audit.
+ *
+ * Plain website questions ("what's our website?") carry no audit verb and stay
+ * on the company record.
+ */
+const AUDIT_VERB = String.raw`(?:audit|review|analy[sz]e|analysis|assess|evaluate|inspect|check(?:\s+over)?|grade|critique|look\s+over|go\s+over)`;
+const WEBSITE_NOUN = String.raw`(?:web\s?sites?|web\s?pages?|home\s?pages?|landing\s+pages?|online\s+presence)`;
+const WEBSITE_AUDIT = new RegExp(
+	`\\b${AUDIT_VERB}\\b[^.?!]{0,25}\\b${WEBSITE_NOUN}\\b` +
+		`|\\b${WEBSITE_NOUN}\\b[^.?!]{0,25}\\b${AUDIT_VERB}\\b` +
+		`|\\b(?:web\\s?site|site)\\s+audit\\b` +
+		`|\\b${AUDIT_VERB}\\s+(?:our|my)\\s+site\\b`,
+	'i',
+);
+
+/**
+ * How-to / advice framing at the START of the turn ("how do I audit my
+ * website?", "should I review our site?"). The user wants guidance, not a real
+ * (paid) audit run, so these fall through to the knowledge-answer path. Anchored
+ * to the start so an audit request that merely *mentions* improving something
+ * ("review our site and tell me how to improve it") still runs.
+ */
+const AUDIT_ADVICE =
+	/^\s*(?:how\s+(?:do|would|can|should|might|to)\b|should\s+(?:i|we)\b|is\s+it\s+worth\b|why\s+(?:should|would)\b|what(?:'s| is)\s+the\s+best\s+way\b)/i;
+
+/** True when the message explicitly asks Rivus to run the website audit. */
+function isWebsiteAuditAsk(lower: string): boolean {
+	return WEBSITE_AUDIT.test(lower) && !AUDIT_ADVICE.test(lower);
 }
 
 /** Strip a leading article so an extracted topic reads cleanly. */
@@ -297,7 +343,16 @@ export function parseIntent(raw: string, context: IntentContext = {}): Intent {
 	if (lower.length === 0) {
 		return { kind: 'greeting' };
 	}
-	if (HELP.test(lower)) {
+
+	// The audit ask is read up front, for two reasons. The broad HELP probe must
+	// not swallow a turn that names the concrete tool to run ("help me audit my
+	// website" wants the audit, not the capabilities menu). And an inferred FAQ
+	// context must not claim it either (an audit verb + "about/for" phrasing
+	// would otherwise satisfy hasFaqAction mid-FAQ-conversation). An explicit
+	// knowledge-base mention still outranks it below.
+	const auditAsk = isWebsiteAuditAsk(lower);
+
+	if (HELP.test(lower) && !auditAsk) {
 		return { kind: 'help' };
 	}
 	// A bare greeting with nothing else asked. Strip trailing punctuation first so
@@ -320,7 +375,11 @@ export function parseIntent(raw: string, context: IntentContext = {}): Intent {
 	// always wins over an inferred FAQ context, so "tell me about our website" stays
 	// company info even mid-FAQ-conversation.
 	const faqByContext =
-		context.topic === 'faq' && hasFaqAction(lower) && companyFields.length === 0 && !companyGeneric;
+		context.topic === 'faq' &&
+		hasFaqAction(lower) &&
+		companyFields.length === 0 &&
+		!companyGeneric &&
+		!auditAsk;
 	if (FAQ_CONTEXT.test(lower) || faqByContext) {
 		if (UPDATE_VERB.test(lower)) {
 			return { kind: 'faq_update', ...parseFaqUpdate(text) };
@@ -340,6 +399,13 @@ export function parseIntent(raw: string, context: IntentContext = {}): Intent {
 		}
 		// A bare "faqs" / "knowledge base" — show the list.
 		return { kind: 'faq_list' };
+	}
+
+	// Checked before the company branch: the audit phrasing necessarily names the
+	// website, which would otherwise trip the company-field probe and answer with
+	// the URL instead of running the audit.
+	if (auditAsk) {
+		return { kind: 'website_audit' };
 	}
 
 	if (companyFields.length > 0) {
