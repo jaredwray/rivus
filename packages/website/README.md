@@ -20,11 +20,11 @@ pnpm --filter @rivus/website build  # next build
 - `src/app/globals.css` — the design system: tokens, utilities, and every
   section's styles, written desktop-first with mobile overrides.
 - `src/components/marketing/` — one component per section (nav, hero, problem,
-  how-it-works, features, onboarding, cross-platform, testimonials, pricing,
-  CTA, footer) plus the shared `icons.tsx` set.
+  how-it-works, features, onboarding, cross-platform, founding customers,
+  pricing, CTA, footer) plus the shared `icons.tsx` set.
 - `src/lib/site.ts` — all list-shaped content (nav, features, pricing tiers,
-  testimonials, …) in one place, plus `featureAnchor` (built on the shared
-  `@rivus/core` `slugify`).
+  founding benefits, …) in one place, plus `featureAnchor` (built on the
+  shared `@rivus/core` `slugify`).
 - `src/components/api-status.tsx` — a small client component that pings the API
   and shows a live "all systems operational" indicator in the footer.
 

@@ -9,7 +9,7 @@ const inboxPoints = [
 ];
 
 const schedulePoints = [
-	'Auto-books to the right tech',
+	'Books straight into open slots',
 	'Reminders cut no-shows',
 	'Always keeps room for emergencies',
 ];
@@ -142,7 +142,7 @@ export function FeaturesSection() {
 							<span className="invoice__mark">
 								<BrandImg className="mark-img" src="/assets/rivus-symbol-white.svg" alt="" />
 							</span>
-							Rivus sent the invoice and collected payment automatically.
+							Rivus sent the invoice the moment the job closed.
 						</div>
 					</div>
 				</div>

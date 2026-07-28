@@ -150,7 +150,7 @@ export const inboxItems: InboxItem[] = [
 		initials: 'TM',
 		name: 'Theo Marsh',
 		channel: 'Phone',
-		note: 'Voicemail transcribed & called back',
+		note: 'Called after close — answered & booked',
 		state: 'handled',
 	},
 	{
@@ -215,37 +215,41 @@ export const platforms: Platform[] = [
 	{ label: 'Android', icon: 'android' },
 ];
 
-export interface Testimonial {
-	quote: string;
-	name: string;
-	business: string;
-	initials: string;
-	tint: 'cyan' | 'violet' | 'green';
+export interface FoundingBenefit {
+	title: string;
+	description: string;
+	icon: IconName;
+	tint: Tint;
 }
 
-export const testimonials: Testimonial[] = [
+/**
+ * The founding-customers pitch that replaced the pre-launch testimonials.
+ * Rivus is new, and the honest sell is what early owners actually get — every
+ * benefit here restates a commitment made elsewhere on the site (free
+ * onboarding, humans on call, a team that ships weekly). Real customer
+ * stories take this section over once real customers agree to tell them
+ * (see WEBSITE_CONTENT_PLAN.md, Phase 4).
+ */
+export const foundingBenefits: FoundingBenefit[] = [
 	{
-		quote:
-			"Rivus booked 11 jobs the first weekend — while I was at my kid's game. It paid for itself before I'd even finished setup.",
-		name: 'Marcus T.',
-		business: 'Cascade Plumbing & Heating',
-		initials: 'MT',
-		tint: 'cyan',
-	},
-	{
-		quote:
-			'We stopped missing calls completely. Our Google rating climbed from 4.2 to 4.8 in two months — Rivus asks every happy client for a review.',
-		name: 'Renee O.',
-		business: 'Glow Hair Studio',
-		initials: 'RO',
+		title: 'White-glove setup, free',
+		description:
+			'A dedicated human specialist connects your tools, imports your customers, and trains Rivus on your voice — before you pay a thing.',
+		icon: 'heart',
 		tint: 'violet',
 	},
 	{
-		quote:
-			'The free setup sold me — my specialist did everything. Now I just approve the big quotes and show up to the work.',
-		name: 'Dev P.',
-		business: 'Summit Heating & Air',
-		initials: 'DP',
+		title: 'Humans on call',
+		description:
+			'Your specialist stays with you through your first weeks, and a person answers when you need one. We hold ourselves to the bar we sell.',
+		icon: 'users',
+		tint: 'cyan',
+	},
+	{
+		title: 'A say in the roadmap',
+		description:
+			'We ship every week and talk to the owners we serve constantly. Founding customers tell us what to build next — and watch it appear.',
+		icon: 'bolt',
 		tint: 'green',
 	},
 ];
