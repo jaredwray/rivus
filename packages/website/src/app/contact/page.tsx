@@ -52,6 +52,12 @@ export default function ContactPage() {
 										{channel.email}
 										<ArrowRightIcon size={15} />
 									</a>
+									{channel.page ? (
+										<Link className="card__link" href={channel.page.href}>
+											{channel.page.label}
+											<ArrowRightIcon size={15} />
+										</Link>
+									) : null}
 								</article>
 							))}
 							<article className="card">

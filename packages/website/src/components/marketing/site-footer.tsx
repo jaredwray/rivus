@@ -24,11 +24,20 @@ export function SiteFooter() {
 							<div key={column.title}>
 								<div className="footer__col-title">{column.title}</div>
 								<div className="footer__col-links">
-									{column.links.map((link) => (
-										<Link key={link.label} href={link.href}>
-											{link.label}
-										</Link>
-									))}
+									{column.links.map((link) =>
+										// Site-internal links get client navigation; absolute URLs
+										// (the docs deploy) are plain anchors — the same conditional
+										// legal-page.tsx's renderInline uses.
+										link.href.startsWith('/') ? (
+											<Link key={link.label} href={link.href}>
+												{link.label}
+											</Link>
+										) : (
+											<a key={link.label} href={link.href} rel="noreferrer">
+												{link.label}
+											</a>
+										),
+									)}
 								</div>
 							</div>
 						))}

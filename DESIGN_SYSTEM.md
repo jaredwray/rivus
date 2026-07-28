@@ -245,6 +245,15 @@ Compact availability tag on cards (e.g. platform cards on /apps).
 - **Variants:** `live` (Success-ink text on a success tint, e.g. "Available
   now") · `soon` (Accent violet on Soft violet, e.g. "Coming soon")
 
+### Press asset card (marketing)
+
+A standard `card` presenting a downloadable brand asset on /press:
+
+- **`press-asset__preview`** — the asset preview image: block, 56px tall,
+  width auto (capped at 100%), 16px below-margin before the card title.
+- **`press-asset__files`** — the download-link row under the body: wrapping
+  flex of `card__link`s with a 6px × 18px gap, 12px top margin.
+
 ### Navigation
 
 The primary app navigation adapts to width (see **Layout & breakpoints**):

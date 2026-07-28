@@ -34,3 +34,17 @@ export function resolveAppUrl(env?: Record<string, string | undefined>): string 
 	}
 	return target.RIVUS_ENV === 'development' ? 'https://dev-app.rivus.ai' : 'https://app.rivus.ai';
 }
+
+/**
+ * The docs-site base URL this deployment should link to — the docs sibling of
+ * {@link resolveAppUrl}, so dev.rivus.ai sends readers to dev-docs.rivus.ai
+ * rather than the production docs. Same build-time inlining contract via
+ * `NEXT_PUBLIC_DOCS_URL` in next.config.ts.
+ */
+export function resolveDocsUrl(env?: Record<string, string | undefined>): string {
+	const target = env ?? (typeof process !== 'undefined' ? process.env : {});
+	if (target.NEXT_PUBLIC_DOCS_URL) {
+		return target.NEXT_PUBLIC_DOCS_URL.replace(/\/+$/, '');
+	}
+	return target.RIVUS_ENV === 'development' ? 'https://dev-docs.rivus.ai' : 'https://docs.rivus.ai';
+}
