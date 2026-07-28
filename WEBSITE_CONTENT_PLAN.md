@@ -124,8 +124,12 @@ Ordered so each phase is a shippable PR; every phase keeps
 - Visuals use `DESIGN_SYSTEM.md` tokens and existing components (`PageHero`,
   `card`, `tile`, `section` primitives) — no ad-hoc styles.
 - Every new route: `metadata` export, entry in `publicRoutes`
-  (`src/app/sitemap.ts`) so the sitemap tests keep proving link integrity,
-  plus a render test following `info-pages.test.tsx`.
+  (`src/app/sitemap.ts`), plus a render test following `info-pages.test.tsx`.
+  Caveat: today's sitemap test only checks hrefs against the hand-maintained
+  `publicRoutes` list, so a typo added to both lists would still pass while
+  404ing in production. When Phase 1 lands the first new route, harden the
+  test with a route-existence assertion — glob `src/app/**/page.tsx` and
+  require every `publicRoutes` entry to map to a real page directory.
 - Link hygiene: site-internal destinations use relative hrefs with
   `next/link`; external destinations (the app, docs.rivus.ai) stay absolute
   plain `<a>` anchors, per the `appUrl` convention documented in `site.ts` —
@@ -157,16 +161,22 @@ Ordered so each phase is a shippable PR; every phase keeps
 
 ### Phase 2 — surface what already exists (P1, ~1 PR)
 
-4. **Footer "Resources" column** in `footerColumns`: Docs
-   (`https://docs.rivus.ai`), API reference (`https://docs.rivus.ai/api`),
+4. **Footer "Resources" column** in `footerColumns`: Docs, API reference,
    Changelog, System status (the footer already renders live API status —
-   link it). The sitemap link-integrity test already skips external links,
-   but `site-footer.tsx` renders every column link with `next/link` today —
-   teach it to render absolute externals as plain `<a>` instead (the
-   `renderInline` conditional in `legal-page.tsx` is the pattern to reuse).
-5. **Press & brand page** (`/press`): boilerplate description, the stats the
-   site already claims, downloadable logo pack + guidelines PDF (move the
-   needed exports from `branding/` into `public/press/`), press contact.
+   link it). Resolve the docs origin the way `appUrl` is resolved — a
+   `NEXT_PUBLIC_DOCS_URL` injected per environment from `env.ts`
+   (dev.rivus.ai → `dev-docs.rivus.ai`, production → `docs.rivus.ai`) —
+   never a hard-coded production URL. The sitemap test already skips
+   external links, but `site-footer.tsx` renders every column link with
+   `next/link` today — teach it to render absolute externals as plain `<a>`
+   instead (the `renderInline` conditional in `legal-page.tsx` is the
+   pattern to reuse).
+5. **Press & brand page** (`/press`): boilerplate description, downloadable
+   logo pack + guidelines PDF (move the needed exports from `branding/` into
+   `public/press/`), press contact, and only independently verifiable
+   company facts (founding, HQ, what the product does). No metrics here
+   until the Phase 4 claims pass clears them — a press page republishing the
+   numbers this audit flags as unsubstantiated would amplify the exposure.
    Link from the footer Company column and from the contact page's press card.
 6. **Fix `packages/docs` `siteUrl`** to `https://docs.rivus.ai` so its
    canonical/sitemap output is right before we point traffic at it.
@@ -192,11 +202,14 @@ Ordered so each phase is a shippable PR; every phase keeps
 ### Phase 4 — proof and freshness (P2, decision-gated)
 
 9. **Claims pass (business decision, do before real launch traffic):**
-   replace or substantiate the trust-bar rating, owner count, and
-   testimonials. Honest interim alternatives: "Founding customers get free
-   white-glove onboarding", real pilot quotes with permission, or drop the
-   numbers row. Same pass adds the physical address to `/contact` and
-   schedules counsel review of `legal.ts` (its own header asks for it).
+   replace or substantiate every claim flagged in this audit — the trust-bar
+   rating and owner count, all three testimonials, the "Rivus answered in
+   11s" metric (hero conversation *and* `companyStats` on `/about`), and the
+   "11 jobs the first weekend" quote. Honest interim alternatives: "Founding
+   customers get free white-glove onboarding", real pilot quotes with
+   permission, or drop the numbers row. Same pass adds the physical address
+   to `/contact` and schedules counsel review of `legal.ts` (its own header
+   asks for it).
 10. **Customer stories** (`/customers`) once 2–3 real customers agree:
     story template (before/after, numbers, quote) in `src/lib/stories.ts`;
     homepage testimonials link into it. Until then the homepage cards stay.
