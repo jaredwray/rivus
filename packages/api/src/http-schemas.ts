@@ -2,6 +2,7 @@ import {
 	accountStatusSchema,
 	conversationChannelSchema,
 	conversationStatusSchema,
+	demoLeadSourceSchema,
 	faqStatusSchema,
 	itemStatusSchema,
 	jobStatusSchema,
@@ -34,6 +35,30 @@ export const publicCustomerSignupResponseSchema = z
 		status: z.literal('registered'),
 	})
 	.meta({ id: 'PublicCustomerSignupResult' });
+
+/**
+ * Acknowledges a demo request. Deliberately opaque — the public form gets a
+ * receipt, not the stored record, so the endpoint reveals nothing about what
+ * exists server-side.
+ */
+export const demoLeadReceivedResponseSchema = z
+	.object({
+		status: z.literal('received'),
+	})
+	.meta({ id: 'DemoLeadReceived' });
+
+export const demoLeadResponseSchema = z
+	.object({
+		id: z.string(),
+		name: z.string(),
+		email: z.string(),
+		business: z.string(),
+		phone: z.string(),
+		trade: z.string(),
+		source: demoLeadSourceSchema,
+		createdAt: z.string(),
+	})
+	.meta({ id: 'DemoLead' });
 
 /** Public user projection — never includes the password hash. */
 export const userResponseSchema = z
@@ -221,6 +246,13 @@ export const faqListResponseSchema = z
 		meta: paginationMetaSchema,
 	})
 	.meta({ id: 'FaqList' });
+
+export const demoLeadListResponseSchema = z
+	.object({
+		data: z.array(demoLeadResponseSchema),
+		meta: paginationMetaSchema,
+	})
+	.meta({ id: 'DemoLeadList' });
 
 export const customerResponseSchema = z
 	.object({

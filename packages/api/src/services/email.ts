@@ -1,4 +1,4 @@
-import type { Role } from '@rivus/core';
+import type { DemoLead, Role } from '@rivus/core';
 
 /** An invitation email, ready to be addressed and rendered. */
 export interface InviteEmail {
@@ -56,12 +56,28 @@ export interface AgentEmail {
 	references: string[];
 }
 
+/**
+ * A new marketing-site lead, delivered to the sales inbox so demo requests
+ * have a staff-visible path the moment they land (the admin console is not
+ * yet wired to the leads API).
+ */
+export interface DemoLeadEmail {
+	/** Recipient address (the sales inbox). */
+	to: string;
+	lead: DemoLead;
+}
+
+/** Where marketing-site lead notifications are delivered. */
+export const SALES_NOTIFICATIONS_ADDRESS = 'sales@rivus.ai';
+
 /** Delivers transactional email. Implementations reject on delivery failure. */
 export interface Mailer {
 	sendInviteEmail(email: InviteEmail): Promise<void>;
 	sendVerificationCode(email: VerificationEmail): Promise<void>;
 	/** Send a scheduling-agent reply into an email thread. */
 	sendAgentEmail(email: AgentEmail): Promise<void>;
+	/** Notify the sales inbox of a new marketing-site lead. */
+	sendDemoLeadEmail(email: DemoLeadEmail): Promise<void>;
 }
 
 /** Human-readable labels for each role. */
@@ -163,6 +179,40 @@ export function renderVerificationEmail(email: VerificationEmail): RenderedEmail
 	return { subject, html, text };
 }
 
+/** Render a new-lead notification into subject + HTML + plain-text bodies. */
+export function renderDemoLeadEmail(email: DemoLeadEmail): RenderedEmail {
+	const { lead } = email;
+	const kind = lead.source === 'apps-waitlist' ? 'apps waitlist signup' : 'demo request';
+	const subject = `New ${kind}: ${lead.name}${lead.business ? ` (${lead.business})` : ''}`;
+
+	const lines = [
+		`Name: ${lead.name}`,
+		`Email: ${lead.email}`,
+		`Business: ${lead.business || '—'}`,
+		`Phone: ${lead.phone || '—'}`,
+		`Trade: ${lead.trade || '—'}`,
+		`Source: ${lead.source}`,
+		`Received: ${lead.createdAt}`,
+	];
+	const text = [`A new ${kind} just came in from the website:`, '', ...lines].join('\n');
+
+	// Every field is visitor-typed free text, so all of them are escaped.
+	const html = [
+		'<!doctype html>',
+		'<html lang="en">',
+		'<body style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: #111;">',
+		`<p>A new ${kind} just came in from the website:</p>`,
+		'<ul style="line-height: 1.7;">',
+		...lines.map((line) => `<li>${escapeHtml(line)}</li>`),
+		'</ul>',
+		'<p style="color: #888; font-size: 12px;">The website promises a reply within one business day.</p>',
+		'</body>',
+		'</html>',
+	].join('\n');
+
+	return { subject, html, text };
+}
+
 /**
  * A mailer that delivers nothing — used when `RESEND_API_KEY` is unset so the API
  * still runs in development and tests without attempting real delivery.
@@ -177,6 +227,10 @@ export class NoopMailer implements Mailer {
 	}
 
 	async sendAgentEmail(_email: AgentEmail): Promise<void> {
+		// Intentionally does nothing.
+	}
+
+	async sendDemoLeadEmail(_email: DemoLeadEmail): Promise<void> {
 		// Intentionally does nothing.
 	}
 }

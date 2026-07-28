@@ -2366,6 +2366,25 @@ button:focus-visible {
 }
 
 /* ============================================================
+   Press & brand (see DESIGN_SYSTEM.md · Press asset card)
+   ============================================================ */
+
+.press-asset__preview {
+	display: block;
+	height: 56px;
+	width: auto;
+	max-width: 100%;
+	margin-bottom: 16px;
+}
+
+.press-asset__files {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 18px;
+	margin-top: 12px;
+}
+
+/* ============================================================
    Responsive
    ============================================================ */
 

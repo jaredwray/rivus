@@ -31,6 +31,7 @@ import { faqRoutes } from './routes/faqs';
 import { healthRoutes } from './routes/health';
 import { itemRoutes } from './routes/items';
 import { jobRoutes } from './routes/jobs';
+import { leadRoutes } from './routes/leads';
 import { memberRoutes } from './routes/members';
 import { notificationRoutes } from './routes/notifications';
 import { publicRoutes } from './routes/public';
@@ -232,6 +233,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 	// Public (unauthenticated) surface for customer self-signup, and the inbound
 	// webhook feeding the agent's email channel.
 	app.register(publicRoutes, { prefix: '/v1/public' });
+	// Marketing-site leads: public demo-request POST, staff-only list.
+	app.register(leadRoutes, { prefix: '/v1/leads' });
 	app.register(agentEmailRoutes, { prefix: '/v1/channels' });
 	app.register(agentWhatsappRoutes, { prefix: '/v1/channels' });
 	// Every provider's webhook edge stays registered side by side — Twilio (the

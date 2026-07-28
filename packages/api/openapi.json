@@ -4546,6 +4546,151 @@
         }
       }
     },
+    "/v1/leads/demo": {
+      "post": {
+        "summary": "Request a demo (public)",
+        "tags": [
+          "leads"
+        ],
+        "description": "Backs the marketing site’s demo-request form. Unauthenticated by design; the response is an opaque receipt so the endpoint reveals nothing about stored leads. Idempotent per (email, source): a retried submission refreshes the stored lead instead of duplicating it.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "business": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 160
+                  },
+                  "phone": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "trade": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "source": {
+                    "default": "website-demo",
+                    "type": "string",
+                    "enum": [
+                      "website-demo",
+                      "apps-waitlist"
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "email"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoLeadReceived"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List demo requests and waitlist signups (Rivus staff only)",
+        "tags": [
+          "leads"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "in": "query",
+            "name": "pageSize",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoLeadList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/channels/email/inbound": {
       "post": {
         "summary": "Resend email webhook (inbound customer mail + delivery status)",

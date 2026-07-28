@@ -16,9 +16,32 @@ export type NotificationId = Id<'Notification'>;
 export type ConversationId = Id<'Conversation'>;
 export type MessageId = Id<'Message'>;
 export type AgentThreadId = Id<'AgentThread'>;
+export type DemoLeadId = Id<'DemoLead'>;
 
 /** ISO-8601 timestamp, e.g. `2026-06-19T12:00:00.000Z`. */
 export type IsoDateString = string;
+
+/** Where a marketing-site lead came from. */
+export type DemoLeadSource = 'website-demo' | 'apps-waitlist';
+
+/**
+ * A sales lead captured by the marketing site — a demo request today, the
+ * mobile-apps waitlist later. Deliberately not account-scoped: a lead exists
+ * before any account does.
+ */
+export interface DemoLead {
+	id: DemoLeadId;
+	name: string;
+	email: string;
+	/** Business name as typed; empty string when not provided. */
+	business: string;
+	/** Contact phone; empty string when not provided. */
+	phone: string;
+	/** Free-text trade/industry; empty string when not provided. */
+	trade: string;
+	source: DemoLeadSource;
+	createdAt: IsoDateString;
+}
 
 export interface User {
 	id: UserId;

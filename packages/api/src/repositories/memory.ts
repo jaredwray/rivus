@@ -19,6 +19,8 @@ import {
 	type CreateNotificationInput,
 	type Customer,
 	type CustomerId,
+	type DemoLead,
+	type DemoLeadId,
 	emptyAccountChannels,
 	type Faq,
 	type FaqId,
@@ -55,6 +57,7 @@ import type {
 	ConversationRepository,
 	ConversationReviewPatch,
 	CustomerRepository,
+	DemoLeadRepository,
 	FaqRepository,
 	FindOverlappingJobsOptions,
 	InviteRepository,
@@ -63,6 +66,7 @@ import type {
 	ListAccountsOptions,
 	ListConversationsOptions,
 	ListCustomersOptions,
+	ListDemoLeadsOptions,
 	ListFaqsOptions,
 	ListItemsOptions,
 	ListJobsOptions,
@@ -70,6 +74,7 @@ import type {
 	MembershipRepository,
 	NewAccount,
 	NewAgentThread,
+	NewDemoLead,
 	NewInvite,
 	NewMembership,
 	NewUser,
@@ -112,6 +117,8 @@ export interface InMemoryData {
 	agentThreads: Map<string, AgentThread>;
 	/** Active one-time codes, keyed by normalized email (one per email). */
 	verificationCodes: Map<string, StoredVerificationCode>;
+	/** Marketing-site sales leads (demo requests, waitlist signups). */
+	demoLeads: Map<string, DemoLead>;
 }
 
 export function createInMemoryData(): InMemoryData {
@@ -128,6 +135,7 @@ export function createInMemoryData(): InMemoryData {
 		conversations: new Map(),
 		agentThreads: new Map(),
 		verificationCodes: new Map(),
+		demoLeads: new Map(),
 	};
 }
 
@@ -1349,6 +1357,55 @@ export class InMemoryAgentThreadRepository implements AgentThreadRepository {
 	}
 }
 
+/** In-memory store of marketing-site leads (global — leads precede accounts). */
+export class InMemoryDemoLeadRepository implements DemoLeadRepository {
+	constructor(private readonly data: InMemoryData) {}
+
+	async create(input: NewDemoLead): Promise<DemoLead> {
+		// Coalesce by (email, source): a retried submission refreshes the existing
+		// lead's details rather than duplicating it. The schema lowercases emails,
+		// so matching is exact. First-seen id and createdAt are kept.
+		const existing = [...this.data.demoLeads.values()].find(
+			(lead) => lead.email === input.email && lead.source === input.source,
+		);
+		if (existing) {
+			const updated: DemoLead = {
+				...existing,
+				name: input.name,
+				business: input.business,
+				phone: input.phone,
+				trade: input.trade,
+			};
+			this.data.demoLeads.set(existing.id, updated);
+			return structuredClone(updated);
+		}
+		const lead: DemoLead = {
+			id: randomUUID() as DemoLeadId,
+			name: input.name,
+			email: input.email,
+			business: input.business,
+			phone: input.phone,
+			trade: input.trade,
+			source: input.source,
+			createdAt: now(),
+		};
+		this.data.demoLeads.set(lead.id, lead);
+		return structuredClone(lead);
+	}
+
+	async list(options: ListDemoLeadsOptions): Promise<{ leads: DemoLead[]; total: number }> {
+		// Map preserves insertion order, so reversing yields a deterministic
+		// newest-first ordering even when timestamps collide within a millisecond.
+		const all = [...this.data.demoLeads.values()].reverse();
+		const { pageSize } = normalizePagination(options.page, options.pageSize);
+		const skip = pageToSkip(options.page, options.pageSize);
+		return {
+			leads: all.slice(skip, skip + pageSize).map((lead) => structuredClone(lead)),
+			total: all.length,
+		};
+	}
+}
+
 export interface InMemoryRepositories {
 	data: InMemoryData;
 	users: InMemoryUserRepository;
@@ -1364,6 +1421,7 @@ export interface InMemoryRepositories {
 	agentThreads: InMemoryAgentThreadRepository;
 	verificationCodes: InMemoryVerificationCodeRepository;
 	onboarding: InMemoryOnboardingRepository;
+	demoLeads: InMemoryDemoLeadRepository;
 }
 
 /** Build a complete set of in-memory repositories sharing one store. */
@@ -1383,6 +1441,7 @@ export function createInMemoryRepositories(
 	const agentThreads = new InMemoryAgentThreadRepository(data);
 	const verificationCodes = new InMemoryVerificationCodeRepository(data);
 	const onboarding = new InMemoryOnboardingRepository(users, accounts, memberships, invites);
+	const demoLeads = new InMemoryDemoLeadRepository(data);
 	return {
 		data,
 		users,
@@ -1398,5 +1457,6 @@ export function createInMemoryRepositories(
 		agentThreads,
 		verificationCodes,
 		onboarding,
+		demoLeads,
 	};
 }

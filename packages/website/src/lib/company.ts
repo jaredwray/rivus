@@ -105,6 +105,8 @@ export interface ContactChannel {
 	email: string;
 	icon: IconName;
 	tint: Tint;
+	/** Optional on-site page for this channel (e.g. the press kit). */
+	page?: { label: string; href: string };
 }
 
 export const contactChannels: ContactChannel[] = [
@@ -129,6 +131,7 @@ export const contactChannels: ContactChannel[] = [
 		email: 'press@rivus.ai',
 		icon: 'star',
 		tint: 'amber',
+		page: { label: 'Press kit & brand assets', href: '/press' },
 	},
 	{
 		title: 'Privacy & legal',

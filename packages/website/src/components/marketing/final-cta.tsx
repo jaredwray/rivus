@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { appUrl } from '../../lib/site';
 import { BrandImg } from './brand-img';
 import { ArrowRightIcon } from './icons';
@@ -29,9 +30,9 @@ export function FinalCta() {
 						Get started free
 						<ArrowRightIcon size={19} />
 					</a>
-					<a className="btn btn--ghost-dark" href={`${appUrl}/demo`}>
+					<Link className="btn btn--ghost-dark" href="/demo">
 						Book a demo
-					</a>
+					</Link>
 				</div>
 			</div>
 		</section>

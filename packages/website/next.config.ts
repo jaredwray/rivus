@@ -1,6 +1,6 @@
 import { initOpenNextCloudflareForDev } from '@opennextjs/cloudflare';
 import type { NextConfig } from 'next';
-import { resolveAppUrl } from './src/lib/env';
+import { resolveAppUrl, resolveDocsUrl } from './src/lib/env';
 
 const nextConfig: NextConfig = {
 	reactStrictMode: true,
@@ -8,9 +8,10 @@ const nextConfig: NextConfig = {
 	transpilePackages: ['@rivus/core'],
 	env: {
 		// Resolved per environment at build time (dev deploys link to
-		// dev-app.rivus.ai) and inlined into the client bundle, where the
-		// build-only RIVUS_ENV variable isn't visible.
+		// dev-app.rivus.ai / dev-docs.rivus.ai) and inlined into the client
+		// bundle, where the build-only RIVUS_ENV variable isn't visible.
 		NEXT_PUBLIC_APP_URL: resolveAppUrl(),
+		NEXT_PUBLIC_DOCS_URL: resolveDocsUrl(),
 	},
 };
 

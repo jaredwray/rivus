@@ -314,6 +314,16 @@ export const pricingTiers: PricingTier[] = [
 	},
 ];
 
+/**
+ * Base URL of the docs site (Docula: guides, API reference, changelog) — the
+ * docs sibling of `appUrl` below, resolved per environment by next.config.ts
+ * (`resolveDocsUrl`) so dev deploys link dev-docs.rivus.ai. The docs are a
+ * separate deploy, so links to them are absolute external URLs rendered as
+ * plain anchors (see SiteFooter). Defined above `footerColumns`, which
+ * references it.
+ */
+export const docsUrl = process.env.NEXT_PUBLIC_DOCS_URL ?? 'https://docs.rivus.ai';
+
 export interface FooterColumn {
 	title: string;
 	links: { label: string; href: string }[];
@@ -327,6 +337,15 @@ export const footerColumns: FooterColumn[] = [
 			{ label: 'Pricing', href: '/#pricing' },
 			{ label: 'Free setup', href: '/#onboarding' },
 			{ label: 'Mobile apps', href: '/apps' },
+			{ label: 'Book a demo', href: '/demo' },
+		],
+	},
+	{
+		title: 'Resources',
+		links: [
+			{ label: 'Docs', href: docsUrl },
+			{ label: 'API reference', href: `${docsUrl}/api` },
+			{ label: 'Changelog', href: `${docsUrl}/changelog` },
 		],
 	},
 	{
@@ -335,6 +354,7 @@ export const footerColumns: FooterColumn[] = [
 			{ label: 'About', href: '/about' },
 			{ label: 'Careers', href: '/careers' },
 			{ label: 'Contact', href: '/contact' },
+			{ label: 'Press & brand', href: '/press' },
 		],
 	},
 	{

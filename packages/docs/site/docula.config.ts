@@ -8,9 +8,8 @@ export const options: Partial<DoculaOptions> = {
 	githubPath: process.env.GITHUB_TOKEN ? 'jaredwray/rivus' : undefined,
 	siteTitle: 'Rivus',
 	siteDescription: 'Documentation, changelog, and API reference for Rivus.',
-	// Where the docs actually deploy (see DEPLOYMENT.md). This is the canonical
-	// origin for generated links — sitemap, llms.txt, canonical tags — so it has
-	// to match the production custom domain in ../wrangler.jsonc.
+	// The production docs domain (see wrangler.jsonc) — canonical/sitemap URLs
+	// must point where the site actually deploys.
 	siteUrl: 'https://docs.rivus.ai',
 	// Skip the README-driven landing page and make the docs the home page, so
 	// visitors land straight on the documentation (Getting Started) at "/".

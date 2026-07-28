@@ -21,6 +21,8 @@ import type {
 	CreateNotificationInput,
 	Customer,
 	CustomerId,
+	DemoLead,
+	DemoLeadSource,
 	Faq,
 	FaqId,
 	Invite,
@@ -576,4 +578,34 @@ export interface AgentThreadRepository {
 		id: AgentThreadId,
 		input: UpdateAgentThread,
 	): Promise<AgentThread | null>;
+}
+
+export interface NewDemoLead {
+	name: string;
+	email: string;
+	business: string;
+	phone: string;
+	trade: string;
+	source: DemoLeadSource;
+}
+
+/** Options for {@link DemoLeadRepository.list}: a page of leads, newest first. */
+export interface ListDemoLeadsOptions {
+	page: number;
+	pageSize: number;
+}
+
+/**
+ * Sales leads captured by the marketing site (demo requests, waitlist
+ * signups). There is no public read-back, and staff list newest-first.
+ */
+export interface DemoLeadRepository {
+	/**
+	 * Store a lead, coalescing by `(email, source)`: re-submitting refreshes the
+	 * existing record's details instead of creating a duplicate, so a visitor
+	 * retrying after a lost response (the form explicitly invites retries) can't
+	 * double-book the sales queue.
+	 */
+	create(input: NewDemoLead): Promise<DemoLead>;
+	list(options: ListDemoLeadsOptions): Promise<{ leads: DemoLead[]; total: number }>;
 }

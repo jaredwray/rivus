@@ -16,6 +16,7 @@ import {
 	conversationStatusSchema,
 	createConversationSchema,
 	createCustomerSchema,
+	createDemoLeadSchema,
 	createFaqSchema,
 	createItemSchema,
 	createJobSchema,
@@ -1040,6 +1041,71 @@ describe('publicCustomerSignupSchema', () => {
 			balance: 500,
 		});
 		expect(parsed).not.toHaveProperty('balance');
+	});
+});
+
+describe('createDemoLeadSchema', () => {
+	it('accepts the minimal form (name + email), defaulting everything else', () => {
+		const parsed = createDemoLeadSchema.parse({
+			name: 'Dana Fox',
+			email: '  Dana@Example.com ',
+		});
+		expect(parsed).toEqual({
+			name: 'Dana Fox',
+			email: 'dana@example.com',
+			business: '',
+			phone: '',
+			trade: '',
+			source: 'website-demo',
+		});
+	});
+
+	it('keeps the optional context fields and a declared source', () => {
+		const parsed = createDemoLeadSchema.parse({
+			name: 'Dana Fox',
+			email: 'dana@example.com',
+			business: ' Fox Plumbing ',
+			phone: '(555) 123-4567',
+			trade: 'Plumber',
+			source: 'apps-waitlist',
+		});
+		expect(parsed.business).toBe('Fox Plumbing');
+		expect(parsed.trade).toBe('Plumber');
+		expect(parsed.source).toBe('apps-waitlist');
+	});
+
+	it('rejects a missing or invalid email, a blank name, and an unknown source', () => {
+		expect(createDemoLeadSchema.safeParse({ name: 'Dana Fox' }).success).toBe(false);
+		expect(
+			createDemoLeadSchema.safeParse({ name: 'Dana Fox', email: 'not-an-email' }).success,
+		).toBe(false);
+		expect(createDemoLeadSchema.safeParse({ name: '  ', email: 'dana@example.com' }).success).toBe(
+			false,
+		);
+		expect(
+			createDemoLeadSchema.safeParse({
+				name: 'Dana Fox',
+				email: 'dana@example.com',
+				source: 'billboard',
+			}).success,
+		).toBe(false);
+	});
+
+	it('caps the free-text context fields', () => {
+		expect(
+			createDemoLeadSchema.safeParse({
+				name: 'Dana Fox',
+				email: 'dana@example.com',
+				trade: 'x'.repeat(81),
+			}).success,
+		).toBe(false);
+		expect(
+			createDemoLeadSchema.safeParse({
+				name: 'Dana Fox',
+				email: 'dana@example.com',
+				business: 'x'.repeat(161),
+			}).success,
+		).toBe(false);
 	});
 });
 

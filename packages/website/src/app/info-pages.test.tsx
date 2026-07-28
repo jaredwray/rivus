@@ -74,11 +74,14 @@ describe('ContactPage', () => {
 		}
 	});
 
-	it('offers a demo booking that goes to the product app', () => {
+	it('offers a demo booking that goes to the on-site request form', () => {
 		render(<ContactPage />);
-		expect(screen.getByRole('link', { name: /book a demo/i }).getAttribute('href')).toBe(
-			`${appUrl}/demo`,
-		);
+		// Hero CTA and the footer's Product column both offer the demo.
+		const links = screen.getAllByRole('link', { name: /book a demo/i });
+		expect(links.length).toBeGreaterThanOrEqual(1);
+		for (const link of links) {
+			expect(link.getAttribute('href')).toBe('/demo');
+		}
 	});
 });
 
