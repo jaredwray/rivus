@@ -13,6 +13,13 @@ type Submission =
 const RETRY_MESSAGE = 'Something went wrong on our end. Check your connection and try again.';
 
 /**
+ * How long a submission may hang before it becomes the retry error — a stalled
+ * connection must not leave the submit button disabled forever. Exported for
+ * the stalled-request test.
+ */
+export const WAITLIST_TIMEOUT_MS = 10_000;
+
+/**
  * Email capture for the native-app waitlist on /apps. Reuses the public leads
  * endpoint with the 'apps-waitlist' source, so signups land in the same
  * sales-visible queue as demo requests.
@@ -44,6 +51,8 @@ export function AppsWaitlist() {
 	const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		setSubmission({ phase: 'submitting' });
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), WAITLIST_TIMEOUT_MS);
 		fetch(`${apiUrl}/v1/leads/demo`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
@@ -52,6 +61,7 @@ export function AppsWaitlist() {
 				email: email.trim(),
 				source: 'apps-waitlist',
 			}),
+			signal: controller.signal,
 		})
 			.then(async (response) => {
 				if (response.ok) {
@@ -63,6 +73,9 @@ export function AppsWaitlist() {
 			})
 			.catch(() => {
 				setSubmission({ phase: 'error', message: RETRY_MESSAGE });
+			})
+			.finally(() => {
+				clearTimeout(timer);
 			});
 	};
 

@@ -19,12 +19,12 @@ Your specialist will:
    like to talk to customers.
 2. **Import your customers** — contact details and history from whatever
    you have today, so Rivus recognizes the people who already know you.
-3. **Connect your tools** — your calendar and QuickBooks, so bookings and
-   billing flow through the systems you already trust.
+3. **Plan your tool connections** — your calendar and billing stack, so
+   bookings and billing land where you already work.
 4. **Write your first FAQs** — the answers Rivus gives to your most common
    questions (see the knowledge guide).
-5. **Connect your channels** — phone, SMS, email, and WhatsApp, including
-   the number your customers already know.
+5. **Connect your channels** — phone, SMS, email, and WhatsApp, and make
+   the plan for the number your customers already know.
 
 Most owners are live within a day. Your part is mostly answering questions.
 
@@ -33,9 +33,9 @@ Most owners are live within a day. Your part is mostly answering questions.
 Open the **Inbox** in the app and skim what Rivus is handling. Two things to
 look for:
 
-- **Flagged conversations.** When Rivus isn't sure, it pauses and flags the
-  thread for a human instead of guessing. Reviewing a few of these teaches
-  you (and your specialist) where to add answers.
+- **Conversations that need you.** The inbox marks the threads that need a
+  human touch. Reviewing a few of these teaches you (and your specialist)
+  where to add answers.
 - **Tone.** If a reply doesn't sound like you, tell your specialist — the
   voice is adjustable, and early corrections stick.
 

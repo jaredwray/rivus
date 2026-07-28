@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiUrl } from '../../lib/site';
-import { AppsWaitlist } from './apps-waitlist';
+import { AppsWaitlist, WAITLIST_TIMEOUT_MS } from './apps-waitlist';
 
 function jsonResponse(body: unknown, status: number): Response {
 	return new Response(JSON.stringify(body), {
@@ -86,5 +86,31 @@ describe('AppsWaitlist', () => {
 
 		await screen.findByRole('alert');
 		expect(screen.getByRole('alert').textContent).toContain('try again');
+	});
+
+	it('aborts a stalled request after the timeout so the visitor can retry', async () => {
+		vi.useFakeTimers();
+		// A connection that opens but never resolves — the request only settles
+		// when the component's timeout aborts it.
+		const mock = vi.fn(
+			(_url: string, init?: RequestInit) =>
+				new Promise<Response>((_, reject) => {
+					init?.signal?.addEventListener('abort', () =>
+						reject(new DOMException('aborted', 'AbortError')),
+					);
+				}),
+		);
+		vi.stubGlobal('fetch', mock);
+		render(<AppsWaitlist />);
+
+		fillAndSubmit('Dana Fox', 'dana@example.com');
+		expect(screen.getByRole('button', { name: 'Adding you…' })).toBeTruthy();
+
+		vi.advanceTimersByTime(WAITLIST_TIMEOUT_MS);
+		vi.useRealTimers();
+
+		await screen.findByRole('alert');
+		expect(screen.getByRole('alert').textContent).toContain('try again');
+		expect(screen.getByRole('button', { name: 'Join the waitlist' })).toBeTruthy();
 	});
 });

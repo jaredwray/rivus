@@ -13,11 +13,12 @@ connected and the messaging rules that keep your texting compliant.
 
 ## Phone, SMS, and WhatsApp
 
-Phone-based channels are enabled per channel from your account settings.
-Your onboarding specialist handles this with you during setup, including
-connecting the business number your customers already know. Each channel
-can be turned on or off independently, and your account keeps its number
-identity — disabling a channel doesn't discard it.
+Phone-based channels are enabled per channel from your account settings —
+enabling one provisions a business number for it. Your onboarding
+specialist handles this with you during setup, and is the right person to
+talk to about the number your customers already know. Each channel can be
+turned on or off independently, and your account keeps its number identity
+— disabling a channel doesn't discard it.
 
 ## Email
 

@@ -25,16 +25,16 @@ first batch during setup; from then on it's yours to grow.
   charge for a service call?" are two entries, not one.
 - **Include the numbers you're happy to share.** Service-call fees, hours,
   and service areas resolve most conversations instantly. Skip anything you
-  want a human to quote personally — Rivus flags those for you instead.
+  want a human to quote personally.
 - **Mind duplicates.** Rivus warns you when a new entry looks like an
   existing one, so conflicting answers don't creep in.
 
 ## What happens without an answer
 
-When a question falls outside the knowledge base, Rivus doesn't improvise —
-the conversation is flagged in your inbox for a human. Those flags are your
-to-do list: each one you turn into an FAQ makes the next customer's answer
-instant.
+Rivus sticks to what it knows: booking appointments and the answers you've
+given it. Keep an eye on your inbox for the conversations that need a human
+— they're your knowledge to-do list, and each one you turn into an FAQ makes
+the next customer's answer instant.
 
 ## Keeping it current
 
