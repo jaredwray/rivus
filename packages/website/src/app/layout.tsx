@@ -3,6 +3,7 @@ import { Montserrat } from 'next/font/google';
 import type { ReactNode } from 'react';
 import { isProductionEnv } from '../lib/env';
 import { siteConfig } from '../lib/site';
+import { baseUrl } from './sitemap';
 import './globals.css';
 
 const montserrat = Montserrat({
@@ -13,6 +14,10 @@ const montserrat = Montserrat({
 });
 
 export const metadata: Metadata = {
+	// Absolute base for social-card and other relative metadata URLs. Always the
+	// production origin: og:image URLs must resolve publicly, and pre-production
+	// deployments are noindexed anyway.
+	metadataBase: new URL(baseUrl),
 	title: `${siteConfig.name} — ${siteConfig.tagline}`,
 	description: siteConfig.description,
 	// Keep every pre-production deployment (dev.rivus.ai, local builds) out of
@@ -24,6 +29,9 @@ export const metadata: Metadata = {
 		siteName: siteConfig.name,
 		type: 'website',
 	},
+	// The large-card hint; the image itself comes from the opengraph-image file
+	// convention, which X and other crawlers fall back to.
+	twitter: { card: 'summary_large_image' },
 };
 
 export const viewport: Viewport = {

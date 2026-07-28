@@ -21,6 +21,8 @@ import type {
 	CreateNotificationInput,
 	Customer,
 	CustomerId,
+	DemoLead,
+	DemoLeadSource,
 	Faq,
 	FaqId,
 	Invite,
@@ -576,4 +578,29 @@ export interface AgentThreadRepository {
 		id: AgentThreadId,
 		input: UpdateAgentThread,
 	): Promise<AgentThread | null>;
+}
+
+export interface NewDemoLead {
+	name: string;
+	email: string;
+	business: string;
+	phone: string;
+	trade: string;
+	source: DemoLeadSource;
+}
+
+/** Options for {@link DemoLeadRepository.list}: a page of leads, newest first. */
+export interface ListDemoLeadsOptions {
+	page: number;
+	pageSize: number;
+}
+
+/**
+ * Sales leads captured by the marketing site (demo requests, waitlist
+ * signups). Append-only from the public form's perspective — there is no
+ * public read-back — and listed newest-first for staff.
+ */
+export interface DemoLeadRepository {
+	create(input: NewDemoLead): Promise<DemoLead>;
+	list(options: ListDemoLeadsOptions): Promise<{ leads: DemoLead[]; total: number }>;
 }

@@ -6,6 +6,7 @@ import type {
 	AgentThreadRepository,
 	ConversationRepository,
 	CustomerRepository,
+	DemoLeadRepository,
 	FaqRepository,
 	InviteRepository,
 	ItemRepository,
@@ -53,6 +54,8 @@ export interface AppDeps {
 	conversations: ConversationRepository;
 	/** The agent's per-contact scheduling state across messaging channels. */
 	agentThreads: AgentThreadRepository;
+	/** Marketing-site sales leads (demo requests, waitlist signups). */
+	demoLeads: DemoLeadRepository;
 	/** Stores one-time sign-in codes for passwordless auth. */
 	verificationCodes: VerificationCodeRepository;
 	/** Sends transactional email (invitations and sign-in codes). */

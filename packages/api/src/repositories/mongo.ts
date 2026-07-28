@@ -18,6 +18,8 @@ import {
 	type CreateNotificationInput,
 	type Customer,
 	type CustomerId,
+	type DemoLead,
+	type DemoLeadId,
 	escapeRegex,
 	type Faq,
 	type FaqId,
@@ -58,6 +60,7 @@ import {
 	type MessageSubdocument,
 } from '../db/models/conversation.model';
 import { type CustomerDocument, CustomerModel } from '../db/models/customer.model';
+import { type DemoLeadDocument, DemoLeadModel } from '../db/models/demo-lead.model';
 import { type FaqDocument, FaqModel } from '../db/models/faq.model';
 import { type InviteDocument, InviteModel } from '../db/models/invite.model';
 import { type ItemDocument, ItemModel } from '../db/models/item.model';
@@ -78,6 +81,7 @@ import type {
 	ConversationRepository,
 	ConversationReviewPatch,
 	CustomerRepository,
+	DemoLeadRepository,
 	FaqRepository,
 	FindOverlappingJobsOptions,
 	InviteRepository,
@@ -86,6 +90,7 @@ import type {
 	ListAccountsOptions,
 	ListConversationsOptions,
 	ListCustomersOptions,
+	ListDemoLeadsOptions,
 	ListFaqsOptions,
 	ListItemsOptions,
 	ListJobsOptions,
@@ -93,6 +98,7 @@ import type {
 	MembershipRepository,
 	NewAccount,
 	NewAgentThread,
+	NewDemoLead,
 	NewInvite,
 	NewMembership,
 	NewUser,
@@ -1672,5 +1678,35 @@ export class MongoAgentThreadRepository implements AgentThreadRepository {
 			{ new: true },
 		).exec();
 		return doc ? mapAgentThread(doc) : null;
+	}
+}
+
+function mapDemoLead(doc: HydratedDocument<DemoLeadDocument>): DemoLead {
+	return {
+		id: doc._id.toString() as DemoLeadId,
+		name: doc.name,
+		email: doc.email,
+		business: doc.business,
+		phone: doc.phone,
+		trade: doc.trade,
+		source: doc.source,
+		createdAt: doc.createdAt.toISOString(),
+	};
+}
+
+export class MongoDemoLeadRepository implements DemoLeadRepository {
+	async create(input: NewDemoLead): Promise<DemoLead> {
+		const doc = await DemoLeadModel.create(input);
+		return mapDemoLead(doc);
+	}
+
+	async list(options: ListDemoLeadsOptions): Promise<{ leads: DemoLead[]; total: number }> {
+		const { pageSize } = normalizePagination(options.page, options.pageSize);
+		const skip = pageToSkip(options.page, options.pageSize);
+		const [docs, total] = await Promise.all([
+			DemoLeadModel.find().sort({ createdAt: -1, _id: -1 }).skip(skip).limit(pageSize).exec(),
+			DemoLeadModel.countDocuments().exec(),
+		]);
+		return { leads: docs.map(mapDemoLead), total };
 	}
 }

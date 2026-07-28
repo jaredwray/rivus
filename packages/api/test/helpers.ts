@@ -85,6 +85,7 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		conversations,
 		agentThreads,
 		verificationCodes,
+		demoLeads,
 	} = createInMemoryRepositories();
 	const app = buildApp({
 		config: loadConfig(TEST_CONFIG),
@@ -101,6 +102,7 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		conversations,
 		agentThreads,
 		verificationCodes,
+		demoLeads,
 		// A recording mailer by default so helpers can read back the emailed code.
 		mailer: new RecordingMailer(),
 		// No inbound-email fetching in tests — webhook payloads embed their content.
@@ -152,6 +154,7 @@ export async function buildTestAppWithRepos(overrides: Partial<AppDeps> = {}): P
 		conversations,
 		agentThreads,
 		verificationCodes,
+		demoLeads,
 	} = repos;
 	const app = buildApp({
 		config: loadConfig(TEST_CONFIG),
@@ -168,6 +171,7 @@ export async function buildTestAppWithRepos(overrides: Partial<AppDeps> = {}): P
 		conversations,
 		agentThreads,
 		verificationCodes,
+		demoLeads,
 		mailer: new RecordingMailer(),
 		receivedEmails: new NoopReceivedEmailReader(),
 		whatsappSender: new RecordingWhatsappSender(),

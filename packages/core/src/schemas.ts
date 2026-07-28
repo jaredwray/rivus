@@ -750,6 +750,31 @@ export const publicCustomerSignupSchema = z.object({
 });
 export type PublicCustomerSignupInput = z.infer<typeof publicCustomerSignupSchema>;
 
+/**
+ * Where a marketing-site lead came from (see {@link DemoLeadSource}): the /demo
+ * request form, or the mobile-apps waitlist capture. An enum so a new marketing
+ * surface has to be added here deliberately rather than free-texting a source.
+ */
+export const demoLeadSourceSchema = z.enum(['website-demo', 'apps-waitlist'], {
+	error: 'Choose a valid lead source.',
+});
+
+/**
+ * Body for the public demo-request form on the marketing site. `name` and
+ * `email` are the minimum a specialist needs to reach out; everything else is
+ * optional context. The endpoint is unauthenticated, so nothing server-owned
+ * is accepted here.
+ */
+export const createDemoLeadSchema = z.object({
+	name: nameSchema,
+	email: emailSchema,
+	business: optionalText('Business name', 160).default(''),
+	phone: phoneSchema.default(''),
+	trade: optionalText('Trade', 80).default(''),
+	source: demoLeadSourceSchema.default('website-demo'),
+});
+export type CreateDemoLeadInput = z.infer<typeof createDemoLeadSchema>;
+
 // --- Account seeding (development only) ---------------------------------------
 
 /**

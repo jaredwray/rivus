@@ -74,11 +74,9 @@ describe('ContactPage', () => {
 		}
 	});
 
-	it('offers a demo booking that goes to the product app', () => {
+	it('offers a demo booking that goes to the on-site request form', () => {
 		render(<ContactPage />);
-		expect(screen.getByRole('link', { name: /book a demo/i }).getAttribute('href')).toBe(
-			`${appUrl}/demo`,
-		);
+		expect(screen.getByRole('link', { name: /book a demo/i }).getAttribute('href')).toBe('/demo');
 	});
 });
 

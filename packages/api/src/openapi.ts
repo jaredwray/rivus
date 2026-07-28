@@ -35,6 +35,7 @@ async function main(): Promise<void> {
 		conversations,
 		agentThreads,
 		verificationCodes,
+		demoLeads,
 	} = createInMemoryRepositories();
 	const app = buildApp({
 		config,
@@ -51,6 +52,7 @@ async function main(): Promise<void> {
 		conversations,
 		agentThreads,
 		verificationCodes,
+		demoLeads,
 		mailer: new NoopMailer(),
 		receivedEmails: new NoopReceivedEmailReader(),
 		whatsappSender: new NoopWhatsappSender(),
