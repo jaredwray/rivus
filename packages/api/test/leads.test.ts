@@ -1,7 +1,16 @@
 import { faker } from '@faker-js/faker';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { authHeader, buildTestApp, signupOwner } from './helpers';
+import { SALES_NOTIFICATIONS_ADDRESS } from '../src/services/email';
+import { authHeader, buildTestApp, RecordingMailer, signupOwner } from './helpers';
+
+function recordingMailer(app: FastifyInstance): RecordingMailer {
+	const mailer = app.deps.mailer;
+	if (!(mailer instanceof RecordingMailer)) {
+		throw new Error('test app must use a RecordingMailer');
+	}
+	return mailer;
+}
 
 const STAFF_EMAIL = 'ops@rivus.ai';
 
@@ -73,6 +82,76 @@ describe('POST /v1/leads/demo (public)', () => {
 		});
 
 		expect(response.statusCode).toBe(400);
+	});
+
+	it('coalesces a retried submission instead of double-booking the sales queue', async () => {
+		await submitDemoLead(app, { name: 'Dana Fox', email: 'dana@example.com' });
+		const retry = await submitDemoLead(app, {
+			name: 'Dana Fox',
+			email: 'Dana@Example.com',
+			phone: '555-0100',
+		});
+		expect(retry.statusCode).toBe(201);
+
+		const staffToken = (await signupOwner(app, { email: STAFF_EMAIL })).token;
+		const listed = await app.inject({
+			method: 'GET',
+			url: '/v1/leads/demo',
+			headers: authHeader(staffToken),
+		});
+		const body = listed.json();
+		expect(body.meta.total).toBe(1);
+		// The retry's fresher details win.
+		expect(body.data[0]).toMatchObject({ email: 'dana@example.com', phone: '555-0100' });
+	});
+
+	it('keeps leads for the same email separate across sources', async () => {
+		await submitDemoLead(app, { name: 'Dana Fox', email: 'dana@example.com' });
+		await submitDemoLead(app, {
+			name: 'Dana Fox',
+			email: 'dana@example.com',
+			source: 'apps-waitlist',
+		});
+
+		const staffToken = (await signupOwner(app, { email: STAFF_EMAIL })).token;
+		const listed = await app.inject({
+			method: 'GET',
+			url: '/v1/leads/demo',
+			headers: authHeader(staffToken),
+		});
+		expect(listed.json().meta.total).toBe(2);
+	});
+
+	it('notifies the sales inbox with the stored lead', async () => {
+		await submitDemoLead(app, {
+			name: 'Dana Fox',
+			email: 'dana@example.com',
+			business: 'Fox Plumbing',
+		});
+
+		const mailer = recordingMailer(app);
+		expect(mailer.demoLeadEmails).toHaveLength(1);
+		expect(mailer.demoLeadEmails[0]?.to).toBe(SALES_NOTIFICATIONS_ADDRESS);
+		expect(mailer.demoLeadEmails[0]?.lead).toMatchObject({
+			name: 'Dana Fox',
+			email: 'dana@example.com',
+			business: 'Fox Plumbing',
+		});
+	});
+
+	it('still stores the lead and answers 201 when the notification email fails', async () => {
+		recordingMailer(app).failNextDemoLeadEmail = true;
+
+		const response = await submitDemoLead(app, { name: 'Dana Fox', email: 'dana@example.com' });
+		expect(response.statusCode).toBe(201);
+
+		const staffToken = (await signupOwner(app, { email: STAFF_EMAIL })).token;
+		const listed = await app.inject({
+			method: 'GET',
+			url: '/v1/leads/demo',
+			headers: authHeader(staffToken),
+		});
+		expect(listed.json().meta.total).toBe(1);
 	});
 });
 

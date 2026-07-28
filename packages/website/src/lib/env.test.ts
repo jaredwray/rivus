@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isProductionEnv, resolveAppUrl } from './env';
+import { isProductionEnv, resolveAppUrl, resolveDocsUrl } from './env';
 
 describe('isProductionEnv', () => {
 	it('is true only when RIVUS_ENV is exactly "production"', () => {
@@ -47,5 +47,35 @@ describe('resolveAppUrl', () => {
 
 	it('reads from process.env by default', () => {
 		expect(resolveAppUrl()).toMatch(/^https?:\/\//);
+	});
+});
+
+describe('resolveDocsUrl', () => {
+	it('points the development deploy at the dev docs', () => {
+		expect(resolveDocsUrl({ RIVUS_ENV: 'development' })).toBe('https://dev-docs.rivus.ai');
+	});
+
+	it('points production at the production docs', () => {
+		expect(resolveDocsUrl({ RIVUS_ENV: 'production' })).toBe('https://docs.rivus.ai');
+	});
+
+	it('defaults local builds (RIVUS_ENV unset) to the production docs', () => {
+		expect(resolveDocsUrl({})).toBe('https://docs.rivus.ai');
+	});
+
+	it('lets NEXT_PUBLIC_DOCS_URL override the environment mapping', () => {
+		expect(
+			resolveDocsUrl({ RIVUS_ENV: 'development', NEXT_PUBLIC_DOCS_URL: 'http://localhost:3010' }),
+		).toBe('http://localhost:3010');
+	});
+
+	it('strips trailing slashes from the override so appended paths stay clean', () => {
+		expect(resolveDocsUrl({ NEXT_PUBLIC_DOCS_URL: 'https://docs.example.com/' })).toBe(
+			'https://docs.example.com',
+		);
+	});
+
+	it('reads from process.env by default', () => {
+		expect(resolveDocsUrl()).toMatch(/^https?:\/\//);
 	});
 });

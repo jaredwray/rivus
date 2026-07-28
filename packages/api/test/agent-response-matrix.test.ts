@@ -52,6 +52,7 @@ class RecordingMailer implements Mailer {
 	last: AgentEmail | null = null;
 	async sendInviteEmail(): Promise<void> {}
 	async sendVerificationCode(): Promise<void> {}
+	async sendDemoLeadEmail(): Promise<void> {}
 	async sendAgentEmail(email: AgentEmail): Promise<void> {
 		this.last = email;
 	}

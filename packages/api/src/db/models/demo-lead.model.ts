@@ -37,4 +37,9 @@ const demoLeadSchema = new Schema<DemoLeadDocument>(
 // without this index every page is a collection scan + in-memory sort.
 demoLeadSchema.index({ createdAt: -1, _id: -1 });
 
+// One lead per (email, source): the repository upserts on this pair so a
+// retried submission can't double-book the sales queue, and the unique index
+// closes the concurrent-insert race.
+demoLeadSchema.index({ email: 1, source: 1 }, { unique: true });
+
 export const DemoLeadModel = model<DemoLeadDocument>('DemoLead', demoLeadSchema);

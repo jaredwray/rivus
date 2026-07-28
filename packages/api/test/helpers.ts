@@ -7,7 +7,13 @@ import { createInMemoryRepositories, type InMemoryRepositories } from '../src/re
 import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
 import { NoopChannelProvisioner, NoopNumberReleaser } from '../src/services/channel-provisioning';
 import { createDecider } from '../src/services/chat/decide';
-import type { AgentEmail, InviteEmail, Mailer, VerificationEmail } from '../src/services/email';
+import type {
+	AgentEmail,
+	DemoLeadEmail,
+	InviteEmail,
+	Mailer,
+	VerificationEmail,
+} from '../src/services/email';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
@@ -21,6 +27,9 @@ export class RecordingMailer implements Mailer {
 	readonly invites: InviteEmail[] = [];
 	readonly codes: VerificationEmail[] = [];
 	readonly agentEmails: AgentEmail[] = [];
+	readonly demoLeadEmails: DemoLeadEmail[] = [];
+	/** When set, the next lead notification rejects once (delivery-failure path). */
+	failNextDemoLeadEmail = false;
 
 	async sendInviteEmail(email: InviteEmail): Promise<void> {
 		this.invites.push(email);
@@ -32,6 +41,14 @@ export class RecordingMailer implements Mailer {
 
 	async sendAgentEmail(email: AgentEmail): Promise<void> {
 		this.agentEmails.push(email);
+	}
+
+	async sendDemoLeadEmail(email: DemoLeadEmail): Promise<void> {
+		if (this.failNextDemoLeadEmail) {
+			this.failNextDemoLeadEmail = false;
+			throw new Error('demo-lead email failed (test)');
+		}
+		this.demoLeadEmails.push(email);
 	}
 }
 

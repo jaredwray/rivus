@@ -1,9 +1,11 @@
 import type { Config } from '../config';
 import {
 	type AgentEmail,
+	type DemoLeadEmail,
 	type InviteEmail,
 	type Mailer,
 	NoopMailer,
+	renderDemoLeadEmail,
 	renderInviteEmail,
 	renderVerificationEmail,
 	type VerificationEmail,
@@ -60,6 +62,11 @@ export class ResendMailer implements Mailer {
 
 	async sendVerificationCode(email: VerificationEmail): Promise<void> {
 		const { subject, html, text } = renderVerificationEmail(email);
+		await this.send({ to: email.to, subject, html, text });
+	}
+
+	async sendDemoLeadEmail(email: DemoLeadEmail): Promise<void> {
+		const { subject, html, text } = renderDemoLeadEmail(email);
 		await this.send({ to: email.to, subject, html, text });
 	}
 

@@ -1362,6 +1362,23 @@ export class InMemoryDemoLeadRepository implements DemoLeadRepository {
 	constructor(private readonly data: InMemoryData) {}
 
 	async create(input: NewDemoLead): Promise<DemoLead> {
+		// Coalesce by (email, source): a retried submission refreshes the existing
+		// lead's details rather than duplicating it. The schema lowercases emails,
+		// so matching is exact. First-seen id and createdAt are kept.
+		const existing = [...this.data.demoLeads.values()].find(
+			(lead) => lead.email === input.email && lead.source === input.source,
+		);
+		if (existing) {
+			const updated: DemoLead = {
+				...existing,
+				name: input.name,
+				business: input.business,
+				phone: input.phone,
+				trade: input.trade,
+			};
+			this.data.demoLeads.set(existing.id, updated);
+			return structuredClone(updated);
+		}
 		const lead: DemoLead = {
 			id: randomUUID() as DemoLeadId,
 			name: input.name,

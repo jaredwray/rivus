@@ -4552,7 +4552,7 @@
         "tags": [
           "leads"
         ],
-        "description": "Backs the marketing site’s demo-request form. Unauthenticated by design; the response is an opaque receipt so the endpoint reveals nothing about stored leads.",
+        "description": "Backs the marketing site’s demo-request form. Unauthenticated by design; the response is an opaque receipt so the endpoint reveals nothing about stored leads. Idempotent per (email, source): a retried submission refreshes the stored lead instead of duplicating it.",
         "requestBody": {
           "required": true,
           "content": {

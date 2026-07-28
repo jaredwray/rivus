@@ -1,3 +1,4 @@
+import { SMS_CONSENT_DISCLOSURE } from '@rivus/core';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiUrl } from '../../lib/site';
@@ -59,13 +60,16 @@ describe('DemoRequest', () => {
 		expect(mailtos.length).toBeGreaterThanOrEqual(1);
 	});
 
-	it('discloses SMS consent where the phone number is collected', () => {
+	it('shows the canonical SMS consent disclosure where the phone number is collected', () => {
 		stubFetch();
 		render(<DemoRequest />);
 
 		const phone = screen.getByLabelText('Phone (optional)');
 		expect(phone.getAttribute('aria-describedby')).toBe('demo-phone-consent');
-		expect(screen.getByText(/Reply STOP to opt out/i)).toBeTruthy();
+		// Carrier vetting requires the identical disclosure on every collection
+		// surface, so assert the canonical text verbatim rather than a paraphrase.
+		const consent = document.getElementById('demo-phone-consent');
+		expect(consent?.textContent).toContain(SMS_CONSENT_DISCLOSURE);
 		expect(screen.getByRole('link', { name: 'SMS terms' }).getAttribute('href')).toBe('/sms-terms');
 		expect(screen.getByRole('link', { name: 'privacy policy' }).getAttribute('href')).toBe(
 			'/privacy',
