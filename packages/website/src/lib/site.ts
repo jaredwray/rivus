@@ -309,7 +309,7 @@ export const pricingTiers: PricingTier[] = [
 		period: '/mo',
 		priceNote: 'for the first location',
 		cta: 'Start free',
-		capacity: ['Unlimited users · unlimited locations', '$249/mo per additional location'],
+		capacity: ['Unlimited users · unlimited locations', '$179/mo per additional location'],
 		features: allPlanFeatures,
 	},
 ];
