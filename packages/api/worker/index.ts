@@ -10,6 +10,11 @@ export interface Env {
 	RESEND_API_KEY: string;
 	EMAIL_FROM: string;
 	APP_URL: string;
+	// Optional operational knobs — both have defaults in `loadConfig`, so they're
+	// only set when an environment wants to override (e.g. `debug` logging on the
+	// development deployment, a shorter session lifetime in production).
+	JWT_EXPIRES_IN?: string;
+	LOG_LEVEL?: string;
 	// Base URL of the marketing website (customer self-signup links). Optional so
 	// deployments predating the agent email channel keep booting with the default.
 	WEBSITE_URL?: string;
@@ -30,8 +35,10 @@ export interface Env {
 	// when none is set the check degrades to a no-op).
 	OPENAI_API_KEY?: string;
 	OPENAI_MODEL?: string;
+	OPENAI_EMBEDDING_MODEL?: string;
 	GOOGLE_GENERATIVE_AI_API_KEY?: string;
 	GEMINI_MODEL?: string;
+	GOOGLE_EMBEDDING_MODEL?: string;
 	XAI_API_KEY?: string;
 	XAI_MODEL?: string;
 	ANTHROPIC_API_KEY?: string;

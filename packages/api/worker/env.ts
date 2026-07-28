@@ -8,8 +8,11 @@
  * So EVERY variable `../src/config` reads must appear in {@link FORWARDED_VARS},
  * or the app reports the feature as "not configured" even when the secret is
  * set on the Worker — the exact trap the messaging channels fell into.
- * `./index.ts` asserts at compile time that each entry names a real `Env`
- * binding.
+ *
+ * Two guards keep the list honest in both directions: `./index.ts` asserts at
+ * compile time that each entry names a real `Env` binding, and
+ * `../test/worker-env.test.ts` asserts the reverse — that every key of `Config`
+ * is either forwarded here or listed in its small, deliberate exclusion set.
  */
 
 /** Every Worker binding forwarded into the container's `process.env`. */
@@ -17,8 +20,10 @@ export const FORWARDED_VARS = [
 	'RIVUS_ENV',
 	'MONGODB_URI',
 	'JWT_SECRET',
+	'JWT_EXPIRES_IN',
 	'CORS_ORIGIN',
 	'COOKIE_DOMAIN',
+	'LOG_LEVEL',
 	'RESEND_API_KEY',
 	'EMAIL_FROM',
 	'APP_URL',
@@ -27,8 +32,13 @@ export const FORWARDED_VARS = [
 	'RESEND_WEBHOOK_SECRET',
 	'OPENAI_API_KEY',
 	'OPENAI_MODEL',
+	// Model ids aren't secrets, so they're set as `vars` — but they still have to
+	// be forwarded, or the override silently does nothing and retrieval keeps
+	// using the default model.
+	'OPENAI_EMBEDDING_MODEL',
 	'GOOGLE_GENERATIVE_AI_API_KEY',
 	'GEMINI_MODEL',
+	'GOOGLE_EMBEDDING_MODEL',
 	'XAI_API_KEY',
 	'XAI_MODEL',
 	'ANTHROPIC_API_KEY',

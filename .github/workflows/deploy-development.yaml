@@ -34,15 +34,28 @@ jobs:
   # if JWT_SECRET rotates during that window, update the frozen Worker by hand
   # (`wrangler secret put JWT_SECRET --env development` in packages/agent).
 
+  # Every deploy job binds `environment: development` so it can read that
+  # environment's secrets and so the environment's protection rules gate the
+  # deploy itself. Without the binding, `secrets.*` below resolve only against
+  # repository-level secrets — which also means dev and production could never
+  # hold different `CLOUDFLARE_*` values, since the names collide at repo level.
+  # The cost is one deployment record per job rather than one per run;
+  # `record-deployment` is the only job carrying a `url`, so it stays the
+  # environment's "active" deployment.
   deploy-docs:
     name: Deploy docs
     needs: validate
     runs-on: ubuntu-latest
+    environment: development
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       # Selects the disallow-all robots.txt for the dev docs (dev-docs.rivus.ai).
       RIVUS_ENV: development
+      # Optional: with a token, Docula pulls contributors and repo metadata into
+      # the build (site/docula.config.ts gates `githubPath` on it). The default
+      # workflow token is enough — `permissions: contents: read` covers it.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup
@@ -53,6 +66,7 @@ jobs:
     name: Deploy app
     needs: validate
     runs-on: ubuntu-latest
+    environment: development
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -89,6 +103,7 @@ jobs:
     name: Deploy website
     needs: validate
     runs-on: ubuntu-latest
+    environment: development
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -108,6 +123,7 @@ jobs:
     name: Deploy api (container)
     needs: validate
     runs-on: ubuntu-latest
+    environment: development
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -116,14 +132,6 @@ jobs:
       # Passwordless auth emails the sign-in code, so the container (NODE_ENV=
       # production) refuses to boot without this.
       DEV_RESEND_API_KEY: ${{ secrets.DEV_RESEND_API_KEY }}
-      # Optional: enables the AI duplicate-FAQ check. Unset → the check is a no-op.
-      DEV_OPENAI_API_KEY: ${{ secrets.DEV_OPENAI_API_KEY }}
-      # Optional: enables the model-backed chat router (`/v1/chat`) and Anthropic
-      # as an AI-provider fallback. Unset → chat routes deterministically.
-      DEV_ANTHROPIC_API_KEY: ${{ secrets.DEV_ANTHROPIC_API_KEY }}
-      # Optional: enables the agent email channel's inbound webhook. Unset → the
-      # route answers 503 (the channel is off) while everything else still works.
-      DEV_RESEND_WEBHOOK_SECRET: ${{ secrets.DEV_RESEND_WEBHOOK_SECRET }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup
@@ -137,28 +145,59 @@ jobs:
           printf '%s' "$DEV_MONGODB_URI" | pnpm --filter @rivus/api exec wrangler secret put MONGODB_URI --env development
           printf '%s' "$DEV_JWT_SECRET" | pnpm --filter @rivus/api exec wrangler secret put JWT_SECRET --env development
           printf '%s' "$DEV_RESEND_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put RESEND_API_KEY --env development
-      # Optional AI keys — each pushed only when its GitHub secret is set.
-      - name: Sync optional AI secret
-        if: ${{ env.DEV_OPENAI_API_KEY != '' }}
+      # Every optional integration, in one pass. Each Worker secret is pushed only
+      # when its GitHub secret is set, so an unset one never reaches the container
+      # as an empty string — `loadConfig`'s `min(1)` would reject that and
+      # crash-loop the container. Unset simply means the feature stays off:
+      # the channels degrade to no-ops, the audit answers "not enabled", and the
+      # signed webhook routes answer 503 rather than accepting unsigned traffic.
+      #
+      # This syncs; it never unsets. Removing a GitHub secret leaves the Worker's
+      # copy in place — retire an integration with
+      # `wrangler secret delete <NAME> --env development`.
+      - name: Sync optional API secrets
+        env:
+          # AI providers: OpenAI is primary, the rest are ordered fallbacks.
+          OPENAI_API_KEY: ${{ secrets.DEV_OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.DEV_ANTHROPIC_API_KEY }}
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.DEV_GOOGLE_GENERATIVE_AI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.DEV_XAI_API_KEY }}
+          # Agent email channel (Resend inbound webhook).
+          RESEND_WEBHOOK_SECRET: ${{ secrets.DEV_RESEND_WEBHOOK_SECRET }}
+          # The chat's website audit.
+          ZENROWS_API_KEY: ${{ secrets.DEV_ZENROWS_API_KEY }}
+          BRAVE_SEARCH_API_KEY: ${{ secrets.DEV_BRAVE_SEARCH_API_KEY }}
+          # Phone-number channels (WhatsApp / SMS / voice). Twilio is primary;
+          # Plivo is retained for the numbers it still owns during the migration;
+          # zernio is the WhatsApp-only alternative. Their non-secret webhook URLs
+          # and API bases live in packages/api/wrangler.jsonc `vars`.
+          TWILIO_ACCOUNT_SID: ${{ secrets.DEV_TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.DEV_TWILIO_AUTH_TOKEN }}
+          PLIVO_AUTH_ID: ${{ secrets.DEV_PLIVO_AUTH_ID }}
+          PLIVO_AUTH_TOKEN: ${{ secrets.DEV_PLIVO_AUTH_TOKEN }}
+          ZERNIO_API_KEY: ${{ secrets.DEV_ZERNIO_API_KEY }}
+          ZERNIO_WEBHOOK_SECRET: ${{ secrets.DEV_ZERNIO_WEBHOOK_SECRET }}
+          ZERNIO_VERIFY_TOKEN: ${{ secrets.DEV_ZERNIO_VERIFY_TOKEN }}
         run: |
-          printf '%s' "$DEV_OPENAI_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put OPENAI_API_KEY --env development
-      - name: Sync optional chat-router secret
-        if: ${{ env.DEV_ANTHROPIC_API_KEY != '' }}
-        run: |
-          printf '%s' "$DEV_ANTHROPIC_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put ANTHROPIC_API_KEY --env development
-      # Optional inbound-email webhook secret — pushed only when set, so an empty
-      # value never reaches the container (min(1) would crash-loop it).
-      - name: Sync optional email-channel secret
-        if: ${{ env.DEV_RESEND_WEBHOOK_SECRET != '' }}
-        run: |
-          printf '%s' "$DEV_RESEND_WEBHOOK_SECRET" | pnpm --filter @rivus/api exec wrangler secret put RESEND_WEBHOOK_SECRET --env development
+          for name in \
+            OPENAI_API_KEY ANTHROPIC_API_KEY GOOGLE_GENERATIVE_AI_API_KEY XAI_API_KEY \
+            RESEND_WEBHOOK_SECRET ZENROWS_API_KEY BRAVE_SEARCH_API_KEY \
+            TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN PLIVO_AUTH_ID PLIVO_AUTH_TOKEN \
+            ZERNIO_API_KEY ZERNIO_WEBHOOK_SECRET ZERNIO_VERIFY_TOKEN; do
+            if [ -n "${!name}" ]; then
+              printf '%s' "${!name}" | pnpm --filter @rivus/api exec wrangler secret put "$name" --env development
+              echo "synced $name"
+            else
+              echo "skipped $name (no GitHub secret set)"
+            fi
+          done
 
   # The four service deploys above all ship to the single Cloudflare `development`
-  # environment. If each of them set `environment: development`, GitHub would open
-  # one deployment record per job — four per run — which floods the Deployments
-  # timeline and makes the "active" deployment race between services. Instead the
-  # deploy jobs run without an environment, and this job records exactly one
-  # deployment for the run, once every service has shipped.
+  # environment, and each binds `environment: development` so it can read that
+  # environment's secrets (see the note above `deploy-docs`). This job is what
+  # gives the run a single deployment carrying the environment URL: it is the
+  # last to run, so it settles as the "active" development deployment instead of
+  # the four service jobs racing for it.
   record-deployment:
     name: Record development deployment
     needs: [deploy-docs, deploy-app, deploy-website, deploy-api]

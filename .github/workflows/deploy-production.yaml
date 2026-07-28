@@ -38,15 +38,28 @@ jobs:
   # JWT_SECRET rotates during that window, update the frozen Worker by hand
   # (`wrangler secret put JWT_SECRET --env production` in packages/agent).
 
+  # Every deploy job binds `environment: production` so it can read that
+  # environment's secrets and so the environment's protection rules (e.g. a
+  # required reviewer) gate the deploy itself. Without the binding, `secrets.*`
+  # below resolve only against repository-level secrets, and a protection rule
+  # would gate nothing but the bookkeeping job at the bottom — which runs after
+  # everything is already live. The cost is one deployment record per job rather
+  # than one per run; `record-deployment` is the only job carrying a `url`, so it
+  # stays the environment's "active" deployment.
   deploy-docs:
     name: Deploy docs
     needs: validate
     runs-on: ubuntu-latest
+    environment: production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       # Crawlable: emits an allow-all robots.txt for the production docs.
       RIVUS_ENV: production
+      # Optional: with a token, Docula pulls contributors and repo metadata into
+      # the build (site/docula.config.ts gates `githubPath` on it). The default
+      # workflow token is enough — `permissions: contents: read` covers it.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup
@@ -57,6 +70,7 @@ jobs:
     name: Deploy app
     needs: validate
     runs-on: ubuntu-latest
+    environment: production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -93,6 +107,7 @@ jobs:
     name: Deploy website
     needs: validate
     runs-on: ubuntu-latest
+    environment: production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -112,20 +127,13 @@ jobs:
     name: Deploy api (container)
     needs: validate
     runs-on: ubuntu-latest
+    environment: production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       PROD_MONGODB_URI: ${{ secrets.PROD_MONGODB_URI }}
       PROD_JWT_SECRET: ${{ secrets.PROD_JWT_SECRET }}
       PROD_RESEND_API_KEY: ${{ secrets.PROD_RESEND_API_KEY }}
-      # Optional: enables the AI duplicate-FAQ check. Unset → the check is a no-op.
-      PROD_OPENAI_API_KEY: ${{ secrets.PROD_OPENAI_API_KEY }}
-      # Optional: enables the model-backed chat router (`/v1/chat`) and Anthropic
-      # as an AI-provider fallback. Unset → chat routes deterministically.
-      PROD_ANTHROPIC_API_KEY: ${{ secrets.PROD_ANTHROPIC_API_KEY }}
-      # Optional: enables the agent email channel's inbound webhook. Unset → the
-      # route answers 503 (the channel is off) while everything else still works.
-      PROD_RESEND_WEBHOOK_SECRET: ${{ secrets.PROD_RESEND_WEBHOOK_SECRET }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup
@@ -148,30 +156,59 @@ jobs:
           printf '%s' "$PROD_MONGODB_URI" | pnpm --filter @rivus/api exec wrangler secret put MONGODB_URI --env production
           printf '%s' "$PROD_JWT_SECRET" | pnpm --filter @rivus/api exec wrangler secret put JWT_SECRET --env production
           printf '%s' "$PROD_RESEND_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put RESEND_API_KEY --env production
-      # Optional AI key — pushed only when set, so an unset secret never reaches the
-      # container as an empty value (which would fail loadConfig's min(1) and crash-loop it).
-      - name: Sync optional AI secret
-        if: ${{ env.PROD_OPENAI_API_KEY != '' }}
+      # Every optional integration, in one pass. Each Worker secret is pushed only
+      # when its GitHub secret is set, so an unset one never reaches the container
+      # as an empty string — `loadConfig`'s `min(1)` would reject that and
+      # crash-loop the container. Unset simply means the feature stays off:
+      # the channels degrade to no-ops, the audit answers "not enabled", and the
+      # signed webhook routes answer 503 rather than accepting unsigned traffic.
+      #
+      # This syncs; it never unsets. Removing a GitHub secret leaves the Worker's
+      # copy in place — retire an integration with
+      # `wrangler secret delete <NAME> --env production`.
+      - name: Sync optional API secrets
+        env:
+          # AI providers: OpenAI is primary, the rest are ordered fallbacks.
+          OPENAI_API_KEY: ${{ secrets.PROD_OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.PROD_ANTHROPIC_API_KEY }}
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.PROD_GOOGLE_GENERATIVE_AI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.PROD_XAI_API_KEY }}
+          # Agent email channel (Resend inbound webhook).
+          RESEND_WEBHOOK_SECRET: ${{ secrets.PROD_RESEND_WEBHOOK_SECRET }}
+          # The chat's website audit.
+          ZENROWS_API_KEY: ${{ secrets.PROD_ZENROWS_API_KEY }}
+          BRAVE_SEARCH_API_KEY: ${{ secrets.PROD_BRAVE_SEARCH_API_KEY }}
+          # Phone-number channels (WhatsApp / SMS / voice). Twilio is primary;
+          # Plivo is retained for the numbers it still owns during the migration;
+          # zernio is the WhatsApp-only alternative. Their non-secret webhook URLs
+          # and API bases live in packages/api/wrangler.jsonc `vars`.
+          TWILIO_ACCOUNT_SID: ${{ secrets.PROD_TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.PROD_TWILIO_AUTH_TOKEN }}
+          PLIVO_AUTH_ID: ${{ secrets.PROD_PLIVO_AUTH_ID }}
+          PLIVO_AUTH_TOKEN: ${{ secrets.PROD_PLIVO_AUTH_TOKEN }}
+          ZERNIO_API_KEY: ${{ secrets.PROD_ZERNIO_API_KEY }}
+          ZERNIO_WEBHOOK_SECRET: ${{ secrets.PROD_ZERNIO_WEBHOOK_SECRET }}
+          ZERNIO_VERIFY_TOKEN: ${{ secrets.PROD_ZERNIO_VERIFY_TOKEN }}
         run: |
-          printf '%s' "$PROD_OPENAI_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put OPENAI_API_KEY --env production
-      # Optional chat-router key — same empty-value guard as above.
-      - name: Sync optional chat-router secret
-        if: ${{ env.PROD_ANTHROPIC_API_KEY != '' }}
-        run: |
-          printf '%s' "$PROD_ANTHROPIC_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put ANTHROPIC_API_KEY --env production
-      # Optional inbound-email webhook secret — same empty-value guard as above.
-      # Without it the email scheduling channel stays disabled (503) after deploy.
-      - name: Sync optional email-channel secret
-        if: ${{ env.PROD_RESEND_WEBHOOK_SECRET != '' }}
-        run: |
-          printf '%s' "$PROD_RESEND_WEBHOOK_SECRET" | pnpm --filter @rivus/api exec wrangler secret put RESEND_WEBHOOK_SECRET --env production
+          for name in \
+            OPENAI_API_KEY ANTHROPIC_API_KEY GOOGLE_GENERATIVE_AI_API_KEY XAI_API_KEY \
+            RESEND_WEBHOOK_SECRET ZENROWS_API_KEY BRAVE_SEARCH_API_KEY \
+            TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN PLIVO_AUTH_ID PLIVO_AUTH_TOKEN \
+            ZERNIO_API_KEY ZERNIO_WEBHOOK_SECRET ZERNIO_VERIFY_TOKEN; do
+            if [ -n "${!name}" ]; then
+              printf '%s' "${!name}" | pnpm --filter @rivus/api exec wrangler secret put "$name" --env production
+              echo "synced $name"
+            else
+              echo "skipped $name (no GitHub secret set)"
+            fi
+          done
 
   # The four service deploys above all ship to the single Cloudflare `production`
-  # environment. If each of them set `environment: production`, GitHub would open
-  # one deployment record per job — four per run — which floods the Deployments
-  # timeline and makes the "active" deployment race between services. Instead the
-  # deploy jobs run without an environment, and this job records exactly one
-  # deployment for the run, once every service has shipped.
+  # environment, and each binds `environment: production` so it can read that
+  # environment's secrets (see the note above `deploy-docs`). This job is what
+  # gives the run a single deployment carrying the environment URL: it is the
+  # last to run, so it settles as the "active" production deployment instead of
+  # the four service jobs racing for it.
   record-deployment:
     name: Record production deployment
     needs: [deploy-docs, deploy-app, deploy-website, deploy-api]
