@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { footerColumns, navLinks } from '../lib/site';
 import sitemap, { baseUrl, publicRoutes } from './sitemap';
@@ -29,5 +32,16 @@ describe('sitemap', () => {
 		const home = sitemap().at(0);
 		expect(home?.url).toBe(`${baseUrl}/`);
 		expect(home?.priority).toBe(1);
+	});
+
+	it('maps every public route to a page file that actually exists', () => {
+		// Membership in `publicRoutes` alone can't prove a route is real — a typo
+		// added to both the footer and this list would pass the checks above while
+		// 404ing in production. Resolve each route to its page.tsx on disk.
+		const appDir = dirname(fileURLToPath(import.meta.url));
+		for (const route of publicRoutes) {
+			const pageFile = join(appDir, ...route.split('/').filter(Boolean), 'page.tsx');
+			expect(existsSync(pageFile), `${route} has no ${pageFile}`).toBe(true);
+		}
 	});
 });

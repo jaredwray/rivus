@@ -4,13 +4,11 @@ import { appUrl } from '../../lib/site';
 import { FinalCta } from './final-cta';
 
 describe('FinalCta', () => {
-	it('points both conversion CTAs at the product app', () => {
+	it('sends signup to the product app and the demo to the on-site form', () => {
 		render(<FinalCta />);
 		expect(screen.getByRole('link', { name: /get started free/i }).getAttribute('href')).toBe(
 			`${appUrl}/signup`,
 		);
-		expect(screen.getByRole('link', { name: /book a demo/i }).getAttribute('href')).toBe(
-			`${appUrl}/demo`,
-		);
+		expect(screen.getByRole('link', { name: /book a demo/i }).getAttribute('href')).toBe('/demo');
 	});
 });

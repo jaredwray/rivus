@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { ArrowRightIcon, Icon, PinIcon } from '../../components/marketing/icons';
 import { PageHero } from '../../components/marketing/page-hero';
 import { SiteFooter } from '../../components/marketing/site-footer';
 import { SiteNav } from '../../components/marketing/site-nav';
 import { contactChannels } from '../../lib/company';
-import { appUrl } from '../../lib/site';
 
 export const metadata: Metadata = {
 	title: 'Contact — Rivus',
@@ -23,10 +23,10 @@ export default function ContactPage() {
 					lead="We build software that answers in seconds, so we hold ourselves to the same bar — write to any address below and a real person replies within one business day."
 					actions={
 						<>
-							<a className="btn btn--primary btn--lg" href={`${appUrl}/demo`}>
+							<Link className="btn btn--primary btn--lg" href="/demo">
 								Book a demo
 								<ArrowRightIcon size={18} />
-							</a>
+							</Link>
 							<a className="btn btn--outline btn--lg" href="mailto:hello@rivus.ai">
 								Email hello@rivus.ai
 							</a>
