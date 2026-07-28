@@ -1,3 +1,6 @@
+import Link from 'next/link';
+import { Fragment } from 'react';
+import { industries } from '../../lib/industries';
 import { signupUrl, siteConfig } from '../../lib/site';
 import { BrandImg } from './brand-img';
 import { ArrowRightIcon, BoltIcon, CheckIcon, PlayIcon } from './icons';
@@ -94,7 +97,15 @@ export function Hero() {
 					</div>
 					<span className="trust__sep" />
 					<div className="trust__for">
-						Built for <b>plumbers · HVAC · electricians · salons · clinics · landscapers</b>
+						Built for{' '}
+						{industries.map((industry, index) => (
+							<Fragment key={industry.slug}>
+								{index > 0 ? ' · ' : null}
+								<Link className="trust__link" href={`/industries/${industry.slug}`}>
+									{industry.shortName}
+								</Link>
+							</Fragment>
+						))}
 					</div>
 				</div>
 			</div>

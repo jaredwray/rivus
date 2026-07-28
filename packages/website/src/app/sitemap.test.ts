@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -37,11 +37,28 @@ describe('sitemap', () => {
 	it('maps every public route to a page file that actually exists', () => {
 		// Membership in `publicRoutes` alone can't prove a route is real — a typo
 		// added to both the footer and this list would pass the checks above while
-		// 404ing in production. Resolve each route to its page.tsx on disk.
+		// 404ing in production. Resolve each route to its page.tsx on disk,
+		// falling back per segment to a dynamic `[param]` directory (the
+		// /industries/[slug] pages).
 		const appDir = dirname(fileURLToPath(import.meta.url));
+		const resolveSegment = (dir: string, segment: string): string | null => {
+			const exact = join(dir, segment);
+			if (existsSync(exact)) {
+				return exact;
+			}
+			const dynamic = readdirSync(dir).find((name) => name.startsWith('[') && name.endsWith(']'));
+			return dynamic ? join(dir, dynamic) : null;
+		};
 		for (const route of publicRoutes) {
-			const pageFile = join(appDir, ...route.split('/').filter(Boolean), 'page.tsx');
-			expect(existsSync(pageFile), `${route} has no ${pageFile}`).toBe(true);
+			let dir: string | null = appDir;
+			for (const segment of route.split('/').filter(Boolean)) {
+				dir = resolveSegment(dir, segment);
+				if (dir === null) {
+					break;
+				}
+			}
+			const pageFile = dir ? join(dir, 'page.tsx') : null;
+			expect(pageFile !== null && existsSync(pageFile), `${route} has no page file`).toBe(true);
 		}
 	});
 });

@@ -1,19 +1,22 @@
 import type { MetadataRoute } from 'next';
+import { industries } from '../lib/industries';
 
 export const baseUrl = 'https://rivus.ai';
 
 /**
  * Every indexable public route. The per-business join pages and the admin
  * console are deliberately absent — they set `robots: noindex` and shouldn't
- * be advertised to crawlers.
+ * be advertised to crawlers. The per-trade pages are generated from the
+ * industries data, so adding a trade adds its route here automatically.
  */
-export const publicRoutes = [
+export const publicRoutes: readonly string[] = [
 	'/',
 	'/about',
 	'/careers',
 	'/contact',
 	'/apps',
 	'/demo',
+	'/faq',
 	'/press',
 	'/privacy',
 	'/terms',
@@ -21,7 +24,8 @@ export const publicRoutes = [
 	'/sms-terms',
 	'/sms-opt-in',
 	'/acceptable-use',
-] as const;
+	...industries.map((industry) => `/industries/${industry.slug}`),
+];
 
 export default function sitemap(): MetadataRoute.Sitemap {
 	return publicRoutes.map((route) => ({

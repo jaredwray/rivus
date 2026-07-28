@@ -252,6 +252,24 @@ Compact availability tag on cards (e.g. platform cards on /apps).
 - **Variants:** `live` (Success-ink text on a success tint, e.g. "Available
   now") · `soon` (Accent violet on Soft violet, e.g. "Coming soon")
 
+### FAQ item (marketing)
+
+A native `<details>` disclosure used on /faq, and (trimmed) under the pricing
+grid:
+
+- **`faq-list`** — the stack: 780px max width, centered, 12px gaps.
+- **`faq-item`** — a Surface card, Line border, 12px radius, `4px 22px`
+  padding. The `[open]` state rotates the marker.
+- **`faq-item__q`** — the `<summary>`: 600-weight 15.5px row with a "+"
+  marker (Text-sub color) that rotates 45° when open; native markers hidden.
+- **`faq-item__a`** — the answer: 15px/1.65 body-2 text, 18px bottom padding.
+- **`price-faq` / `price-faq__more`** — the pricing-section wrapper for the
+  teaser trio (34px top margin) and its centered "more" link row.
+
+The hero trust bar's trade names are links styled by **`trust__link`**
+(inherit color, 700 weight, underline on hover) — visually identical to the
+previous bold run, now navigable.
+
 ### Press asset card (marketing)
 
 A standard `card` presenting a downloadable brand asset on /press:
