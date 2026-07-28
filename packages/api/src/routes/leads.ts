@@ -6,6 +6,7 @@ import {
 	demoLeadReceivedResponseSchema,
 	errorResponseSchema,
 } from '../http-schemas';
+import { SALES_NOTIFICATIONS_ADDRESS } from '../services/email';
 
 /**
  * Sales leads from the marketing site. The POST is deliberately public — the
@@ -15,7 +16,7 @@ import {
  */
 export const leadRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
-	const { demoLeads } = app.deps;
+	const { demoLeads, mailer } = app.deps;
 
 	app.post(
 		'/demo',
@@ -26,13 +27,21 @@ export const leadRoutes: FastifyPluginAsync = async (fastify) => {
 				description:
 					'Backs the marketing site’s demo-request form. Unauthenticated by design; ' +
 					'the response is an opaque receipt so the endpoint reveals nothing about ' +
-					'stored leads.',
+					'stored leads. Idempotent per (email, source): a retried submission ' +
+					'refreshes the stored lead instead of duplicating it.',
 				body: createDemoLeadSchema,
 				response: { 201: demoLeadReceivedResponseSchema, 400: errorResponseSchema },
 			},
 		},
 		async (request, reply) => {
-			await demoLeads.create(request.body);
+			const lead = await demoLeads.create(request.body);
+			// The lead is durably stored either way; a sales-inbox delivery failure
+			// must not turn the visitor's success into an error.
+			try {
+				await mailer.sendDemoLeadEmail({ to: SALES_NOTIFICATIONS_ADDRESS, lead });
+			} catch (error) {
+				request.log.error({ err: error, leadId: lead.id }, 'demo-lead notification failed');
+			}
 			return reply.code(201).send({ status: 'received' as const });
 		},
 	);

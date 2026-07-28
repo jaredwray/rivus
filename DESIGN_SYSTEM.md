@@ -104,6 +104,13 @@ Supporting gradients:
   banners (e.g. the "while you were away" briefing).
 - **Soft accent tint:** `linear-gradient(135deg, rgba(30,190,250,0.12), rgba(110,30,200,0.12))`
   — subtle brand-tinted fills behind icons/checks.
+- **Brand glow (dark surfaces only):** large blurred orbs of Sky (`#1ebefa`)
+  and Violet (`#6e1ec8`) — blur ≥ 80px, opacity ≤ 0.35, at most one orb of
+  each color — floated behind content on a dark surface. This is the ambient
+  treatment behind the marketing hero and final-CTA bands and the social-share
+  (Open Graph) card; the blended in-between pixels it produces are a result of
+  the treatment, not new palette values. Never on light surfaces, and never as
+  a substitute for the signature gradient.
 
 ---
 

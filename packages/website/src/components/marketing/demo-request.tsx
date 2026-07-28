@@ -1,5 +1,6 @@
 'use client';
 
+import { SMS_CONSENT_DISCLOSURE } from '@rivus/core';
 import Link from 'next/link';
 import { type FormEvent, useState } from 'react';
 import { apiUrl } from '../../lib/site';
@@ -126,14 +127,12 @@ export function DemoRequest() {
 						value={phone}
 						onChange={(event) => setPhone(event.target.value)}
 					/>
-					{/* SMS opt-in disclosure — carrier (A2P/CTIA) compliance requires it
-					    at the point where the number is collected. */}
+					{/* The canonical SMS consent disclosure from @rivus/core — carrier
+					    vetting requires the identical text on every surface where Rivus
+					    collects a mobile number. */}
 					<p id="demo-phone-consent" className="join-form__consent">
-						By providing your phone number, you agree that Rivus may call or text you to schedule
-						and follow up on your demo. Consent is not a condition of purchase. Message and data
-						rates may apply. Reply STOP to opt out or HELP for help. See our{' '}
-						<Link href="/sms-terms">SMS terms</Link> and <Link href="/privacy">privacy policy</Link>
-						.
+						{SMS_CONSENT_DISCLOSURE} See our <Link href="/sms-terms">SMS terms</Link> and{' '}
+						<Link href="/privacy">privacy policy</Link>.
 					</p>
 				</div>
 				<div className="join-form__field">

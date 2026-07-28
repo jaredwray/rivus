@@ -1696,7 +1696,29 @@ function mapDemoLead(doc: HydratedDocument<DemoLeadDocument>): DemoLead {
 
 export class MongoDemoLeadRepository implements DemoLeadRepository {
 	async create(input: NewDemoLead): Promise<DemoLead> {
-		const doc = await DemoLeadModel.create(input);
+		// Coalesce by (email, source): an upsert refreshes the existing lead's
+		// details instead of duplicating a retried submission. The unique index on
+		// (email, source) closes the concurrent-insert race; on that rare E11000
+		// the retry finds the winner's document and updates it.
+		const { email, source, ...details } = input;
+		const upsert = () =>
+			DemoLeadModel.findOneAndUpdate(
+				{ email, source },
+				{ $set: details, $setOnInsert: { email, source } },
+				{ upsert: true, new: true },
+			).exec();
+		let doc: Awaited<ReturnType<typeof upsert>>;
+		try {
+			doc = await upsert();
+		} catch (error) {
+			if (!isDuplicateKeyError(error)) {
+				throw error;
+			}
+			doc = await upsert();
+		}
+		if (!doc) {
+			throw new Error('demo-lead upsert returned no document');
+		}
 		return mapDemoLead(doc);
 	}
 
