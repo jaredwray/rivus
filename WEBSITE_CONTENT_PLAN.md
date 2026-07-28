@@ -126,7 +126,10 @@ Ordered so each phase is a shippable PR; every phase keeps
 - Every new route: `metadata` export, entry in `publicRoutes`
   (`src/app/sitemap.ts`) so the sitemap tests keep proving link integrity,
   plus a render test following `info-pages.test.tsx`.
-- New external links get the same treatment as `appUrl` (env-aware, absolute).
+- Link hygiene: site-internal destinations use relative hrefs with
+  `next/link`; external destinations (the app, docs.rivus.ai) stay absolute
+  plain `<a>` anchors, per the `appUrl` convention documented in `site.ts` —
+  `legal-page.tsx`'s `renderInline` already models the conditional.
 
 ### Phase 1 — stop the bleeding (P0, ~1 PR)
 
@@ -138,7 +141,9 @@ Ordered so each phase is a shippable PR; every phase keeps
      (`POST /v1/leads/demo` — small new route on the existing Fastify app,
      in-memory + mongo repos, surfaced in the admin console's onboarding
      queue) with a `mailto:sales@rivus.ai` fallback link.
-   - Repoint both dead CTAs (`contact/page.tsx`, `final-cta.tsx`) to `/demo`.
+   - Repoint both dead CTAs (`contact/page.tsx`, `final-cta.tsx`) to `/demo` —
+     switching them from plain `<a>` tags to relative `next/link` navigation,
+     since the destination moves from the app onto this site.
    - Add to `publicRoutes`; tests for the form's success/failure states
      (mocked `fetch`, per the testing philosophy).
    - Interim option if the API route should wait: ship the page with the
@@ -155,7 +160,10 @@ Ordered so each phase is a shippable PR; every phase keeps
 4. **Footer "Resources" column** in `footerColumns`: Docs
    (`https://docs.rivus.ai`), API reference (`https://docs.rivus.ai/api`),
    Changelog, System status (the footer already renders live API status —
-   link it). The sitemap link-integrity test already skips external links.
+   link it). The sitemap link-integrity test already skips external links,
+   but `site-footer.tsx` renders every column link with `next/link` today —
+   teach it to render absolute externals as plain `<a>` instead (the
+   `renderInline` conditional in `legal-page.tsx` is the pattern to reuse).
 5. **Press & brand page** (`/press`): boilerplate description, the stats the
    site already claims, downloadable logo pack + guidelines PDF (move the
    needed exports from `branding/` into `public/press/`), press contact.
