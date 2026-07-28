@@ -33,4 +33,8 @@ const demoLeadSchema = new Schema<DemoLeadDocument>(
 	{ timestamps: true },
 );
 
+// The staff list sorts the whole collection newest-first with no filter, so
+// without this index every page is a collection scan + in-memory sort.
+demoLeadSchema.index({ createdAt: -1, _id: -1 });
+
 export const DemoLeadModel = model<DemoLeadDocument>('DemoLead', demoLeadSchema);
