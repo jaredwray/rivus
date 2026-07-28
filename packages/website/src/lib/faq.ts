@@ -97,12 +97,12 @@ export const faqCategories: FaqCategory[] = [
 			{
 				question: 'Do I keep my existing phone number?',
 				answer:
-					'Yes. Your onboarding specialist connects the number your customers already know, so nothing about how people reach you changes — except that someone always answers.',
+					'Yes — connecting the number your customers already know is part of the free setup. Your onboarding specialist handles it with you, so the number on your trucks and door keeps working.',
 			},
 			{
 				question: 'What happens when someone calls after hours?',
 				answer:
-					'Rivus answers immediately, whatever the hour. Voicemails are transcribed and called back, messages get an on-brand reply in seconds, and booked jobs land straight on your calendar for the morning.',
+					'Rivus answers immediately, whatever the hour — calls are picked up and handled live, messages get an on-brand reply in seconds, and new bookings land straight on your calendar for the morning.',
 			},
 			{
 				question: 'How do reminders and follow-ups work?',
@@ -159,7 +159,7 @@ export const faqCategories: FaqCategory[] = [
 			{
 				question: 'How do my customers opt out of texts?',
 				answer:
-					'They reply STOP to any message — Rivus honors it automatically and passes it through to you — or HELP for help. Consent and opt-outs are covered in detail in our SMS terms.',
+					'They reply STOP to any message and the opt-out is honored automatically, or HELP for help. Consent and opt-outs are covered in detail in our SMS terms.',
 			},
 		],
 	},

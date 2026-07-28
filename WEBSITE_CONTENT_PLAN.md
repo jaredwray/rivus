@@ -210,6 +210,19 @@ Ordered so each phase is a shippable PR; every phase keeps
    permission, or drop the numbers row. Same pass adds the physical address
    to `/contact` and schedules counsel review of `legal.ts` (its own header
    asks for it).
+
+   The same pass must also run a **capability-claims audit** (raised by
+   automated review on the Phase 3 PR): several sitewide feature claims
+   describe behavior the API's customer-facing agent does not implement yet —
+   voicemail transcription + callback (the hero inbox card), automatic
+   reminders/review requests/follow-ups (features, steps, pricing,
+   `allPlanFeatures`), FAQ auto-answers on inbound channels ("Answered from
+   your FAQs"), "auto-books to the right tech", payment collection and the
+   hero's "$420 paid" badge, and STOP-opt-out passthrough to the business.
+   For each: verify the implementation, align the copy with what ships, or
+   make the roadmap framing explicit. The Phase 3 pages were already written
+   one notch more conservative than the homepage, so the homepage is the
+   main surface to reconcile.
 10. **Customer stories** (`/customers`) once 2–3 real customers agree:
     story template (before/after, numbers, quote) in `src/lib/stories.ts`;
     homepage testimonials link into it. Until then the homepage cards stay.

@@ -86,12 +86,12 @@ export const industries: Industry[] = [
 			confirmation: '2pm works, thank you!',
 			bookedTitle: 'New job booked',
 			bookedSub: 'Water heater repair · 2:00 PM today',
-			bookedAmount: '$420 paid',
+			bookedAmount: 'On calendar',
 		},
 		handles: [
 			'Answers every call and text 24/7 — emergencies included',
 			'Books jobs into real slots and keeps emergency time open',
-			'Sends the invoice and collects payment when the job is done',
+			'Sends the invoice the moment the job is done',
 			'Asks happy customers for the review that wins the next job',
 		],
 	},
@@ -135,11 +135,11 @@ export const industries: Industry[] = [
 			confirmation: '1:30, please — thank you!',
 			bookedTitle: 'New job booked',
 			bookedSub: 'Furnace diagnostic · 1:30 PM today',
-			bookedAmount: '$189 paid',
+			bookedAmount: 'Confirmed',
 		},
 		handles: [
 			'Picks up every call in seconds, even during the seasonal rush',
-			'Books diagnostics and installs to the right tech’s route',
+			'Books diagnostics and installs straight onto your calendar',
 			'Runs your maintenance reminders so tune-up season books itself',
 			'Handles invoices, payment nudges, and review requests',
 		],
@@ -149,7 +149,7 @@ export const industries: Industry[] = [
 		name: 'Electricians',
 		shortName: 'electricians',
 		title: 'Your phones, wired to always answer.',
-		lead: 'You can’t take a call with both hands in a panel. Rivus answers every call, text, and email for your electrical business, quotes the small stuff from your playbook, and books the work straight to your calendar.',
+		lead: 'You can’t take a call with both hands in a panel. Rivus answers every call, text, and email for your electrical business, handles the routine questions from your playbook, and books the work straight to your calendar.',
 		metaDescription:
 			'Rivus answers calls and messages for your electrical business 24/7, books jobs, and handles the invoices, reminders, and reviews between them.',
 		pains: [
@@ -185,7 +185,7 @@ export const industries: Industry[] = [
 			confirmation: 'Thursday at 9, perfect.',
 			bookedTitle: 'New job booked',
 			bookedSub: 'Kitchen circuit repair · Thu 9:00 AM',
-			bookedAmount: '$260 paid',
+			bookedAmount: 'On calendar',
 		},
 		handles: [
 			'Answers every channel while you’re in the panel',
@@ -201,7 +201,7 @@ export const industries: Industry[] = [
 		title: 'Fully booked, without touching the phone.',
 		lead: 'Your hands are in someone’s hair; the phone can wait — but the client texting for Saturday can’t. Rivus replies instantly, fills your chairs, sends the reminders that stop no-shows, and asks for the five-star review after.',
 		metaDescription:
-			'Rivus answers texts, calls, and DMs for your salon 24/7 — booking appointments, cutting no-shows with reminders, and asking for reviews.',
+			'Rivus answers texts and calls for your salon 24/7 — booking appointments, cutting no-shows with reminders, and asking for reviews.',
 		pains: [
 			{
 				title: 'Mid-color, phone buzzing',
@@ -234,11 +234,11 @@ export const industries: Industry[] = [
 			confirmation: '1:30 please!!',
 			bookedTitle: 'Appointment booked',
 			bookedSub: 'Cut & color · Sat 1:30 PM with Renee',
-			bookedAmount: '$185 paid',
+			bookedAmount: 'Confirmed',
 		},
 		handles: [
-			'Replies to texts, calls, and DMs the moment they arrive',
-			'Books and reschedules straight into each stylist’s calendar',
+			'Replies to texts and calls the moment they arrive',
+			'Books appointments straight into each stylist’s calendar',
 			'Sends the reminders that keep chairs full',
 			'Asks every happy client for the review — and the rebook',
 		],
@@ -288,7 +288,7 @@ export const industries: Industry[] = [
 		},
 		handles: [
 			'Answers every call and message, whatever the front desk is doing',
-			'Books, confirms, and reschedules appointments automatically',
+			'Books and confirms appointments automatically',
 			'Sends reminders that cut no-shows',
 			'Answers routine questions from your own approved FAQs',
 		],
@@ -298,7 +298,7 @@ export const industries: Industry[] = [
 		name: 'Landscapers',
 		shortName: 'landscapers',
 		title: 'Book the next yard while you’re still mowing this one.',
-		lead: 'You’re on a mower; your next customer is on the phone. Rivus answers every call and text, quotes from your price list, books the walkthrough, and keeps seasonal work coming back year after year.',
+		lead: 'You’re on a mower; your next customer is on the phone. Rivus answers every call and text, books the estimate walkthrough, and keeps seasonal work coming back year after year.',
 		metaDescription:
 			'Rivus answers calls and texts for your landscaping business 24/7, books estimates and jobs, and keeps invoices, follow-ups, and seasonal reminders running.',
 		pains: [
