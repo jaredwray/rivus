@@ -343,6 +343,7 @@ export const footerColumns: FooterColumn[] = [
 			{ label: 'Mobile apps', href: '/apps' },
 			{ label: 'Book a demo', href: '/demo' },
 			{ label: 'FAQ', href: '/faq' },
+			{ label: 'Compare', href: '/compare' },
 		],
 	},
 	{

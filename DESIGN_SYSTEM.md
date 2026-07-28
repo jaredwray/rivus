@@ -270,6 +270,19 @@ The hero trust bar's trade names are links styled by **`trust__link`**
 (inherit color, 700 weight, underline on hover) — visually identical to the
 previous bold run, now navigable.
 
+### Compare table (marketing)
+
+The alternatives table on /compare, wrapped in **`compare-wrap`**
+(`overflow-x: auto`) so wide content scrolls inside its own container:
+
+- **`compare`** — full-width, 760px min-width, collapsed borders, 14.5px
+  text; every cell gets `14px 16px` padding and a Line bottom border.
+- **`compare__name` / `compare__summary`** — column header: 700-weight name
+  over a 12.5px Text-sub summary line.
+- **`compare--rivus`** — the Rivus column's cells wear the documented
+  **Soft accent tint** gradient (never the signature gradient).
+- Row headers (`tbody th`) are 600-weight; body cells use body-2 text.
+
 ### Press asset card (marketing)
 
 A standard `card` presenting a downloadable brand asset on /press:

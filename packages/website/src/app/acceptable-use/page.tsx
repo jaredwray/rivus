@@ -6,6 +6,7 @@ export const metadata: Metadata = {
 	title: 'Acceptable Use Policy — Rivus',
 	description:
 		'The rules for messaging through Rivus: consent requirements, carrier-prohibited content, and how we enforce them.',
+	alternates: { canonical: '/acceptable-use' },
 };
 
 export default function AcceptableUsePage() {

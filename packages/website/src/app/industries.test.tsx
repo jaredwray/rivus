@@ -49,10 +49,11 @@ describe('IndustryPage', () => {
 		);
 	});
 
-	it('builds trade-specific metadata', async () => {
+	it('builds trade-specific metadata with a canonical', async () => {
 		const metadata = await generateMetadata(pageProps('plumbers'));
 		expect(metadata.title).toBe('Rivus for Plumbers — the AI agent that runs your front office');
 		expect(metadata.description).toBe(findIndustry('plumbers')?.metaDescription);
+		expect(metadata.alternates?.canonical).toBe('/industries/plumbers');
 	});
 
 	it('404s an unknown trade', async () => {

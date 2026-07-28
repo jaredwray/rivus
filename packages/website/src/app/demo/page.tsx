@@ -8,6 +8,7 @@ export const metadata: Metadata = {
 	title: 'Book a demo — Rivus',
 	description:
 		'See Rivus answer calls, book jobs, and run a front office live. Request a demo and a specialist will reach out within one business day.',
+	alternates: { canonical: '/demo' },
 };
 
 export default function DemoPage() {

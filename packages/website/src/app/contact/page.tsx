@@ -10,6 +10,7 @@ export const metadata: Metadata = {
 	title: 'Contact — Rivus',
 	description:
 		'Talk to the Rivus team — sales, support, press, privacy, and security. We reply within one business day.',
+	alternates: { canonical: '/contact' },
 };
 
 export default function ContactPage() {

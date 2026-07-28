@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { AppsWaitlist } from '../../components/marketing/apps-waitlist';
 import { ArrowRightIcon, CheckIcon, Icon } from '../../components/marketing/icons';
 import { PageHero } from '../../components/marketing/page-hero';
 import { SiteFooter } from '../../components/marketing/site-footer';
@@ -10,6 +11,7 @@ export const metadata: Metadata = {
 	title: 'Mobile apps — Rivus',
 	description:
 		'Run your front office from anywhere. Rivus is live on the web today, with native iPhone and Android apps on the way.',
+	alternates: { canonical: '/apps' },
 };
 
 export default function AppsPage() {
@@ -78,6 +80,12 @@ export default function AppsPage() {
 								))}
 							</ul>
 						</div>
+					</div>
+				</section>
+
+				<section className="join">
+					<div className="join__container">
+						<AppsWaitlist />
 					</div>
 				</section>
 			</main>

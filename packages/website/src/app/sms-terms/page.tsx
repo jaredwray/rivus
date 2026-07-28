@@ -6,6 +6,7 @@ export const metadata: Metadata = {
 	title: 'SMS Messaging Terms — Rivus',
 	description:
 		'The terms for text messages sent through Rivus: program description, message frequency, rates, and how to opt out (STOP) or get help (HELP).',
+	alternates: { canonical: '/sms-terms' },
 };
 
 export default function SmsTermsPage() {

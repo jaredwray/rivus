@@ -10,6 +10,7 @@ export const metadata: Metadata = {
 	title: 'About — Rivus',
 	description:
 		'Rivus is the AI agent that runs the front office for local businesses — built by a small team in Seattle so owners can get back to the work they love.',
+	alternates: { canonical: '/about' },
 };
 
 export default function AboutPage() {
