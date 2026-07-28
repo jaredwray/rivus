@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { industries } from '../lib/industries';
-import { features, navLinks, pricingTiers, problems, testimonials } from '../lib/site';
+import { features, foundingBenefits, navLinks, pricingTiers, problems } from '../lib/site';
 import HomePage from './page';
 
 beforeEach(() => {
@@ -21,7 +21,7 @@ describe('HomePage', () => {
 		expect(heading.textContent).toContain('Never miss another');
 	});
 
-	it('renders every problem, feature, testimonial and pricing tier', () => {
+	it('renders every problem, feature, founding benefit and pricing tier', () => {
 		render(<HomePage />);
 		for (const problem of problems) {
 			expect(screen.getByText(problem.title)).toBeTruthy();
@@ -29,12 +29,23 @@ describe('HomePage', () => {
 		for (const feature of features) {
 			expect(screen.getByText(feature.title)).toBeTruthy();
 		}
-		for (const testimonial of testimonials) {
-			expect(screen.getByText(testimonial.business)).toBeTruthy();
+		for (const benefit of foundingBenefits) {
+			expect(screen.getByText(benefit.title)).toBeTruthy();
 		}
 		for (const tier of pricingTiers) {
 			expect(screen.getByText(tier.name)).toBeTruthy();
 		}
+	});
+
+	it('makes no unsubstantiated claims (ratings, measured speeds, invented customers)', () => {
+		render(<HomePage />);
+		// The claims pass (WEBSITE_CONTENT_PLAN.md, Phase 4) removed these; they
+		// only return with real data behind them.
+		expect(screen.queryByText(/1,200\+/)).toBeNull();
+		expect(screen.queryByText(/4\.8/)).toBeNull();
+		expect(screen.queryByText(/answered in 11s/i)).toBeNull();
+		expect(screen.queryByText(/Cascade Plumbing & Heating/)).toBeNull();
+		expect(screen.queryByText(/\$420 paid/)).toBeNull();
 	});
 
 	it('has an in-page anchor for every primary nav link', () => {
@@ -46,10 +57,12 @@ describe('HomePage', () => {
 		}
 	});
 
-	it('renders an icon glyph in every problem and feature tile', () => {
+	it('renders an icon glyph in every problem, feature, and founding-benefit tile', () => {
 		const { container } = render(<HomePage />);
 		// Guards the data-driven Icon (name -> glyph) path, not just adjacent text.
-		expect(container.querySelectorAll('.tile svg')).toHaveLength(problems.length + features.length);
+		expect(container.querySelectorAll('.tile svg')).toHaveLength(
+			problems.length + features.length + foundingBenefits.length,
+		);
 	});
 
 	it('surfaces the live API status indicator', () => {

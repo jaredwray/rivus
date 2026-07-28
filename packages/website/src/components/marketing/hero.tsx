@@ -67,7 +67,7 @@ export function Hero() {
 								</div>
 								<div className="convo__meta">
 									<BoltIcon size={11} />
-									<span>Rivus answered in 11s</span>
+									<span>Rivus answered in seconds</span>
 								</div>
 								<div className="bubble bubble--in">2pm works, thank you!</div>
 								<div className="booked">
@@ -78,7 +78,7 @@ export function Hero() {
 										<div className="booked__title">New job booked</div>
 										<div className="booked__sub">Water heater repair · 2:00 PM today</div>
 									</div>
-									<span className="booked__amt">$420 paid</span>
+									<span className="booked__amt">On calendar</span>
 								</div>
 							</div>
 						</div>
@@ -88,12 +88,11 @@ export function Hero() {
 
 			<div className="trust">
 				<div className="trust__inner">
-					<div className="trust__rating">
-						<span className="stars" role="img" aria-label="Rated 4.8 out of 5 stars">
-							★★★★★
-						</span>
-						<b>4.8</b>
-						<span className="trust__for">from 1,200+ owners</span>
+					{/* No invented ratings: until real review numbers exist, the honest
+					    line is the founding-customer offer (see the claims rules in
+					    WEBSITE_CONTENT_PLAN.md). */}
+					<div className="trust__for">
+						Now onboarding <b>founding customers</b> — free white-glove setup
 					</div>
 					<span className="trust__sep" />
 					<div className="trust__for">

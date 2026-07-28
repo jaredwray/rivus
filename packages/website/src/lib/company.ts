@@ -57,10 +57,14 @@ export interface CompanyStat {
 	label: string;
 }
 
-/** Headline numbers on the about page — consistent with the homepage claims. */
+/**
+ * Headline numbers on the about page. Product commitments only — no invented
+ * measurements (the claims rules in WEBSITE_CONTENT_PLAN.md); a measured
+ * reply-time stat can return here once there is real data behind it.
+ */
 export const companyStats: CompanyStat[] = [
 	{ value: '24/7', label: 'on every channel' },
-	{ value: '11s', label: 'typical first reply' },
+	{ value: 'Seconds', label: 'to first reply' },
 	{ value: '1 day', label: 'from signup to live' },
 ];
 
