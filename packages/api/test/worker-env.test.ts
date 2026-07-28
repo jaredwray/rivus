@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest';
+import type { Config } from '../src/config';
 import { FORWARDED_VARS, forwardedEnv } from '../worker/env';
+
+/**
+ * The only config keys that may be absent from `FORWARDED_VARS`.
+ *
+ * - `NODE_ENV` is set explicitly by the container (always `production`), so
+ *   forwarding a Worker binding of the same name could only weaken that.
+ * - `API_HOST` / `API_PORT` are fixed by the container contract: Fastify must
+ *   listen on `0.0.0.0:4000` to match `ApiContainer.defaultPort`, so making them
+ *   settable per environment would only ever break the port mapping.
+ */
+type NotForwarded = 'NODE_ENV' | 'API_HOST' | 'API_PORT';
+
+type Forwarded = (typeof FORWARDED_VARS)[number];
+
+/** Config keys that are neither forwarded nor deliberately excluded. */
+type Unforwarded = Exclude<keyof Config, Forwarded | NotForwarded>;
 
 /**
  * Guards the Worker→container env bridge. The messaging channels shipped broken
@@ -72,5 +89,29 @@ describe('FORWARDED_VARS', () => {
 		for (const key of ['ZENROWS_API_KEY', 'BRAVE_SEARCH_API_KEY']) {
 			expect(FORWARDED_VARS).toContain(key);
 		}
+	});
+
+	it('forwards the model overrides, including the embedding models', () => {
+		// The embedding models were documented as overridable via wrangler `vars`
+		// but never forwarded, so setting one silently kept the default model.
+		for (const key of [
+			'OPENAI_MODEL',
+			'OPENAI_EMBEDDING_MODEL',
+			'GEMINI_MODEL',
+			'GOOGLE_EMBEDDING_MODEL',
+			'XAI_MODEL',
+			'ANTHROPIC_MODEL',
+		]) {
+			expect(FORWARDED_VARS).toContain(key);
+		}
+	});
+
+	it('forwards every var loadConfig reads, except the deliberate exclusions', () => {
+		// A compile-time exhaustiveness check: adding a var to `src/config.ts`
+		// without forwarding it (or excluding it above) makes `Unforwarded` a
+		// non-empty union, and this annotation stops type-checking. The lists above
+		// only catch vars someone thought to enumerate; this catches all of them.
+		const everyConfigVarIsForwarded: [Unforwarded] extends [never] ? true : never = true;
+		expect(everyConfigVarIsForwarded).toBe(true);
 	});
 });
