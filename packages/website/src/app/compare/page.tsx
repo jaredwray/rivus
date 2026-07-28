@@ -61,10 +61,16 @@ export default function ComparePage() {
 									{compareRows.map((row) => (
 										<tr key={row.dimension}>
 											<th scope="row">{row.dimension}</th>
-											<td className="compare--rivus">{row.rivus}</td>
-											<td>{row.hire}</td>
-											<td>{row.service}</td>
-											<td>{row.voicemail}</td>
+											{/* Body cells map over the same columns as the header, so a
+											    column reorder can never desync them. */}
+											{compareColumns.map((column) => (
+												<td
+													key={column.key}
+													className={column.key === 'rivus' ? 'compare--rivus' : undefined}
+												>
+													{row[column.key]}
+												</td>
+											))}
 										</tr>
 									))}
 								</tbody>
