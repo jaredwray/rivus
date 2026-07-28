@@ -67,7 +67,7 @@ export function Hero() {
 								</div>
 								<div className="convo__meta">
 									<BoltIcon size={11} />
-									<span>Rivus answered instantly</span>
+									<span>Rivus answered in seconds</span>
 								</div>
 								<div className="bubble bubble--in">2pm works, thank you!</div>
 								<div className="booked">

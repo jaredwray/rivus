@@ -94,8 +94,8 @@ export function FeaturesSection() {
 						</span>
 						<h3 className="feature-row__title">Your calendar fills itself.</h3>
 						<p className="feature-row__lead">
-							Rivus books jobs into the right slot, balances your crew's routes, sends reminders,
-							and keeps emergency time open — no back-and-forth required.
+							Rivus offers real open slots, books the one the customer picks, sends reminders, and
+							keeps emergency time open — no back-and-forth required.
 						</p>
 						<Points items={schedulePoints} />
 					</div>
@@ -142,7 +142,7 @@ export function FeaturesSection() {
 							<span className="invoice__mark">
 								<BrandImg className="mark-img" src="/assets/rivus-symbol-white.svg" alt="" />
 							</span>
-							Rivus sent the invoice the moment the job closed.
+							The invoice, its status, and the billing questions — one place.
 						</div>
 					</div>
 				</div>
