@@ -27,6 +27,7 @@ export async function generateMetadata({ params }: IndustryPageProps): Promise<M
 	return {
 		title: `Rivus for ${industry.name} — the AI agent that runs your front office`,
 		description: industry.metaDescription,
+		alternates: { canonical: `/industries/${industry.slug}` },
 	};
 }
 

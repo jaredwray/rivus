@@ -6,6 +6,7 @@ export const metadata: Metadata = {
 	title: 'SMS opt-in — Rivus',
 	description:
 		'How people opt in to text messages sent through Rivus, the exact consent they give, and how to opt out at any time.',
+	alternates: { canonical: '/sms-opt-in' },
 };
 
 export default function SmsOptInPage() {

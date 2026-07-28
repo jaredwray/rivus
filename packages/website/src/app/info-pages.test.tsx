@@ -97,6 +97,11 @@ describe('AppsPage', () => {
 		);
 	});
 
+	it('offers the native-apps waitlist', () => {
+		render(<AppsPage />);
+		expect(screen.getByRole('form', { name: 'Join the apps waitlist' })).toBeTruthy();
+	});
+
 	it('links the live platform to the product app', () => {
 		render(<AppsPage />);
 		const appLinks = screen

@@ -2442,6 +2442,63 @@ button:focus-visible {
 }
 
 /* ============================================================
+   Compare table (see DESIGN_SYSTEM.md · Compare table)
+   ============================================================ */
+
+.compare-wrap {
+	overflow-x: auto;
+}
+
+.compare {
+	width: 100%;
+	min-width: 760px;
+	border-collapse: collapse;
+	font-size: 14.5px;
+}
+
+.compare th,
+.compare td {
+	padding: 14px 16px;
+	text-align: left;
+	vertical-align: top;
+	border-bottom: 1px solid var(--line);
+}
+
+.compare thead th {
+	vertical-align: bottom;
+}
+
+.compare__dim,
+.compare__name {
+	display: block;
+	font-weight: 700;
+	font-size: 15px;
+}
+
+.compare__summary {
+	display: block;
+	margin-top: 4px;
+	font-weight: 500;
+	font-size: 12.5px;
+	line-height: 1.45;
+	color: var(--sub);
+}
+
+.compare tbody th {
+	font-weight: 600;
+}
+
+.compare tbody td {
+	color: var(--body-2);
+	line-height: 1.5;
+}
+
+/* The Rivus column wears the documented soft accent tint. */
+.compare .compare--rivus {
+	background: linear-gradient(135deg, rgba(30, 190, 250, 0.12), rgba(110, 30, 200, 0.12));
+}
+
+/* ============================================================
    Press & brand (see DESIGN_SYSTEM.md · Press asset card)
    ============================================================ */
 

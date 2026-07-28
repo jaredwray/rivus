@@ -5,6 +5,7 @@ import { privacyDoc } from '../../lib/legal';
 export const metadata: Metadata = {
 	title: 'Privacy Policy — Rivus',
 	description: 'How Rivus collects, uses, shares, and protects your information.',
+	alternates: { canonical: '/privacy' },
 };
 
 export default function PrivacyPage() {

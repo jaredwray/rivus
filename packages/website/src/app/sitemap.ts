@@ -15,6 +15,7 @@ export const publicRoutes: readonly string[] = [
 	'/careers',
 	'/contact',
 	'/apps',
+	'/compare',
 	'/demo',
 	'/faq',
 	'/press',
@@ -28,8 +29,12 @@ export const publicRoutes: readonly string[] = [
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
+	// Build time is the honest lastModified for a fully static site: every
+	// deploy re-renders every page.
+	const lastModified = new Date();
 	return publicRoutes.map((route) => ({
 		url: `${baseUrl}${route}`,
+		lastModified,
 		changeFrequency: route === '/' ? 'weekly' : 'monthly',
 		priority: route === '/' ? 1 : 0.6,
 	}));

@@ -9,6 +9,7 @@ export const metadata: Metadata = {
 	title: 'Careers — Rivus',
 	description:
 		'Help build the AI agent that runs the front office for the local businesses that keep our towns running.',
+	alternates: { canonical: '/careers' },
 };
 
 export default function CareersPage() {

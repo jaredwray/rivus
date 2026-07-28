@@ -17,6 +17,7 @@ export const metadata: Metadata = {
 	title: 'Press & brand — Rivus',
 	description:
 		'Company facts, boilerplate, and the official Rivus logo pack and brand guidelines for press and partners.',
+	alternates: { canonical: '/press' },
 };
 
 export default function PressPage() {

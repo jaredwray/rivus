@@ -34,6 +34,12 @@ describe('sitemap', () => {
 		expect(home?.priority).toBe(1);
 	});
 
+	it('stamps every entry with a build-time lastModified', () => {
+		for (const entry of sitemap()) {
+			expect(entry.lastModified).toBeInstanceOf(Date);
+		}
+	});
+
 	it('maps every public route to a page file that actually exists', () => {
 		// Membership in `publicRoutes` alone can't prove a route is real — a typo
 		// added to both the footer and this list would pass the checks above while

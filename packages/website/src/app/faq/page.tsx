@@ -11,6 +11,7 @@ export const metadata: Metadata = {
 	title: 'FAQ — Rivus',
 	description:
 		'Answers about Rivus pricing, the free human onboarding, channels and phone numbers, how the AI agent hands off to humans, and how your data is protected.',
+	alternates: { canonical: '/faq' },
 };
 
 /** FAQPage structured data, generated from the same array the page renders. */
