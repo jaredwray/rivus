@@ -2366,6 +2366,81 @@ button:focus-visible {
 }
 
 /* ============================================================
+   FAQ (see DESIGN_SYSTEM.md · FAQ item)
+   ============================================================ */
+
+.faq-list {
+	max-width: 780px;
+	margin: 0 auto;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.faq-item {
+	background: var(--surface);
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	padding: 4px 22px;
+}
+
+.faq-item__q {
+	list-style: none;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 16px 0;
+	font-weight: 600;
+	font-size: 15.5px;
+}
+
+.faq-item__q::-webkit-details-marker {
+	display: none;
+}
+
+.faq-item__q::after {
+	content: "+";
+	font-size: 20px;
+	font-weight: 500;
+	color: var(--sub);
+	transition: transform 0.15s ease;
+}
+
+.faq-item[open] .faq-item__q::after {
+	transform: rotate(45deg);
+}
+
+.faq-item__a {
+	padding: 0 0 18px;
+	font-size: 15px;
+	line-height: 1.65;
+	color: var(--body-2);
+}
+
+.price-faq {
+	max-width: 780px;
+	margin: 34px auto 0;
+}
+
+.price-faq__more {
+	margin-top: 14px;
+	text-align: center;
+}
+
+/* Hero trust-bar trade links (see DESIGN_SYSTEM.md · Navigation) */
+.trust__link {
+	color: inherit;
+	font-weight: 700;
+	text-decoration: none;
+}
+
+.trust__link:hover {
+	text-decoration: underline;
+}
+
+/* ============================================================
    Press & brand (see DESIGN_SYSTEM.md · Press asset card)
    ============================================================ */
 

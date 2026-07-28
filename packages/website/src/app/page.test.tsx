@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { industries } from '../lib/industries';
 import { features, navLinks, pricingTiers, problems, testimonials } from '../lib/site';
 import HomePage from './page';
 
@@ -54,5 +55,14 @@ describe('HomePage', () => {
 	it('surfaces the live API status indicator', () => {
 		render(<HomePage />);
 		expect(screen.getByRole('status')).toBeTruthy();
+	});
+
+	it('links every trust-bar trade name to its industry page', () => {
+		render(<HomePage />);
+		for (const industry of industries) {
+			expect(screen.getByRole('link', { name: industry.shortName }).getAttribute('href')).toBe(
+				`/industries/${industry.slug}`,
+			);
+		}
 	});
 });

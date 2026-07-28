@@ -338,6 +338,7 @@ export const footerColumns: FooterColumn[] = [
 			{ label: 'Free setup', href: '/#onboarding' },
 			{ label: 'Mobile apps', href: '/apps' },
 			{ label: 'Book a demo', href: '/demo' },
+			{ label: 'FAQ', href: '/faq' },
 		],
 	},
 	{

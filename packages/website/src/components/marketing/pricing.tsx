@@ -1,5 +1,7 @@
+import Link from 'next/link';
+import { pricingFaqTeasers } from '../../lib/faq';
 import { pricingTiers, signupUrl } from '../../lib/site';
-import { CheckIcon } from './icons';
+import { ArrowRightIcon, CheckIcon } from './icons';
 
 export function Pricing() {
 	return (
@@ -42,6 +44,24 @@ export function Pricing() {
 							</ul>
 						</div>
 					))}
+				</div>
+
+				{/* The most-asked pricing questions, answered inline; the rest live on /faq. */}
+				<div className="price-faq">
+					<div className="faq-list">
+						{pricingFaqTeasers.map((entry) => (
+							<details key={entry.question} className="faq-item">
+								<summary className="faq-item__q">{entry.question}</summary>
+								<p className="faq-item__a">{entry.answer}</p>
+							</details>
+						))}
+					</div>
+					<p className="price-faq__more">
+						<Link className="card__link" href="/faq">
+							More questions answered in the FAQ
+							<ArrowRightIcon size={15} />
+						</Link>
+					</p>
 				</div>
 			</div>
 		</section>
