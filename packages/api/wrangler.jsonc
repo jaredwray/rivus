@@ -74,7 +74,14 @@
 				// no var — it derives from the answer URL.
 				"TWILIO_WHATSAPP_WEBHOOK_URL": "https://dev-api.rivus.ai/v1/channels/whatsapp/twilio/inbound",
 				"TWILIO_SMS_WEBHOOK_URL": "https://dev-api.rivus.ai/v1/channels/sms/twilio/inbound",
-				"TWILIO_VOICE_WEBHOOK_URL": "https://dev-api.rivus.ai/v1/channels/voice/twilio/answer"
+				"TWILIO_VOICE_WEBHOOK_URL": "https://dev-api.rivus.ai/v1/channels/voice/twilio/answer",
+				// The Plivo equivalents, for the numbers Plivo still owns during the
+				// migration. Same two roles as Twilio's: they pin the URL signature
+				// validation recomputes, and they ride along on sends as the
+				// delivery-status callback. Unset, verification falls back to deriving
+				// the URL from the request, which a rewriting proxy would break.
+				"PLIVO_WEBHOOK_URL": "https://dev-api.rivus.ai/v1/channels/whatsapp/plivo/inbound",
+				"PLIVO_SMS_WEBHOOK_URL": "https://dev-api.rivus.ai/v1/channels/sms/plivo/inbound"
 			},
 			"containers": [
 				{
@@ -120,7 +127,11 @@
 				// `wrangler secret put`, never here.
 				"TWILIO_WHATSAPP_WEBHOOK_URL": "https://api.rivus.ai/v1/channels/whatsapp/twilio/inbound",
 				"TWILIO_SMS_WEBHOOK_URL": "https://api.rivus.ai/v1/channels/sms/twilio/inbound",
-				"TWILIO_VOICE_WEBHOOK_URL": "https://api.rivus.ai/v1/channels/voice/twilio/answer"
+				"TWILIO_VOICE_WEBHOOK_URL": "https://api.rivus.ai/v1/channels/voice/twilio/answer",
+				// The Plivo equivalents, for the numbers Plivo still owns during the
+				// migration — same signature-pinning and status-callback roles.
+				"PLIVO_WEBHOOK_URL": "https://api.rivus.ai/v1/channels/whatsapp/plivo/inbound",
+				"PLIVO_SMS_WEBHOOK_URL": "https://api.rivus.ai/v1/channels/sms/plivo/inbound"
 			},
 			"containers": [
 				{

@@ -93,8 +93,13 @@ The route is always additionally guarded by `requireStaff`.
 1. **Cloudflare account + zone.** Add the `rivus.ai` zone to the account so the
    `custom_domain` routes can be created and certificates issued automatically.
 2. **GitHub environments** (Settings → Environments): a `development` and a
-   `production` environment, each holding the secrets below. Consider adding a
-   required-reviewer protection rule to `production`.
+   `production` environment, each holding the secrets below. Every deploy job
+   binds its environment (`environment: production` / `development`), which is
+   what lets it read those environment-scoped secrets and what makes a
+   protection rule actually gate the deploy — so a required-reviewer rule on
+   `production` is worth adding. Repository-level secrets still work as a
+   fallback (an environment secret of the same name wins), so the `DEV_*` /
+   `PROD_*` names can live at either level.
 3. **DNS / custom domains.** The first `wrangler deploy --env <name>` per package
    creates its custom domain on the zone (`dev-*.rivus.ai` for development;
    `api/app/docs.rivus.ai` plus the apex `rivus.ai` and `www.rivus.ai` for
@@ -112,6 +117,10 @@ The route is always additionally guarded by `requireStaff`.
 | `CLOUDFLARE_ACCOUNT_ID` | all deploy jobs |                                                    |
 | `DEV_MONGODB_URI`       | `deploy-api`   | Atlas SRV connection string. Pushed as a Worker secret. |
 | `DEV_JWT_SECRET`        | `deploy-api`   | ≥ 32 chars (the API refuses to boot otherwise in prod). |
+| `DEV_RESEND_API_KEY`    | `deploy-api`   | Auth is passwordless, so the container — which always runs `NODE_ENV=production` — refuses to boot without a real mailer. |
+
+The whole `deploy-api` secret sync is skipped until `DEV_MONGODB_URI` exists, so
+a partially configured development environment still deploys.
 
 ### Required secrets (GitHub `production` environment)
 
@@ -121,31 +130,60 @@ The route is always additionally guarded by `requireStaff`.
 | `CLOUDFLARE_ACCOUNT_ID` | all deploy jobs | Same account ID (unless production lives in a different Cloudflare account). |
 | `PROD_MONGODB_URI`      | `deploy-api`   | Production Atlas SRV connection string. Pushed as a Worker secret. |
 | `PROD_JWT_SECRET`       | `deploy-api`   | ≥ 32 chars, **distinct** from the development secret. |
+| `PROD_RESEND_API_KEY`   | `deploy-api`   | Required: passwordless auth emails the one-time sign-in code, so the API refuses to boot without it. |
 
-Because GitHub environment secrets are scoped to their environment, the
-production job reads its own `CLOUDFLARE_*` values even though the names match
-development, and the API's secrets are synced into the Worker automatically by
-the `deploy-api` job. Unlike development (where the sync is skipped until the
-secret exists), the **production** `deploy-api` job **fails fast** if either
-`PROD_MONGODB_URI` or `PROD_JWT_SECRET` is missing — the container always boots
-with `NODE_ENV=production` and would crash-loop without them.
+Because the deploy jobs bind `environment: production`, the production run reads
+that environment's `CLOUDFLARE_*` values even though the names match
+development — put a production-scoped Cloudflare token in the environment and it
+takes precedence over any repository-level one. The API's secrets are synced into
+the Worker automatically by the `deploy-api` job. Unlike development (where the
+sync is skipped until the secret exists), the **production** `deploy-api` job
+**fails fast** if `PROD_MONGODB_URI`, `PROD_JWT_SECRET`, or `PROD_RESEND_API_KEY`
+is missing — the container always boots with `NODE_ENV=production` and would
+crash-loop without them.
 
-### Optional secrets (AI knowledge-base features)
+### Optional secrets (every integration)
 
-| Secret                 | Environment | Notes                                                     |
-| ---------------------- | ----------- | --------------------------------------------------------- |
-| `DEV_OPENAI_API_KEY`   | development | OpenAI key for the knowledge-base AI features (duplicate check, question answering, and embedding retrieval). Pushed as the `OPENAI_API_KEY` Worker secret by `deploy-api`. |
-| `PROD_OPENAI_API_KEY`  | production  | Same, for production. |
-| `DEV_ANTHROPIC_API_KEY`  | development | Anthropic key for the model-backed chat router (`POST /v1/chat`) and as an AI-provider fallback. Pushed as the `ANTHROPIC_API_KEY` Worker secret by `deploy-api`. Unset → chat routes deterministically (rule-based), which still works. |
-| `PROD_ANTHROPIC_API_KEY` | production  | Same, for production. The routing model is `ANTHROPIC_MODEL` (a non-secret `vars` entry / config default, `claude-haiku-4-5`). |
-| `DEV_RESEND_WEBHOOK_SECRET`  | development | Svix signing secret for Resend's inbound-email webhook. Pushed as the `RESEND_WEBHOOK_SECRET` Worker secret by `deploy-api`, enabling the agent email scheduling channel (`POST /v1/channels/email/inbound`). |
-| `PROD_RESEND_WEBHOOK_SECRET` | production  | Same, for production. |
+Each of these is named `DEV_<NAME>` in the development environment and
+`PROD_<NAME>` in production, and `deploy-api` pushes it to the Worker as
+`<NAME>` — **only when it is set**. An unset one never reaches the container as
+an empty string (`loadConfig`'s `min(1)` would reject that and crash-loop it), so
+leaving a whole integration unconfigured is a supported state: the feature simply
+stays off.
 
-These are **optional**: the `deploy-api` job pushes `OPENAI_API_KEY` only when the
-secret is set. With no key, the "is this a duplicate?" check no-ops (FAQs are still
-created normally) and question-answering degrades to a deterministic keyword match.
+Note the sync only ever *adds or updates*. Removing the GitHub secret leaves the
+Worker's copy in place — retire an integration with
+`wrangler secret delete <NAME> --env <environment>`.
 
-`RESEND_WEBHOOK_SECRET` is likewise pushed only when set. It's the signing secret
+| Worker secret (`DEV_`/`PROD_` prefixed in GitHub) | Enables | Unset behaviour |
+| ------------------------------- | -------- | ---------------- |
+| `OPENAI_API_KEY`                | Knowledge-base AI: duplicate-FAQ check, question answering, embedding retrieval. The primary AI provider. | Duplicate check no-ops (FAQs still created); answering falls back to a deterministic keyword match. |
+| `ANTHROPIC_API_KEY`             | The model-backed chat router (`POST /v1/chat`); also an AI-provider fallback. | Chat routes deterministically (rule-based), which still works. |
+| `GOOGLE_GENERATIVE_AI_API_KEY`  | AI-provider fallback; also the embedding provider when OpenAI's key is absent. | Skipped in the provider chain. |
+| `XAI_API_KEY`                   | AI-provider fallback. | Skipped in the provider chain. |
+| `RESEND_WEBHOOK_SECRET`         | The agent email scheduling channel (`POST /v1/channels/email/inbound`). | Route answers `503` in production; dev/test accept unsigned deliveries. |
+| `ZENROWS_API_KEY`               | The chat's website audit (fetches the account's own site). | The audit replies "not enabled". |
+| `BRAVE_SEARCH_API_KEY`          | The audit's online-presence check. | Audit still runs; only that check is skipped. |
+| `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` | WhatsApp, SMS, and voice — the primary provider for new numbers. The auth token also verifies `X-Twilio-Signature`. | Channels degrade to no-ops (a deterministic fake number in development); the Twilio routes answer `503` in production. |
+| `PLIVO_AUTH_ID` + `PLIVO_AUTH_TOKEN` | The numbers Plivo still owns during the Twilio migration. | Plivo-owned numbers can't send; its routes answer `503` in production. |
+| `ZERNIO_API_KEY`                | zernio, the WhatsApp-only alternative provider. | WhatsApp falls back to Twilio/Plivo, else a no-op. |
+| `ZERNIO_WEBHOOK_SECRET`         | Signature verification on zernio's inbound webhook. | Route answers `503` in production. |
+| `ZERNIO_VERIFY_TOKEN`           | The `GET` webhook-registration handshake. | That endpoint `404`s. |
+
+One more, on the app rather than the API:
+
+| Secret                             | Used by      | Notes |
+| ---------------------------------- | ------------ | ----- |
+| `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY`  | `deploy-app` | Signup address autocomplete (Places API New). Inlined into the client bundle, so restrict it by HTTP referrer + API in the Google Cloud console. Unset → the address field is a plain text input (the job logs a warning); set but not inlined → the job **fails**, since a silently dropped key is indistinguishable from an unset one at runtime. Not `DEV_`/`PROD_` prefixed — it is read per environment. |
+
+The non-secret half of these integrations — API base URLs, webhook URLs, number
+countries, model ids — lives in `packages/api/wrangler.jsonc` `vars`, per
+environment. Both environments' Twilio and Plivo webhook URLs are already set
+there; they pin the URL that signature verification recomputes (a rewriting proxy
+would otherwise break it), ride along on sends as the delivery-status callback,
+and the SMS/voice ones are attached to newly rented numbers at purchase.
+
+`RESEND_WEBHOOK_SECRET` is the signing secret
 of the Resend `email.received` webhook (Resend → Webhooks); without it the agent
 email scheduling channel stays off — the webhook route answers `503` in production
 while the rest of the API runs normally. Configure the receiving domain and the
@@ -160,17 +198,25 @@ The chat model defaults to `gpt-5.4-mini` and the embedding model (used to rank 
 by relevance once a knowledge base outgrows the answerer's candidate cap) to
 `text-embedding-3-small`; since model ids aren't sensitive, override them — if needed —
 by adding `OPENAI_MODEL` / `OPENAI_EMBEDDING_MODEL` to the relevant environment's
-`vars` in `packages/api/wrangler.jsonc` rather than as secrets.
+`vars` in `packages/api/wrangler.jsonc` rather than as secrets. A `vars` entry
+only takes effect if the name is also in `FORWARDED_VARS`
+(`packages/api/worker/env.ts`) — that list is what the front-door Worker copies
+into the container's `process.env`, and a test asserts it covers every variable
+`loadConfig` reads.
 
-The production API also restricts CORS to Rivus origins: `CORS_ORIGIN` is set to
-`https://rivus.ai,*.rivus.ai`, which the API parses into the exact apex origin
-plus a regex matching any `*.rivus.ai` subdomain. The deployed development
-environment uses `*.rivus.ai` (which covers `dev-app.rivus.ai`) — both containers
-run `NODE_ENV=production`, and the API refuses to boot with a `*` wildcard there
-because credentialed CORS reflects the request origin, so a wildcard would
-authorize every site. Only local development (`NODE_ENV=development`) stays `*`.
-The value accepts a comma-separated list of exact origins and/or `*` wildcards;
-adjust it in `packages/api/wrangler.jsonc`.
+The production API also restricts CORS to the exact Rivus origins that call it
+from a browser: `CORS_ORIGIN` is
+`https://app.rivus.ai,https://rivus.ai,https://www.rivus.ai` (development uses
+`https://dev-app.rivus.ai,https://dev.rivus.ai`). A `*.rivus.ai` wildcard is
+deliberately avoided — the session cookie is scoped to the parent domain
+(`COOKIE_DOMAIN=.rivus.ai`) so any subdomain a wildcard allowed could read
+cookie-authenticated responses. Only the app's own origin (`APP_URL`) is granted
+*credentialed* CORS; the other allowlisted origins get plain CORS for public
+reads. Both containers run `NODE_ENV=production`, where the API refuses to boot
+with a `*` wildcard at all, because credentialed CORS reflects the request origin
+and a wildcard would authorize every site. Only local development
+(`NODE_ENV=development`) stays `*`. The value accepts a comma-separated list of
+exact origins and/or `*` wildcards; adjust it in `packages/api/wrangler.jsonc`.
 
 ## Deploying by hand
 
@@ -192,6 +238,14 @@ For production, also push the API secrets the first time (the workflow does this
 automatically):
 
 ```bash
-printf '%s' "$PROD_MONGODB_URI" | pnpm --filter @rivus/api exec wrangler secret put MONGODB_URI --env production
-printf '%s' "$PROD_JWT_SECRET"  | pnpm --filter @rivus/api exec wrangler secret put JWT_SECRET  --env production
+printf '%s' "$PROD_MONGODB_URI"   | pnpm --filter @rivus/api exec wrangler secret put MONGODB_URI    --env production
+printf '%s' "$PROD_JWT_SECRET"    | pnpm --filter @rivus/api exec wrangler secret put JWT_SECRET     --env production
+printf '%s' "$PROD_RESEND_API_KEY" | pnpm --filter @rivus/api exec wrangler secret put RESEND_API_KEY --env production
+```
+
+Those three are what the container needs to boot. Any of the optional
+integrations above follow the same shape, e.g.:
+
+```bash
+printf '%s' "$PROD_TWILIO_AUTH_TOKEN" | pnpm --filter @rivus/api exec wrangler secret put TWILIO_AUTH_TOKEN --env production
 ```
