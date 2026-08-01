@@ -437,14 +437,17 @@ export const agentTesterRoutes: FastifyPluginAsync = async (fastify) => {
 		async (request, reply) => {
 			const accountId = request.user.accountId as AccountId;
 			const thread = await requireSession(accountId, request.params.id);
-			// The thread is the session's identity, so it goes first: if it is already
-			// gone, a concurrent delete won and there is nothing to report as deleted.
+			// Transcript first, thread second — the failure-friendly order. The thread
+			// is the session's identity: while it survives, a retry can always finish
+			// the job, whereas deleting it ahead of a failing conversation delete would
+			// strand the transcript in the inbox with no session left to delete it
+			// through. A transcript already gone (a teammate cleaned the inbox) is fine.
+			await conversations.delete(accountId, thread.conversationId);
 			const deleted = await agentThreads.delete(accountId, thread.id);
 			if (!deleted) {
+				// A concurrent delete won between the read and here — nothing left to report.
 				throw app.httpErrors.notFound('Tester session not found');
 			}
-			// A transcript a teammate already deleted from the inbox is fine.
-			await conversations.delete(accountId, thread.conversationId);
 			return reply.code(204).send(null);
 		},
 	);

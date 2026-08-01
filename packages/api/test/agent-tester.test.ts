@@ -819,6 +819,52 @@ describe('DELETE /v1/admin/agent-tester/sessions/:id', () => {
 			await built.repos.agentThreads.findByContact(built.accountId, 'email', CUSTOMER_EMAIL),
 		).toBeNull();
 	});
+
+	it('stays retryable when the transcript delete fails: the session survives to be deleted again', async () => {
+		const built = await setup();
+		app = built.app;
+		const session = await openSession(app, built.staff.token, {
+			channel: 'email',
+			contactAddress: CUSTOMER_EMAIL,
+		});
+		// The transcript store fails once; the thread — the session's identity —
+		// must survive it, or the orphaned conversation could never be deleted
+		// through the tester again.
+		const remove = built.repos.conversations.delete.bind(built.repos.conversations);
+		built.repos.conversations.delete = async () => {
+			built.repos.conversations.delete = remove;
+			throw new Error('conversation store is down (test)');
+		};
+		const failed = await app.inject({
+			method: 'DELETE',
+			url: `${BASE}/sessions/${session.id}`,
+			headers: authHeader(built.staff.token),
+		});
+		expect(failed.statusCode).toBe(500);
+		const stillThere = await app.inject({
+			method: 'GET',
+			url: `${BASE}/sessions/${session.id}`,
+			headers: authHeader(built.staff.token),
+		});
+		expect(stillThere.statusCode).toBe(200);
+
+		// The store recovered: the retry removes both halves.
+		const retried = await app.inject({
+			method: 'DELETE',
+			url: `${BASE}/sessions/${session.id}`,
+			headers: authHeader(built.staff.token),
+		});
+		expect(retried.statusCode).toBe(204);
+		expect(
+			await built.repos.agentThreads.findByContact(built.accountId, 'email', CUSTOMER_EMAIL),
+		).toBeNull();
+		expect(
+			await built.repos.conversations.findById(
+				built.accountId,
+				session.conversationId as ConversationId,
+			),
+		).toBeNull();
+	});
 });
 
 describe('createTesterChannel', () => {
