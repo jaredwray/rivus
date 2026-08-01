@@ -2111,4 +2111,315 @@ describe('createApiClient', () => {
 			expect(error).toMatchObject({ status: 404 });
 		});
 	});
+
+	describe('agent tester', () => {
+		const TESTER = `${BASE}/v1/admin/agent-tester/sessions`;
+
+		function makeTesterSession(overrides: Record<string, unknown> = {}) {
+			const now = new Date().toISOString();
+			return {
+				id: faker.string.uuid(),
+				channel: 'email' as const,
+				contactAddress: faker.internet.email().toLowerCase(),
+				contactName: faker.person.fullName(),
+				customerId: faker.string.uuid(),
+				state: 'new' as const,
+				conversationId: faker.string.uuid(),
+				snippet: faker.lorem.sentence(),
+				subject: 'Water heater',
+				bookedJobId: '',
+				lastMessageAt: now,
+				createdAt: now,
+				updatedAt: now,
+				...overrides,
+			};
+		}
+
+		function makeTesterMessage(overrides: Record<string, unknown> = {}) {
+			return {
+				id: faker.string.uuid(),
+				conversationId: faker.string.uuid(),
+				author: 'customer' as const,
+				body: faker.lorem.sentence(),
+				createdAt: new Date().toISOString(),
+				...overrides,
+			};
+		}
+
+		it('lists tester sessions with the bearer token', async () => {
+			const sessions = [makeTesterSession(), makeTesterSession({ channel: 'sms' })];
+			fetchMock.mockResolvedValueOnce(jsonResponse({ data: sessions }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.listTesterSessions('staff-token');
+
+			expect(result.data).toEqual(sessions);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(TESTER);
+			expect(init.method).toBe('GET');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer staff-token' });
+		});
+
+		it('surfaces a 404 list (routes absent outside development) as an ApiError', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse(
+					{
+						error: 'Not Found',
+						message: 'Route GET:/v1/admin/agent-tester/sessions not found',
+						statusCode: 404,
+					},
+					{ status: 404 },
+				),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client.listTesterSessions('staff-token').catch((caught) => caught);
+			expect(error).toBeInstanceOf(ApiError);
+			expect(error).toMatchObject({ status: 404 });
+		});
+
+		it('creates a session for a CRM customer, omitting the blank contact fields', async () => {
+			const session = makeTesterSession({ channel: 'whatsapp' });
+			fetchMock.mockResolvedValueOnce(jsonResponse(session, { status: 201 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.createTesterSession('staff-token', {
+				channel: 'whatsapp',
+				customerId: 'cust-1',
+			});
+
+			expect(result).toEqual(session);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(TESTER);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer staff-token' });
+			// The API takes exactly one of customerId/contactAddress, so an unused
+			// (empty) field must not be sent at all.
+			expect(JSON.parse(init.body as string)).toEqual({
+				channel: 'whatsapp',
+				customerId: 'cust-1',
+			});
+		});
+
+		it('creates a session for a custom contact, forwarding the name and subject', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(makeTesterSession(), { status: 201 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.createTesterSession('staff-token', {
+				channel: 'email',
+				contactAddress: '  new@example.com  ',
+				contactName: '  Dana Whitfield ',
+				subject: ' Water heater ',
+			});
+
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(JSON.parse(init.body as string)).toEqual({
+				channel: 'email',
+				contactAddress: 'new@example.com',
+				contactName: 'Dana Whitfield',
+				subject: 'Water heater',
+			});
+		});
+
+		it('rejects an unsupported channel before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				// `phone` is an inbox channel, but the tester has no voice transcript.
+				client.createTesterSession('staff-token', {
+					channel: 'phone' as 'sms',
+					customerId: 'cust-1',
+				}),
+			).rejects.toBeInstanceOf(ValidationError);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it('surfaces a duplicate session (409) with the API message', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse(
+					{
+						error: 'Conflict',
+						message: 'A tester session for dana@example.com on email already exists.',
+						statusCode: 409,
+					},
+					{ status: 409 },
+				),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client
+				.createTesterSession('staff-token', {
+					channel: 'email',
+					contactAddress: 'dana@example.com',
+				})
+				.catch((caught) => caught);
+
+			expect(error).toBeInstanceOf(ApiError);
+			expect(error.status).toBe(409);
+			expect(error.message).toBe('A tester session for dana@example.com on email already exists.');
+		});
+
+		it('surfaces an unknown customer (404) as an ApiError', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse(
+					{ error: 'Not Found', message: 'Customer not found', statusCode: 404 },
+					{ status: 404 },
+				),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client
+				.createTesterSession('staff-token', { channel: 'sms', customerId: 'nope' })
+				.catch((caught) => caught);
+
+			expect(error).toBeInstanceOf(ApiError);
+			expect(error).toMatchObject({ status: 404, message: 'Customer not found' });
+		});
+
+		it('fetches a session with its transcript', async () => {
+			const session = makeTesterSession();
+			const messages = [
+				makeTesterMessage({ conversationId: session.conversationId }),
+				makeTesterMessage({ conversationId: session.conversationId, author: 'rivus' }),
+			];
+			fetchMock.mockResolvedValueOnce(jsonResponse({ session, messages }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.getTesterSession('staff-token', session.id);
+
+			expect(result.session).toEqual(session);
+			expect(result.messages).toHaveLength(2);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${TESTER}/${session.id}`);
+			expect(init.method).toBe('GET');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer staff-token' });
+		});
+
+		it('url-encodes the session id', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ session: makeTesterSession(), messages: [] }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.getTesterSession('staff-token', 'a/b c');
+
+			const [url] = fetchMock.mock.calls[0] as [string];
+			expect(url).toBe(`${TESTER}/a%2Fb%20c`);
+		});
+
+		it('rejects a session payload whose state is not one the agent can be in', async () => {
+			const session = { ...makeTesterSession(), state: 'ghosted' };
+			fetchMock.mockResolvedValueOnce(jsonResponse({ session, messages: [] }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.getTesterSession('staff-token', 'sess-1')).rejects.toThrow();
+		});
+
+		it('sends a message as the customer and returns the turn, session and transcript', async () => {
+			const session = makeTesterSession({ state: 'slots_offered' });
+			const turn = {
+				outcome: 'offer_slots',
+				delivery: {
+					text: 'I can do Tuesday at 9am or Wednesday at 1pm.',
+					subject: 'Re: Water heater',
+				},
+				session,
+				messages: [
+					makeTesterMessage({ body: 'My water heater is leaking' }),
+					makeTesterMessage({ author: 'rivus', body: 'I can do Tuesday at 9am…' }),
+				],
+			};
+			fetchMock.mockResolvedValueOnce(jsonResponse(turn));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.sendTesterMessage('staff-token', session.id, {
+				text: 'My water heater is leaking',
+			});
+
+			expect(result.outcome).toBe('offer_slots');
+			expect(result.delivery.subject).toBe('Re: Water heater');
+			expect(result.session.state).toBe('slots_offered');
+			expect(result.messages).toHaveLength(2);
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${TESTER}/${session.id}/messages`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer staff-token' });
+			expect(JSON.parse(init.body as string)).toEqual({ text: 'My water heater is leaking' });
+		});
+
+		it('accepts a delivery with no subject (a chat channel)', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse({
+					outcome: 'ask_details',
+					delivery: { text: 'Happy to help — what day works?' },
+					session: makeTesterSession({ channel: 'sms', subject: '' }),
+					messages: [],
+				}),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.sendTesterMessage('staff-token', 'sess-1', { text: 'hi' });
+
+			expect(result.delivery.subject).toBeUndefined();
+			expect(result.outcome).toBe('ask_details');
+		});
+
+		it('rejects an empty message before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.sendTesterMessage('staff-token', 'sess-1', { text: '   ' }),
+			).rejects.toBeInstanceOf(ValidationError);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it('rejects a message longer than 4000 characters before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.sendTesterMessage('staff-token', 'sess-1', { text: 'a'.repeat(4001) }),
+			).rejects.toThrow('Message must be 4000 characters or fewer.');
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it('surfaces sending to an unknown session (404) as an ApiError', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse(
+					{ error: 'Not Found', message: 'Tester session not found', statusCode: 404 },
+					{ status: 404 },
+				),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client
+				.sendTesterMessage('staff-token', 'gone', { text: 'hello?' })
+				.catch((caught) => caught);
+
+			expect(error).toBeInstanceOf(ApiError);
+			expect(error).toMatchObject({ status: 404, message: 'Tester session not found' });
+		});
+
+		it('deletes a session and resolves on 204', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse(undefined, { status: 204 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.deleteTesterSession('staff-token', 'sess-1')).resolves.toBeUndefined();
+
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${TESTER}/sess-1`);
+			expect(init.method).toBe('DELETE');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer staff-token' });
+		});
+
+		it('surfaces deleting an unknown session (404) as an ApiError', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse(
+					{ error: 'Not Found', message: 'Tester session not found', statusCode: 404 },
+					{ status: 404 },
+				),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client
+				.deleteTesterSession('staff-token', 'gone')
+				.catch((caught) => caught);
+			expect(error).toBeInstanceOf(ApiError);
+			expect(error).toMatchObject({ status: 404 });
+		});
+	});
 });
