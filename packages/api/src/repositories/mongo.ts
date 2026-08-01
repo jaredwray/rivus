@@ -1639,6 +1639,18 @@ export class MongoAgentThreadRepository implements AgentThreadRepository {
 		return doc ? mapAgentThread(doc) : null;
 	}
 
+	async listByAccount(accountId: AccountId): Promise<AgentThread[]> {
+		if (!Types.ObjectId.isValid(accountId)) {
+			return [];
+		}
+		// The `_id` tiebreak keeps the order total when two threads share an
+		// `updatedAt` millisecond (mirrors the conversation list).
+		const docs = await AgentThreadModel.find({ accountId: new Types.ObjectId(accountId) })
+			.sort({ updatedAt: -1, _id: -1 })
+			.exec();
+		return docs.map(mapAgentThread);
+	}
+
 	async update(
 		accountId: AccountId,
 		id: AgentThreadId,
@@ -1678,6 +1690,17 @@ export class MongoAgentThreadRepository implements AgentThreadRepository {
 			{ new: true },
 		).exec();
 		return doc ? mapAgentThread(doc) : null;
+	}
+
+	async delete(accountId: AccountId, id: AgentThreadId): Promise<boolean> {
+		if (!Types.ObjectId.isValid(id) || !Types.ObjectId.isValid(accountId)) {
+			return false;
+		}
+		const result = await AgentThreadModel.deleteOne({
+			_id: id,
+			accountId: new Types.ObjectId(accountId),
+		}).exec();
+		return result.deletedCount === 1;
 	}
 }
 

@@ -572,12 +572,24 @@ export interface AgentThreadRepository {
 		accountId: AccountId,
 		conversationId: ConversationId,
 	): Promise<AgentThread | null>;
+	/**
+	 * Every thread the account owns, most recently updated first. Unpaginated on
+	 * purpose: the only reader is the staff Agent Tester's session list, where an
+	 * account holds a handful of threads.
+	 */
+	listByAccount(accountId: AccountId): Promise<AgentThread[]>;
 	/** Apply a machine-state patch; returns the updated thread, or null when it isn't the account's. */
 	update(
 		accountId: AccountId,
 		id: AgentThreadId,
 		input: UpdateAgentThread,
 	): Promise<AgentThread | null>;
+	/**
+	 * Forget one of the account's threads — the agent's whole memory of that
+	 * contact, so the next message starts the exchange over. True when a thread
+	 * was removed, false when the id is unknown or belongs to another account.
+	 */
+	delete(accountId: AccountId, id: AgentThreadId): Promise<boolean>;
 }
 
 export interface NewDemoLead {

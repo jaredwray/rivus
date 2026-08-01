@@ -1320,6 +1320,16 @@ export class InMemoryAgentThreadRepository implements AgentThreadRepository {
 		return match ? structuredClone(match) : null;
 	}
 
+	async listByAccount(accountId: AccountId): Promise<AgentThread[]> {
+		// Start newest-inserted-first, then a *stable* sort by activity keeps that
+		// order for threads whose `updatedAt` collides within a millisecond.
+		const owned = [...this.data.agentThreads.values()]
+			.filter((thread) => thread.accountId === accountId)
+			.reverse();
+		owned.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+		return owned.map((thread) => structuredClone(thread));
+	}
+
 	async update(
 		accountId: AccountId,
 		id: AgentThreadId,
@@ -1354,6 +1364,14 @@ export class InMemoryAgentThreadRepository implements AgentThreadRepository {
 		const updated: AgentThread = { ...thread, ...patch, updatedAt: now() };
 		this.data.agentThreads.set(id, updated);
 		return structuredClone(updated);
+	}
+
+	async delete(accountId: AccountId, id: AgentThreadId): Promise<boolean> {
+		const thread = this.data.agentThreads.get(id);
+		if (!thread || thread.accountId !== accountId) {
+			return false;
+		}
+		return this.data.agentThreads.delete(id);
 	}
 }
 

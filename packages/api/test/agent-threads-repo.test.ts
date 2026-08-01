@@ -113,6 +113,49 @@ describe('InMemoryAgentThreadRepository', () => {
 		expect(await agentThreads.update(OTHER_ACCOUNT, created.id, { state: 'booked' })).toBeNull();
 		expect((await agentThreads.findById(ACCOUNT, created.id))?.state).toBe('new');
 	});
+
+	it('lists an account’s threads newest-updated first, and nothing for an empty account', async () => {
+		const { agentThreads } = createInMemoryRepositories();
+		expect(await agentThreads.listByAccount(ACCOUNT)).toEqual([]);
+		const first = await agentThreads.create(newThreadInput());
+		const second = await agentThreads.create(newThreadInput({ channel: 'sms' }));
+		// Both were written in the same millisecond, so the newest insert leads;
+		// touching the older one moves it to the front.
+		expect((await agentThreads.listByAccount(ACCOUNT)).map((thread) => thread.id)).toEqual([
+			second.id,
+			first.id,
+		]);
+		await new Promise((resolve) => setTimeout(resolve, 2));
+		await agentThreads.update(ACCOUNT, first.id, { state: 'booked' });
+		expect((await agentThreads.listByAccount(ACCOUNT)).map((thread) => thread.id)).toEqual([
+			first.id,
+			second.id,
+		]);
+	});
+
+	it('never lists another account’s threads', async () => {
+		const { agentThreads } = createInMemoryRepositories();
+		await agentThreads.create(newThreadInput());
+		const other = await agentThreads.create(newThreadInput({ accountId: OTHER_ACCOUNT }));
+		expect((await agentThreads.listByAccount(OTHER_ACCOUNT)).map((thread) => thread.id)).toEqual([
+			other.id,
+		]);
+	});
+
+	it('deletes only the owning account’s thread, and reports whether one went', async () => {
+		const { agentThreads } = createInMemoryRepositories();
+		const created = await agentThreads.create(newThreadInput());
+		expect(await agentThreads.delete(ACCOUNT, 'missing' as AgentThreadId)).toBe(false);
+		expect(await agentThreads.delete(OTHER_ACCOUNT, created.id)).toBe(false);
+		expect(await agentThreads.findById(ACCOUNT, created.id)).not.toBeNull();
+
+		expect(await agentThreads.delete(ACCOUNT, created.id)).toBe(true);
+		expect(await agentThreads.findById(ACCOUNT, created.id)).toBeNull();
+		// A second delete has nothing left to remove.
+		expect(await agentThreads.delete(ACCOUNT, created.id)).toBe(false);
+		// The contact is free again — the reset the Agent Tester relies on.
+		await expect(agentThreads.create(newThreadInput())).resolves.toBeDefined();
+	});
 });
 
 describe('InMemoryCustomerRepository.findByEmail', () => {
