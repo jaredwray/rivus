@@ -9,6 +9,7 @@ import {
 	ScrollView,
 	StyleSheet,
 	TextInput,
+	type TextInputKeyPressEvent,
 	useWindowDimensions,
 	View,
 } from 'react-native';
@@ -32,6 +33,7 @@ import {
 	RivusBadge,
 	Txt,
 } from '@/src/components/ui';
+import { isSendKeyPress } from '@/src/tester/composer';
 import { CHANNEL_META, STATE_META } from '@/src/tester/meta';
 import { NewSessionModal } from '@/src/tester/NewSessionModal';
 import { colors, font, radii, SIDEBAR_BREAKPOINT } from '@/src/theme/tokens';
@@ -757,6 +759,26 @@ function Conversation({
 	// button greys out rather than silently ignoring the press.
 	const inert = busy || draft.trim() === '';
 
+	/**
+	 * Enter sends the message; Shift+Enter writes a newline.
+	 *
+	 * Web only: react-native-web routes the browser's keydown here, so the
+	 * modifier is real and `preventDefault` is what keeps the sending Enter from
+	 * also typing a newline into the box. On device there is no Shift to hold and
+	 * the return key belongs to the keyboard, so the composer keeps inserting
+	 * newlines there and sending stays on the button.
+	 *
+	 * A press that isn't sendable (empty draft, or a turn still running) does
+	 * nothing at all — `onSend` no-ops, exactly as the greyed-out button does.
+	 */
+	const onKeyPress = (event: TextInputKeyPressEvent) => {
+		if (!isSendKeyPress(event)) {
+			return;
+		}
+		event.preventDefault();
+		onSend();
+	};
+
 	return (
 		<View style={styles.convo}>
 			<View style={styles.convoHead}>
@@ -845,12 +867,13 @@ function Conversation({
 			<View style={styles.composerWrap}>
 				{sendError ? <Txt style={styles.errorTxt}>{sendError}</Txt> : null}
 				<View style={styles.composer}>
-					{/* A multiline input's Enter inserts a newline (onSubmitEditing never
-					    fires), so sending is via the button — no dead submit handler. */}
+					{/* A multiline input never fires onSubmitEditing, so the send key is
+					    handled on keydown instead (see `onKeyPress`). */}
 					<TextInput
 						style={[styles.composerInput, IS_WEB && styles.composerInputWeb]}
 						value={draft}
 						onChangeText={onChangeDraft}
+						onKeyPress={IS_WEB ? onKeyPress : undefined}
 						placeholder={`Write as ${firstName || 'the contact'}…`}
 						placeholderTextColor={colors.textHint}
 						multiline
@@ -875,6 +898,9 @@ function Conversation({
 						</BrandGradient>
 					</Pressable>
 				</View>
+				{IS_WEB ? (
+					<Txt style={styles.composerHint}>Enter to send · Shift + Enter for a new line</Txt>
+				) : null}
 			</View>
 		</View>
 	);
@@ -1219,6 +1245,13 @@ const styles = StyleSheet.create({
 	},
 	// 16px is the threshold below which mobile Safari auto-zooms a focused input.
 	composerInputWeb: { fontSize: 16 },
+	// The send key is invisible until someone tries it — name it, quietly.
+	composerHint: {
+		fontFamily: font.medium,
+		fontSize: 11.5,
+		color: colors.textHint,
+		paddingHorizontal: 2,
+	},
 	sendBtnWrap: { borderRadius: radii.md },
 	sendBtnDisabled: { opacity: 0.5 },
 	sendBtn: {
