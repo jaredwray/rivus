@@ -18,6 +18,7 @@ import { adminRoutes } from './routes/admin';
 import { agentEmailRoutes } from './routes/agent-email';
 import { agentSmsTwilioRoutes, agentWhatsappTwilioRoutes } from './routes/agent-messaging-twilio';
 import { agentSmsPlivoRoutes } from './routes/agent-sms-plivo';
+import { agentTesterRoutes } from './routes/agent-tester';
 import { agentVoicePlivoRoutes } from './routes/agent-voice-plivo';
 import { agentVoiceTwilioRoutes } from './routes/agent-voice-twilio';
 import { agentWhatsappRoutes } from './routes/agent-whatsapp';
@@ -222,6 +223,9 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 	app.register(accountRoutes, { prefix: '/v1/account' });
 	app.register(accountChannelRoutes, { prefix: '/v1/account' });
 	app.register(adminRoutes, { prefix: '/v1/admin' });
+	// The staff Agent Tester — registers its routes only where seeding is enabled
+	// (local dev + the deployed development environment), never in production.
+	app.register(agentTesterRoutes, { prefix: '/v1/admin/agent-tester' });
 	app.register(billingRoutes, { prefix: '/v1/billing' });
 	app.register(itemRoutes, { prefix: '/v1/items' });
 	app.register(faqRoutes, { prefix: '/v1/faqs' });

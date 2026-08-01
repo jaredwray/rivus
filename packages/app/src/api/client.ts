@@ -4,6 +4,7 @@ import {
 	type AccountId,
 	acceptInviteSchema,
 	accountStatusSchema,
+	agentThreadStateSchema,
 	approveReplySchema,
 	type ChatMessage,
 	type ChatReply,
@@ -590,6 +591,122 @@ const releaseNumberResponseSchema = z.object({
 });
 export type ReleaseNumberResult = z.infer<typeof releaseNumberResponseSchema>;
 
+// --- Agent tester (development + Rivus staff only) -----------------------------
+
+/** Base path of the Agent Tester routes; every tester call hangs off it. */
+const TESTER_ROOT = '/v1/admin/agent-tester/sessions';
+
+/**
+ * The channels the Agent Tester can impersonate a customer on — the subset of
+ * the inbox's channels the customer-facing agent holds a written conversation on
+ * (`phone` is voice, which has no transcript to drive).
+ */
+const testerChannelSchema = z.enum(['email', 'sms', 'whatsapp'], {
+	error: 'Choose a valid channel.',
+});
+/** A channel a tester session can run on (see {@link RivusApiClient.createTesterSession}). */
+export type TesterChannel = z.infer<typeof testerChannelSchema>;
+
+/**
+ * One impersonated conversation with the customer-facing agent: who staff are
+ * pretending to be, on which channel, and where the agent's scheduling state
+ * machine stands after the last turn.
+ */
+const testerSessionResponseSchema = z.object({
+	id: z.string(),
+	channel: testerChannelSchema,
+	contactAddress: z.string(),
+	contactName: z.string(),
+	/** The matched CRM customer, or '' when the contact isn't one (the signup flow). */
+	customerId: z.string(),
+	state: agentThreadStateSchema,
+	/** The inbox conversation carrying this session's transcript. */
+	conversationId: z.string(),
+	snippet: z.string(),
+	/** Subject of the email thread; empty on channels without subjects. */
+	subject: z.string(),
+	/** The job the agent booked on this session, or '' until it books one. */
+	bookedJobId: z.string(),
+	lastMessageAt: z.string(),
+	createdAt: z.string(),
+	updatedAt: z.string(),
+});
+export type TesterSession = z.infer<typeof testerSessionResponseSchema>;
+
+const testerSessionListResponseSchema = z.object({
+	data: z.array(testerSessionResponseSchema),
+});
+export interface TesterSessionListResponse {
+	data: TesterSession[];
+}
+
+/** A tester session with its full transcript (the same messages the inbox shows). */
+export interface TesterSessionDetail {
+	session: TesterSession;
+	messages: Message[];
+}
+
+const testerSessionDetailResponseSchema = z.object({
+	session: testerSessionResponseSchema,
+	messages: z.array(messageResponseSchema),
+}) satisfies z.ZodType<TesterSessionDetail>;
+
+/**
+ * What the agent *would* have delivered on the channel for this turn — nothing
+ * is actually sent. `subject`/`html` are email-only.
+ */
+export interface TesterDelivery {
+	text: string;
+	subject?: string;
+	html?: string;
+}
+
+/** The result of one impersonated turn (see {@link RivusApiClient.sendTesterMessage}). */
+export interface TesterTurn {
+	/** The engine's decision for this turn, e.g. `offer_slots`. */
+	outcome: string;
+	delivery: TesterDelivery;
+	session: TesterSession;
+	messages: Message[];
+}
+
+const testerTurnResponseSchema = z.object({
+	outcome: z.string(),
+	delivery: z.object({
+		text: z.string(),
+		subject: z.string().optional(),
+		html: z.string().optional(),
+	}),
+	session: testerSessionResponseSchema,
+	messages: z.array(messageResponseSchema),
+}) satisfies z.ZodType<TesterTurn>;
+
+/**
+ * Open a tester session as either a CRM customer (`customerId`) or an arbitrary
+ * contact (`contactAddress`) — exactly one, which the API enforces. Blank fields
+ * are dropped client-side so an empty string never reads as "both were given".
+ */
+const createTesterSessionSchema = z.object({
+	channel: testerChannelSchema,
+	customerId: z.string().trim().default(''),
+	contactAddress: z.string().trim().default(''),
+	contactName: z.string().trim().default(''),
+	subject: z.string().trim().default(''),
+});
+/** Input for {@link RivusApiClient.createTesterSession}. */
+export type CreateTesterSessionInput = z.input<typeof createTesterSessionSchema>;
+
+/** The impersonated customer's message for one turn. */
+const testerMessageSchema = z.object({
+	text: z
+		.string({ error: 'Message is required.' })
+		.trim()
+		.min(1, { error: 'Message is required.' })
+		.max(4000, { error: 'Message must be 4000 characters or fewer.' }),
+});
+/** Input for {@link RivusApiClient.sendTesterMessage}. */
+export type SendTesterMessageInput = z.infer<typeof testerMessageSchema>;
+
 const healthResponseSchema = z.object({
 	status: z.literal('ok'),
 	uptime: z.number(),
@@ -795,6 +912,31 @@ export interface RivusApiClient {
 	 * 404s in deployed environments and 403s for non-staff callers.
 	 */
 	releaseNumber(token: string, options?: { clearUnknown?: boolean }): Promise<ReleaseNumberResult>;
+	/**
+	 * List the Agent Tester's impersonated sessions, newest activity first.
+	 *
+	 * Development + Rivus-staff only, exactly like {@link seedAccount}: the routes
+	 * exist solely on a development deployment (404 elsewhere) and 403 for
+	 * non-staff callers. The Agent Tester screen surfaces both as an explanation
+	 * rather than an error.
+	 */
+	listTesterSessions(token: string): Promise<TesterSessionListResponse>;
+	/**
+	 * Open a tester session against a customer (`customerId`) or an arbitrary
+	 * contact address (`contactAddress`) — exactly one of the two. Rejects with a
+	 * 409 when a session already exists for that contact on that channel.
+	 */
+	createTesterSession(token: string, input: CreateTesterSessionInput): Promise<TesterSession>;
+	/** Fetch one tester session with its full transcript. */
+	getTesterSession(token: string, id: string): Promise<TesterSessionDetail>;
+	/**
+	 * Send one message *as the impersonated customer*. The API runs the real agent
+	 * pipeline and returns the reply it would have delivered (nothing is sent),
+	 * the turn's outcome, and the updated session + transcript.
+	 */
+	sendTesterMessage(token: string, id: string, input: SendTesterMessageInput): Promise<TesterTurn>;
+	/** Delete a tester session, resetting the agent state for that contact. */
+	deleteTesterSession(token: string, id: string): Promise<void>;
 }
 
 /** Strip a single trailing slash so `${base}${path}` never doubles up. */
@@ -1342,6 +1484,61 @@ export function createApiClient(
 				releaseNumberResponseSchema,
 				jsonInit('POST', { clearUnknown: Boolean(options.clearUnknown) }, token),
 			);
+		},
+
+		listTesterSessions(token: string) {
+			return request(TESTER_ROOT, testerSessionListResponseSchema, {
+				method: 'GET',
+				headers: authHeaders(token),
+			});
+		},
+
+		async createTesterSession(token: string, input: CreateTesterSessionInput) {
+			const parsed = parseInput(createTesterSessionSchema, input);
+			// Send only the fields that were actually supplied: the API requires
+			// exactly one of customerId/contactAddress, and an always-present empty
+			// string would read as "both were given".
+			const payload: Record<string, string> = { channel: parsed.channel };
+			if (parsed.customerId) {
+				payload.customerId = parsed.customerId;
+			}
+			if (parsed.contactAddress) {
+				payload.contactAddress = parsed.contactAddress;
+			}
+			if (parsed.contactName) {
+				payload.contactName = parsed.contactName;
+			}
+			if (parsed.subject) {
+				payload.subject = parsed.subject;
+			}
+			return request(TESTER_ROOT, testerSessionResponseSchema, jsonInit('POST', payload, token));
+		},
+
+		getTesterSession(token: string, id: string) {
+			return request(
+				`${TESTER_ROOT}/${encodeURIComponent(id)}`,
+				testerSessionDetailResponseSchema,
+				{
+					method: 'GET',
+					headers: authHeaders(token),
+				},
+			);
+		},
+
+		async sendTesterMessage(token: string, id: string, input: SendTesterMessageInput) {
+			const payload = parseInput(testerMessageSchema, input);
+			return request(
+				`${TESTER_ROOT}/${encodeURIComponent(id)}/messages`,
+				testerTurnResponseSchema,
+				jsonInit('POST', payload, token),
+			);
+		},
+
+		async deleteTesterSession(token: string, id: string) {
+			await request(`${TESTER_ROOT}/${encodeURIComponent(id)}`, noContentSchema, {
+				method: 'DELETE',
+				headers: authHeaders(token),
+			});
 		},
 	};
 }

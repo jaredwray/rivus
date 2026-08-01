@@ -1,5 +1,6 @@
 import {
 	accountStatusSchema,
+	agentThreadStateSchema,
 	conversationChannelSchema,
 	conversationStatusSchema,
 	demoLeadSourceSchema,
@@ -469,6 +470,84 @@ export const seedSummaryResponseSchema = z
 		generation: z.enum(['ai', 'deterministic']),
 	})
 	.meta({ id: 'SeedSummary' });
+
+/** The channels the development-only Agent Tester can simulate a customer on. */
+export const testerChannelSchema = z.enum(['email', 'sms', 'whatsapp'], {
+	error: 'Choose a channel to test: email, sms, or whatsapp.',
+});
+
+/**
+ * One Agent Tester session (development only, Rivus staff only): the agent's
+ * thread for a contact on a channel, joined with the inbox conversation carrying
+ * the transcript. There is no session entity behind it — a session *is* that
+ * thread plus that conversation, which is why deleting one resets the agent's
+ * whole memory of the contact.
+ */
+export const testerSessionResponseSchema = z
+	.object({
+		/** The agent thread's id — the session id. */
+		id: z.string(),
+		channel: testerChannelSchema,
+		/** The simulated customer's address on this channel (email address or E.164 phone). */
+		contactAddress: z.string(),
+		/** Display name from the linked conversation; '' when it no longer exists. */
+		contactName: z.string(),
+		/** The matched CRM customer, or '' when the contact isn't one. */
+		customerId: z.string(),
+		state: agentThreadStateSchema,
+		/** The inbox conversation holding the transcript. */
+		conversationId: z.string(),
+		/** One-line preview of the latest message; '' when the conversation is gone. */
+		snippet: z.string(),
+		/** Email thread subject; '' on subjectless channels. */
+		subject: z.string(),
+		/** The job the agent booked on this thread, or '' until it books one. */
+		bookedJobId: z.string(),
+		/** Last transcript activity, falling back to the thread's own `updatedAt`. */
+		lastMessageAt: z.string(),
+		createdAt: z.string(),
+		updatedAt: z.string(),
+	})
+	.meta({ id: 'TesterSession' });
+
+/** Every tester session on the account, most recently active first. */
+export const testerSessionListResponseSchema = z
+	.object({
+		data: z.array(testerSessionResponseSchema),
+	})
+	.meta({ id: 'TesterSessionList' });
+
+/** A tester session together with its full transcript. */
+export const testerSessionDetailResponseSchema = z
+	.object({
+		session: testerSessionResponseSchema,
+		messages: z.array(messageResponseSchema),
+	})
+	.meta({ id: 'TesterSessionDetail' });
+
+/**
+ * What the agent WOULD have delivered for a simulated turn — captured by the
+ * tester's transport instead of being sent. `subject`/`html` are present only on
+ * the email channel, where the real design-system card is rendered.
+ */
+export const testerDeliveryResponseSchema = z
+	.object({
+		text: z.string(),
+		subject: z.string().optional(),
+		html: z.string().optional(),
+	})
+	.meta({ id: 'TesterDelivery' });
+
+/** The result of one simulated customer turn: what the agent did, said, and became. */
+export const testerTurnResponseSchema = z
+	.object({
+		/** What the agent did (`offer_slots`, `book`, …) or why it ignored the message. */
+		outcome: z.string(),
+		delivery: testerDeliveryResponseSchema,
+		session: testerSessionResponseSchema,
+		messages: z.array(messageResponseSchema),
+	})
+	.meta({ id: 'TesterTurn' });
 
 /**
  * Billing summary for the account (owner-only). Rivus has no payment provider

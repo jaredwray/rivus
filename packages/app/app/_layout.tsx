@@ -50,6 +50,8 @@ type NavItem = {
 	badge?: string;
 	/** When true, only Owners see this destination (account settings). */
 	ownerOnly?: boolean;
+	/** When true, only Rivus staff see this destination (internal tooling). */
+	staffOnly?: boolean;
 };
 
 const NAV: NavItem[] = [
@@ -61,12 +63,19 @@ const NAV: NavItem[] = [
 	{ href: '/knowledge', label: 'Knowledge', icon: 'book' },
 	{ href: '/team', label: 'Team', icon: 'user-check' },
 	{ href: '/profile', label: 'My Profile', icon: 'user' },
+	{ href: '/agent-tester', label: 'Agent Tester', icon: 'terminal', staffOnly: true },
 	{ href: '/settings', label: 'Settings', icon: 'settings', ownerOnly: true },
 ];
 
-/** Hide owner-only destinations from managers and members. */
-function navFor(role: string | undefined): NavItem[] {
-	return NAV.filter((item) => !item.ownerOnly || role === 'owner');
+/**
+ * Hide owner-only destinations from managers and members, and staff-only ones
+ * (internal tooling) from everyone outside Rivus. Both are enforced server-side
+ * as well — this only keeps the nav honest.
+ */
+function navFor(role: string | undefined, isStaff: boolean): NavItem[] {
+	return NAV.filter(
+		(item) => (!item.ownerOnly || role === 'owner') && (!item.staffOnly || isStaff),
+	);
 }
 
 /**
@@ -163,7 +172,13 @@ function Shell() {
 	const { width } = useWindowDimensions();
 	const insets = useSafeAreaInsets();
 	const { isStaff, session } = useAuth();
+	const pathname = usePathname();
 	const wide = width >= SIDEBAR_BREAKPOINT;
+
+	// The staff Agent Tester is itself a chat whose composer sits bottom-right —
+	// exactly where this launcher floats — so hide the business-owner chat there:
+	// it would cover the tester's send button and stack two chat surfaces.
+	const floatingChatHidden = isActive(pathname, '/agent-tester');
 
 	// Measured height of the bottom tab bar (it has no fixed height, so larger
 	// text settings or a wrapped label can grow it). The "More" sheet anchors to
@@ -191,7 +206,7 @@ function Shell() {
 						<Slot />
 					</View>
 				</View>
-				<RivusChat key={chatKey} />
+				{floatingChatHidden ? null : <RivusChat key={chatKey} />}
 			</View>
 		);
 	}
@@ -246,7 +261,7 @@ function HomeLink({ height, style }: { height: number; style?: StyleProp<ViewSty
 function Sidebar() {
 	const pathname = usePathname();
 	const router = useRouter();
-	const { session, signOut } = useAuth();
+	const { isStaff, session, signOut } = useAuth();
 	const { needsAttentionCount } = useInbox();
 	const userName = session?.user.name ?? '';
 	const role = session ? roleLabel(session.role) : '';
@@ -256,7 +271,7 @@ function Sidebar() {
 			<HomeLink height={24} style={styles.sidebarLogo} />
 
 			<View style={styles.nav}>
-				{navFor(session?.role).map((item) => {
+				{navFor(session?.role, isStaff).map((item) => {
 					const active = isActive(pathname, item.href);
 					const badge = badgeFor(item, needsAttentionCount);
 					return (
@@ -371,11 +386,13 @@ function BottomTabBar({ height, onHeight }: { height: number; onHeight: (h: numb
 	const pathname = usePathname();
 	const router = useRouter();
 	const insets = useSafeAreaInsets();
-	const { session } = useAuth();
+	const { isStaff, session } = useAuth();
 	const { needsAttentionCount } = useInbox();
 	const [moreOpen, setMoreOpen] = useState(false);
 
-	const items = navFor(session?.role);
+	// The sheet renders whatever overflows this filtered list, so a non-staff
+	// (or non-owner) user never sees a gated destination on the bar or in "More".
+	const items = navFor(session?.role, isStaff);
 	const primary = items.slice(0, PRIMARY_TAB_COUNT);
 	const overflow = items.slice(PRIMARY_TAB_COUNT);
 

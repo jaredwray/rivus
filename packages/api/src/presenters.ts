@@ -1,5 +1,6 @@
 import {
 	type Account,
+	type Conversation,
 	gravatarUrl,
 	type Invite,
 	type Membership,
@@ -7,6 +8,7 @@ import {
 	type User,
 } from '@rivus/core';
 import type { StoredUser } from './repositories/types';
+import type { TesterThread } from './services/agent/tester';
 
 /** A provisioned channel's config as exposed to clients — the provider reference stays server-side. */
 export interface PublicAccountChannelConfig {
@@ -95,4 +97,30 @@ export function toInviteSummary(invite: Invite) {
 /** Creator view of an invite — includes the shareable token. */
 export function toInvite(invite: Invite) {
 	return { ...toInviteSummary(invite), token: invite.token };
+}
+
+/**
+ * One Agent Tester session: the agent thread (the machine state) joined with the
+ * inbox conversation that carries its transcript. A session has no record of its
+ * own — deleting it is exactly deleting these two — so this projection is where
+ * the two halves meet. The conversation may be missing (a teammate deleted the
+ * thread from the inbox), in which case its fields fall back to empty and the
+ * thread's own `updatedAt` stands in for the last activity.
+ */
+export function toTesterSession(thread: TesterThread, conversation: Conversation | null) {
+	return {
+		id: thread.id,
+		channel: thread.channel,
+		contactAddress: thread.contactAddress,
+		contactName: conversation?.contactName ?? '',
+		customerId: thread.customerId,
+		state: thread.state,
+		conversationId: thread.conversationId,
+		snippet: conversation?.snippet ?? '',
+		subject: thread.subject,
+		bookedJobId: thread.bookedJobId,
+		lastMessageAt: conversation?.lastMessageAt ?? thread.updatedAt,
+		createdAt: thread.createdAt,
+		updatedAt: thread.updatedAt,
+	};
 }
