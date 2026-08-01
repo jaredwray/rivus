@@ -48,9 +48,11 @@ const TIME_THAT_WORKS = /\btimes?\b[^?!.]*\bwork/;
 // ("can you do tomorrow at 9?"). This is the guard that costs us questions like
 // "what are your hours on Saturday?" — an acceptable trade, since missing it
 // only leaves today's behavior in place, while claiming it would risk swallowing
-// a real proposal.
+// a real proposal. A slashed pair reads as a date ("8/5") only when it is not
+// really a fraction: in a trades inbox "1/2 inch", '3/4"', and "3/4-hp" are
+// product sizes, and "24/7" is opening hours — none of them point at a day.
 const CALENDAR_REFERENCE =
-	/\b(?:today|tonight|tomorrow|sun|sunday|mon|monday|tue|tues|tuesday|wed|weds|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday)\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? ?\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}\/\d{1,2}\b/;
+	/\b(?:today|tonight|tomorrow|sun|sunday|mon|monday|tue|tues|tuesday|wed|weds|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday)\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? ?\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b|\b(?!24\/7\b)\d{1,2}\/\d{1,2}\b(?!\s*["″”]|[\s-]+(?:inch(?:es)?|hp|horsepower|tons?|baths?|gal(?:lons?)?|gpm|psi|lbs?|pounds?|ft|foot|feet)\b)/;
 const CLOCK_TIME = /\b\d{1,2}(?::\d{2})? ?(?:am|pm)\b|\b\d{1,2}:\d{2}\b|\bat \d{1,2}\b|\bnoon\b/;
 
 // What an information-seeking message looks like once nothing scheduling-shaped

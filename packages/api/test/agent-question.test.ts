@@ -26,6 +26,15 @@ describe('isInformationalQuestion — questions about the business', () => {
 		'is there a trip charge',
 		'tell me about your warranty',
 		'can you tell me what areas you cover?',
+		// Fractions are product sizes in a trades inbox, not dates — "1/2 inch"
+		// must not read as January 2nd.
+		'do you install 1/2 inch pipe?',
+		'do you carry 3/4" fittings?',
+		'do you stock 3/4-inch valves?',
+		'can you replace a 1/2 hp disposal?',
+		'do you sell 3/4 ton units?',
+		// "24/7" is opening hours, never a calendar date.
+		'are you open 24/7?',
 	])('reads %j as an information-seeking question', (text) => {
 		expect(isInformationalQuestion(text)).toBe(true);
 	});
@@ -64,6 +73,11 @@ describe('isInformationalQuestion — scheduling turns are never questions', () 
 		// Acknowledgements.
 		'thanks!',
 		'see you then',
+		// Slash dates stay with the calendar — the fraction carve-out needs a real
+		// unit of measure, so a preposition after the date doesn't defeat it.
+		'does 8/5 work for you?',
+		'is 8/5 open?',
+		'does 8/5 in the afternoon work for you?',
 	])('refuses %j to the scheduling engine', (text) => {
 		expect(isInformationalQuestion(text)).toBe(false);
 	});
