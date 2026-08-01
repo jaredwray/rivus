@@ -29,6 +29,7 @@ import {
 	Icon,
 	OutlineButton,
 	Pill,
+	RivusBadge,
 	Txt,
 } from '@/src/components/ui';
 import { CHANNEL_META, STATE_META } from '@/src/tester/meta';
@@ -41,6 +42,15 @@ type FeatherName = ComponentProps<typeof Feather>['name'];
 // Mobile Safari zooms the page when a focused input's font is under 16px, which
 // shoves the send button off-screen — same guard RivusChat's composer uses.
 const IS_WEB = Platform.OS === 'web';
+
+/**
+ * Where an async call started: the company it was made for, and the session it
+ * belongs to (`null` for account-wide calls such as the list load). Engine turns
+ * take seconds, so by the time one answers the user may have picked another
+ * session — or switched company. A completion may only touch the conversation
+ * pane while both are still what's on screen.
+ */
+type Origin = { accountId: string; sessionId: string | null };
 
 /** Newest activity first, matching the order the API lists sessions in. */
 function byActivity(a: TesterSession, b: TesterSession): number {
@@ -61,6 +71,33 @@ function clockTime(iso: string): string {
 		return '';
 	}
 	return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+/** Size of the identity mark beside a Rivus (or teammate) turn. */
+const RIVUS_MARK = 26;
+
+/** How long a preview's blob URL stays alive before it's revoked. */
+const PREVIEW_URL_TTL_MS = 60_000;
+
+/**
+ * Open the exact HTML body an email turn would have delivered, in a new tab.
+ *
+ * Web only: it needs a blob URL and a window, and the app carries no WebView
+ * dependency to render one on device (the plain-text version is in the
+ * transcript either way). The URL is revoked on a delay — revoking it straight
+ * away can beat the new tab to loading it.
+ *
+ * The charset is spelled out because the rendered email doesn't carry a `<meta
+ * charset>`: without it the tab falls back to a legacy encoding and every
+ * non-ASCII character in the agent's copy (·, ’, —) renders as mojibake.
+ */
+function openEmailPreview(html: string): void {
+	if (!IS_WEB || typeof window === 'undefined') {
+		return;
+	}
+	const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+	window.open(url, '_blank', 'noopener');
+	setTimeout(() => URL.revokeObjectURL(url), PREVIEW_URL_TTL_MS);
 }
 
 /**
@@ -100,14 +137,35 @@ export default function AgentTesterScreen() {
 	const [detail, setDetail] = useState<TesterSessionDetail | null>(null);
 	const [detailLoading, setDetailLoading] = useState(false);
 	const [detailError, setDetailError] = useState<string | null>(null);
-	// The most recent turn's engine result, for the caption under the last reply.
-	// Only a send produces one, so it clears whenever the selection changes.
+	// The most recent turn's engine result, for the caption (and email preview)
+	// under the last reply. Only a send produces one, so it clears whenever the
+	// selection changes — and it is only ever installed for the session it came
+	// from, so one session's outcome can't caption another's transcript.
 	const [turn, setTurn] = useState<TesterTurn | null>(null);
 	const [draft, setDraft] = useState('');
-	// The customer turn we've optimistically appended while the engine runs.
-	const [pending, setPending] = useState<string | null>(null);
-	const [sending, setSending] = useState(false);
+	// The customer turn we've optimistically appended while the engine runs, tagged
+	// with the session it was typed into so it only paints under that header.
+	const [pending, setPending] = useState<{ sessionId: string; text: string } | null>(null);
+	// The session with a turn in flight, or null when idle. One turn at a time.
+	const [sendingId, setSendingId] = useState<string | null>(null);
 	const [sendError, setSendError] = useState<string | null>(null);
+
+	// The company and session the pane is showing *right now*, in refs so an async
+	// call that started before a switch can compare against the live values when it
+	// lands (the state captured in its closure is the stale, pre-switch one).
+	const accountRef = useRef(accountId);
+	const sessionRef = useRef<string | null>(null);
+	useEffect(() => {
+		accountRef.current = accountId;
+	}, [accountId]);
+
+	/** Whether a completion's origin is still what the conversation pane shows. */
+	const isCurrent = useCallback(
+		(origin: Origin) =>
+			accountRef.current === origin.accountId &&
+			(origin.sessionId === null || sessionRef.current === origin.sessionId),
+		[],
+	);
 
 	const load = useCallback(
 		async (isActive: () => boolean = () => true) => {
@@ -117,36 +175,44 @@ export default function AgentTesterScreen() {
 				setLoading(false);
 				return;
 			}
+			// A manual refresh isn't tied to an effect's cleanup, so it carries its own
+			// company: sessions fetched for one company must never list under another.
+			const origin: Origin = { accountId, sessionId: null };
+			const alive = () => isActive() && isCurrent(origin);
 			setLoading(true);
 			setLoadError(null);
 			setActionError(null);
 			try {
 				const { data } = await client.listTesterSessions(token);
-				if (isActive()) {
+				if (alive()) {
 					setSessions([...data].sort(byActivity));
 				}
 			} catch (caught) {
-				if (isActive()) {
+				if (alive()) {
 					setSessions([]);
 					setLoadError(caught instanceof Error ? caught : new Error('Could not load sessions.'));
 				}
 			} finally {
-				if (isActive()) {
+				if (alive()) {
 					setLoading(false);
 				}
 			}
 		},
-		[client, token, accountId, isStaff],
+		[client, token, accountId, isStaff, isCurrent],
 	);
 
 	// `load` is re-created whenever the active company is, so this both loads on
-	// mount and starts the next company clean — one company's selection or
-	// transcript must never show under another's name.
+	// mount and starts the next company clean — one company's sessions, selection
+	// or transcript must never show under another's name.
 	useEffect(() => {
 		let active = true;
+		setSessions([]);
 		setSelectedId(null);
 		setDetail(null);
 		setTurn(null);
+		setPending(null);
+		setSendError(null);
+		setDraft('');
 		setShowConversation(false);
 		void load(() => active);
 		return () => {
@@ -159,6 +225,8 @@ export default function AgentTesterScreen() {
 			if (!accountId) {
 				return;
 			}
+			const origin: Origin = { accountId, sessionId: id };
+			const alive = () => isActive() && isCurrent(origin);
 			// Clear the previous transcript up front so one session's turns never show
 			// under another's header while the new one loads.
 			setDetail(null);
@@ -170,21 +238,21 @@ export default function AgentTesterScreen() {
 			setDetailLoading(true);
 			try {
 				const result = await client.getTesterSession(token, id);
-				if (isActive()) {
+				if (alive()) {
 					setDetail(result);
 				}
 			} catch (caught) {
-				if (isActive()) {
+				if (alive()) {
 					setDetail(null);
 					setDetailError(messageFor(caught, 'Could not load this session.'));
 				}
 			} finally {
-				if (isActive()) {
+				if (alive()) {
 					setDetailLoading(false);
 				}
 			}
 		},
-		[client, token, accountId],
+		[client, token, accountId, isCurrent],
 	);
 
 	// Whatever the user last picked, falling back to the top of the list.
@@ -192,6 +260,11 @@ export default function AgentTesterScreen() {
 	// Re-load only when the selected *id* changes — not when a turn replaces the
 	// session object in the list, which would refetch on every send.
 	const selectedKey = selected?.id ?? null;
+	// Kept in a ref as well: async completions read it to decide whether their
+	// session is still the one on screen (see `isCurrent`).
+	useEffect(() => {
+		sessionRef.current = selectedKey;
+	}, [selectedKey]);
 	useEffect(() => {
 		if (!selectedKey) {
 			setDetail(null);
@@ -207,57 +280,74 @@ export default function AgentTesterScreen() {
 
 	const onSend = useCallback(async () => {
 		const text = draft.trim();
-		if (!selected || text === '' || sending) {
+		if (!selected || text === '' || sendingId !== null) {
 			return;
 		}
-		setSending(true);
+		const origin: Origin = { accountId, sessionId: selected.id };
+		setSendingId(selected.id);
 		setSendError(null);
 		setDraft('');
-		setPending(text);
+		setPending({ sessionId: selected.id, text });
 		try {
 			const result = await client.sendTesterMessage(token, selected.id, { text });
-			// The response is authoritative for both panes: it carries the full
-			// transcript (replacing the optimistic turn) and the updated session row.
-			setTurn(result);
-			setDetail({ session: result.session, messages: result.messages });
-			setSessions((prev) =>
-				prev
-					.map((item) => (item.id === result.session.id ? result.session : item))
-					.sort(byActivity),
-			);
+			// The turn really happened, so its row is refreshed whatever the user is
+			// looking at now — state, snippet and place in the order all moved on.
+			if (accountRef.current === origin.accountId) {
+				setSessions((prev) =>
+					prev
+						.map((item) => (item.id === result.session.id ? result.session : item))
+						.sort(byActivity),
+				);
+			}
+			// The transcript and the engine's outcome, though, belong to *this* session:
+			// install them only while it's still the one the pane is showing.
+			if (isCurrent(origin)) {
+				setTurn(result);
+				setDetail({ session: result.session, messages: result.messages });
+			}
 		} catch (caught) {
-			// Put the text back in the composer so the turn can be retried as typed.
-			setDraft(text);
-			setSendError(messageFor(caught, 'Could not run that turn.'));
+			if (isCurrent(origin)) {
+				// Put the text back in the composer so the turn can be retried as typed.
+				setDraft(text);
+				setSendError(messageFor(caught, 'Could not run that turn.'));
+			}
 		} finally {
+			// Only one turn runs at a time, so this can't clear another's bubble.
 			setPending(null);
-			setSending(false);
+			setSendingId(null);
 		}
-	}, [draft, token, selected, sending, client]);
+	}, [draft, token, selected, sendingId, client, accountId, isCurrent]);
 
 	const performDelete = useCallback(
 		async (target: TesterSession) => {
 			if (deletingId) {
 				return;
 			}
+			const origin: Origin = { accountId, sessionId: target.id };
 			setActionError(null);
 			setDeletingId(target.id);
 			try {
 				await client.deleteTesterSession(token, target.id);
-				setSessions((prev) => prev.filter((item) => item.id !== target.id));
-				if (selected?.id === target.id) {
-					setSelectedId(null);
-					setDetail(null);
-					setTurn(null);
-					setShowConversation(false);
+				// After a company switch the list holds another company's sessions
+				// entirely — dropping a row from it (or clearing its pane) is not ours.
+				if (accountRef.current === origin.accountId) {
+					setSessions((prev) => prev.filter((item) => item.id !== target.id));
+					if (isCurrent(origin)) {
+						setSelectedId(null);
+						setDetail(null);
+						setTurn(null);
+						setShowConversation(false);
+					}
 				}
 			} catch (caught) {
-				setActionError(messageFor(caught, 'Could not delete that session.'));
+				if (accountRef.current === origin.accountId) {
+					setActionError(messageFor(caught, 'Could not delete that session.'));
+				}
 			} finally {
 				setDeletingId(null);
 			}
 		},
-		[client, token, selected, deletingId],
+		[client, token, deletingId, accountId, isCurrent],
 	);
 
 	/**
@@ -361,6 +451,11 @@ export default function AgentTesterScreen() {
 		/>
 	);
 
+	// Everything the pane paints is scoped to the session on screen: a turn still
+	// running for another session must not show its bubble or spinner here.
+	const activeId = selected?.id ?? null;
+	const pendingText = pending !== null && pending.sessionId === activeId ? pending.text : null;
+
 	const conversationPane = (
 		<Conversation
 			session={selected}
@@ -369,8 +464,9 @@ export default function AgentTesterScreen() {
 			loading={detailLoading}
 			error={detailError}
 			sendError={sendError}
-			pending={pending}
-			sending={sending}
+			pending={pendingText}
+			sending={sendingId !== null && sendingId === activeId}
+			busy={sendingId !== null}
 			draft={draft}
 			deleting={selected !== null && deletingId === selected.id}
 			onBack={wide ? undefined : () => setShowConversation(false)}
@@ -612,6 +708,7 @@ function Conversation({
 	sendError,
 	pending,
 	sending,
+	busy,
 	draft,
 	deleting,
 	onBack,
@@ -625,8 +722,12 @@ function Conversation({
 	loading: boolean;
 	error: string | null;
 	sendError: string | null;
+	/** The optimistic customer turn for *this* session, or null. */
 	pending: string | null;
+	/** A turn is running for this session (the thinking bubble). */
 	sending: boolean;
+	/** A turn is running for some session — the composer takes one at a time. */
+	busy: boolean;
 	draft: string;
 	deleting: boolean;
 	onBack?: () => void;
@@ -652,9 +753,9 @@ function Conversation({
 		-1,
 	);
 	const firstName = (session.contactName || session.contactAddress).split(/\s+/)[0] ?? '';
-	// Nothing to send (or a turn already running) — the button greys out rather
-	// than silently ignoring the press.
-	const inert = sending || draft.trim() === '';
+	// Nothing to send (or a turn already running, here or in another session) — the
+	// button greys out rather than silently ignoring the press.
+	const inert = busy || draft.trim() === '';
 
 	return (
 		<View style={styles.convo}>
@@ -724,13 +825,18 @@ function Conversation({
 						/>
 					))}
 					{pending !== null ? (
-						<BrandGradient style={[styles.bubble, styles.customerBubble, styles.pendingBubble]}>
-							<Txt style={styles.customerBubbleTxt}>{pending}</Txt>
-						</BrandGradient>
+						<View style={styles.customerCol}>
+							<View style={[styles.bubble, styles.customerBubble, styles.pendingBubble]}>
+								<Txt style={styles.customerBubbleTxt}>{pending}</Txt>
+							</View>
+						</View>
 					) : null}
 					{sending ? (
-						<View style={[styles.bubble, styles.rivusBubble]}>
-							<ActivityIndicator color={colors.brandPurple} size="small" />
+						<View style={styles.rivusRow}>
+							<RivusBadge size={RIVUS_MARK} radius={radii.sm} />
+							<View style={[styles.bubble, styles.rivusBubble]}>
+								<ActivityIndicator color={colors.brandPurple} size="small" />
+							</View>
 						</View>
 					) : null}
 				</ScrollView>
@@ -797,31 +903,61 @@ function Turn({
 		);
 	}
 
-	// The customer turns are the ones staff typed — the impersonated side, so they
-	// wear the signature gradient exactly as the user's own turns do in RivusChat.
+	// The customer turns are the ones staff typed, but they are still the *customer*
+	// side of the conversation, so they stay neutral: the signature gradient marks
+	// Rivus-the-agent only (DESIGN_SYSTEM.md), which is why the inbox keeps the
+	// customer's bubbles grey too. Here they're right-aligned — staff are the ones
+	// writing them — while Rivus answers from the left.
 	if (message.author === 'customer') {
 		return (
 			<View style={styles.customerCol}>
-				<BrandGradient style={[styles.bubble, styles.customerBubble]}>
+				<View style={[styles.bubble, styles.customerBubble]}>
 					<Txt style={styles.customerBubbleTxt}>{message.body}</Txt>
-				</BrandGradient>
+				</View>
 				<Txt style={styles.turnTime}>{clockTime(message.createdAt)}</Txt>
 			</View>
 		);
 	}
 
+	const isRivus = message.author === 'rivus';
 	const subject = caption?.delivery.subject ?? '';
+	// The exact body the agent would have emailed. Only a send hands one back, so
+	// it's always this session's — the caption clears with the selection.
+	const html = caption?.delivery.html ?? '';
 	return (
-		<View style={styles.rivusCol}>
-			{message.author === 'agent' ? <Txt style={styles.authorLabel}>Team member</Txt> : null}
-			<View style={[styles.bubble, styles.rivusBubble]}>
-				<Txt style={styles.rivusBubbleTxt}>{message.body}</Txt>
+		<View style={styles.rivusRow}>
+			{isRivus ? (
+				// The one gradient in the transcript: the agent's own mark.
+				<RivusBadge size={RIVUS_MARK} radius={radii.sm} />
+			) : (
+				// A human teammate's reply — a neutral mark, never Rivus's.
+				<View style={styles.agentMark}>
+					<Icon name="user" size={13} color={colors.textMuted} />
+				</View>
+			)}
+			<View style={styles.rivusCol}>
+				{isRivus ? null : <Txt style={styles.authorLabel}>Team member</Txt>}
+				<View style={[styles.bubble, styles.rivusBubble]}>
+					<Txt style={styles.rivusBubbleTxt}>{message.body}</Txt>
+				</View>
+				{caption ? <Txt style={styles.caption}>outcome: {caption.outcome}</Txt> : null}
+				{caption && emailChannel && subject ? (
+					<Txt style={styles.caption}>subject: {subject}</Txt>
+				) : null}
+				{emailChannel && html && IS_WEB ? (
+					<Pressable
+						onPress={() => openEmailPreview(html)}
+						accessibilityRole="button"
+						accessibilityLabel="Preview the email Rivus would have sent"
+						hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+						style={({ pressed }) => [styles.previewBtn, pressed && styles.pressed]}
+					>
+						<Icon name="external-link" size={12} color={colors.brandPurple} />
+						<Txt style={styles.previewTxt}>Preview email</Txt>
+					</Pressable>
+				) : null}
+				<Txt style={styles.turnTime}>{clockTime(message.createdAt)}</Txt>
 			</View>
-			{caption ? <Txt style={styles.caption}>outcome: {caption.outcome}</Txt> : null}
-			{caption && emailChannel && subject ? (
-				<Txt style={styles.caption}>subject: {subject}</Txt>
-			) : null}
-			<Txt style={styles.turnTime}>{clockTime(message.createdAt)}</Txt>
 		</View>
 	);
 }
@@ -977,10 +1113,40 @@ const styles = StyleSheet.create({
 	// Turns
 	bubble: { paddingVertical: 9, paddingHorizontal: 12, borderRadius: radii.lg },
 	customerCol: { alignSelf: 'flex-end', maxWidth: '85%', alignItems: 'flex-end', gap: 3 },
-	customerBubble: { alignSelf: 'flex-end', maxWidth: '100%', borderBottomRightRadius: 3 },
-	customerBubbleTxt: { fontFamily: font.medium, fontSize: 13.5, color: '#fff', lineHeight: 20 },
+	// The impersonated customer: a neutral chip-toned bubble, as the inbox gives
+	// the customer's side. The gradient belongs to Rivus alone.
+	customerBubble: {
+		alignSelf: 'flex-end',
+		maxWidth: '100%',
+		backgroundColor: colors.chipBg,
+		borderWidth: 1,
+		borderColor: colors.border,
+		borderBottomRightRadius: 3,
+	},
+	customerBubbleTxt: {
+		fontFamily: font.regular,
+		fontSize: 13.5,
+		color: colors.text,
+		lineHeight: 20,
+	},
 	pendingBubble: { opacity: 0.72 },
-	rivusCol: { alignSelf: 'flex-start', maxWidth: '85%', gap: 3 },
+	// Rivus (and a teammate) answer from the left, behind their identity mark.
+	rivusRow: {
+		flexDirection: 'row',
+		alignSelf: 'flex-start',
+		alignItems: 'flex-start',
+		gap: 8,
+		maxWidth: '92%',
+	},
+	rivusCol: { flexShrink: 1, minWidth: 0, gap: 3 },
+	agentMark: {
+		width: RIVUS_MARK,
+		height: RIVUS_MARK,
+		borderRadius: radii.sm,
+		alignItems: 'center',
+		justifyContent: 'center',
+		backgroundColor: colors.avatarBg,
+	},
 	rivusBubble: {
 		alignSelf: 'flex-start',
 		backgroundColor: colors.surface,
@@ -989,6 +1155,17 @@ const styles = StyleSheet.create({
 		borderBottomLeftRadius: 3,
 	},
 	rivusBubbleTxt: { fontFamily: font.regular, fontSize: 13.5, color: colors.text, lineHeight: 20 },
+	// A quiet tertiary text button — the email preview is a side door, not the
+	// screen's action.
+	previewBtn: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: 5,
+		alignSelf: 'flex-start',
+		paddingVertical: 2,
+		paddingHorizontal: 2,
+	},
+	previewTxt: { fontFamily: font.semibold, fontSize: 11.5, color: colors.brandPurple },
 	authorLabel: {
 		fontFamily: font.semibold,
 		fontSize: 10.5,
