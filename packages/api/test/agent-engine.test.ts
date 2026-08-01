@@ -56,7 +56,7 @@ describe('decideScheduling — first contact', () => {
 		const busy = [
 			{ startAt: NOW.toISOString(), durationMinutes: (SEARCH_WINDOW_DAYS + 2) * 24 * 60 },
 		];
-		expect(decide({ text: 'hello', busy })).toEqual({ kind: 'no_availability' });
+		expect(decide({ text: 'my sink is leaking', busy })).toEqual({ kind: 'no_availability' });
 	});
 });
 
@@ -222,6 +222,42 @@ describe('decideScheduling — review-driven guards', () => {
 		if (decision.kind === 'propose_unavailable') {
 			expect(decision.reason).toBe('taken');
 		}
+	});
+});
+
+describe('decideScheduling — a bare greeting', () => {
+	it('greets back instead of pushing appointment times', () => {
+		// The reported bug: a known customer's first "Hello" came back as three slots.
+		expect(decide({ text: 'Hello' })).toEqual({ kind: 'greet' });
+		expect(decide({ text: 'hi there!' })).toEqual({ kind: 'greet' });
+	});
+
+	it('re-offers instead of greeting while slots are on the table', () => {
+		// They have options in front of them; restating those beats a bare hello.
+		const decision = decide({ text: 'hello', offeredSlots: OFFERED });
+		expect(decision.kind).toBe('offer_slots');
+	});
+
+	it('reassures the standing booking when a booked contact says hello', () => {
+		const bookedSlot = { startAt: '2026-07-07T16:00:00.000Z', durationMinutes: 60 };
+		const decision = decideScheduling({
+			customerKnown: true,
+			text: 'Hey!',
+			offeredSlots: [],
+			busy: [bookedSlot],
+			timeZone: PACIFIC,
+			now: NOW,
+			bookedSlot,
+		});
+		expect(decision).toEqual({ kind: 'confirm_existing', slot: bookedSlot });
+	});
+
+	it('still offers times when the greeting carries a real request', () => {
+		expect(decide({ text: 'hello, my sink is leaking' }).kind).toBe('offer_slots');
+	});
+
+	it('never greets a stranger — the signup gate comes first', () => {
+		expect(decide({ customerKnown: false, text: 'Hello' })).toEqual({ kind: 'send_signup_link' });
 	});
 });
 

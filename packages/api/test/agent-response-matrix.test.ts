@@ -26,6 +26,7 @@ import { RecordingSmsSender, RecordingWhatsappSender } from './helpers';
 const SLOT_A = { startAt: '2026-07-07T16:00:00.000Z', durationMinutes: 60 };
 const SLOT_B = { startAt: '2026-07-09T21:00:00.000Z', durationMinutes: 60 };
 const SLOTS = [SLOT_A, SLOT_B];
+const ANSWER = "We're open Monday through Friday, 9:00 AM to 5:00 PM.";
 
 const DECISIONS: AgentDecision[] = [
 	{ kind: 'send_signup_link' },
@@ -45,7 +46,27 @@ const DECISIONS: AgentDecision[] = [
 		alternatives: [],
 	},
 	{ kind: 'no_availability' },
+	{ kind: 'greet' },
+	// The knowledge capability's kinds, in each shape that renders differently: a
+	// bare answer, an answer that restates a standing offer, and an answer that also
+	// has to carry the signup call-to-action.
+	{ kind: 'answer_question', answer: ANSWER, offeredSlots: [], customerKnown: true },
+	{ kind: 'answer_question', answer: ANSWER, offeredSlots: SLOTS, customerKnown: true },
+	{ kind: 'answer_question', answer: ANSWER, offeredSlots: [], customerKnown: false },
+	{ kind: 'hold_for_team' },
 ];
+
+/** A distinct test name per decision, so the variants of one kind don't collide. */
+function decisionLabel(decision: AgentDecision): string {
+	if (decision.kind === 'propose_unavailable') {
+		return `${decision.kind}:${decision.reason}:${decision.alternatives.length ? 'alt' : 'none'}`;
+	}
+	if (decision.kind === 'answer_question') {
+		const offer = decision.offeredSlots.length > 0 ? 'offer' : 'none';
+		return `${decision.kind}:${offer}:${decision.customerKnown ? 'known' : 'unknown'}`;
+	}
+	return decision.kind;
+}
 
 /** A mailer that records the last agent email it was asked to send. */
 class RecordingMailer implements Mailer {
@@ -159,10 +180,7 @@ describe('agent response render matrix (channels × decisions)', () => {
 		const { name } = makeChannel();
 		describe(name, () => {
 			for (const decision of DECISIONS) {
-				const label =
-					decision.kind === 'propose_unavailable'
-						? `${decision.kind}:${decision.reason}:${decision.alternatives.length ? 'alt' : 'none'}`
-						: decision.kind;
+				const label = decisionLabel(decision);
 				it(`renders ${label} into a non-empty message and transcript line`, async () => {
 					const channel = makeChannel();
 					const response = composeAgentResponse(

@@ -42,7 +42,17 @@ function buildTwilioMessagingRoutes(options: {
 	return async (fastify) => {
 		const app = fastify.withTypeProvider<ZodTypeProvider>();
 		const deps = app.deps;
-		const { config, accounts, conversations, agentThreads, memberships, notifier, jobs } = deps;
+		const {
+			config,
+			accounts,
+			conversations,
+			agentThreads,
+			memberships,
+			notifier,
+			jobs,
+			faqs,
+			faqAnswer,
+		} = deps;
 
 		const adapter = options.adapter(deps);
 		const capabilities = defaultCapabilities();
@@ -54,6 +64,8 @@ function buildTwilioMessagingRoutes(options: {
 			memberships,
 			notifier,
 			jobs,
+			faqs,
+			faqAnswer,
 		};
 
 		app.addContentTypeParser(

@@ -1,4 +1,4 @@
-import type { Account, ConversationChannel, JobId, UserId } from '@rivus/core';
+import type { Account, Conversation, ConversationChannel, JobId, UserId } from '@rivus/core';
 import type { FastifyBaseLogger } from 'fastify';
 import { ConflictError } from '../../repositories/errors';
 import type { AppDeps } from '../../types';
@@ -187,6 +187,25 @@ export async function handleInboundAgentMessage(options: {
 			body: result.sideEffects.bookJob.note,
 		});
 	}
+	// Handing the turn to a human happens only once the customer has actually been
+	// told so. Re-reading the conversation (rather than trusting a copy from
+	// earlier in the turn) is what makes the dedupe honest: a redelivered webhook
+	// finds it already `needs_attention` and stops there instead of notifying the
+	// whole team a second time.
+	const flag = result.sideEffects?.flagForReview;
+	if (flag) {
+		const conversation = await conversations.findById(account.id, thread.conversationId);
+		if (conversation) {
+			await flagConversationForReview({
+				deps,
+				account,
+				conversation,
+				pendingReply: flag.pendingReply,
+				flagReason: flag.flagReason,
+				logger: options.logger,
+			});
+		}
+	}
 
 	await agentThreads.update(account.id, thread.id, {
 		...result.threadPatch,
@@ -197,6 +216,45 @@ export async function handleInboundAgentMessage(options: {
 	});
 
 	return { handled: true, outcome: result.outcome };
+}
+
+/**
+ * Put one conversation in front of a human: flag it `needs_attention` with the
+ * draft and reason, then alert every member. `needs_attention` IS the flag, so
+ * an already-flagged conversation is left alone and nobody is notified twice —
+ * that single guard is what makes both callers (a redelivered failure webhook,
+ * a reprocessed inbound turn) idempotent. Returns whether it flagged.
+ */
+async function flagConversationForReview(options: {
+	deps: Pick<AppDeps, 'conversations' | 'memberships' | 'notifier'>;
+	account: Account;
+	conversation: Conversation;
+	/** The reply Rivus drafted but won't send ('' when it had none). */
+	pendingReply: string;
+	flagReason: string;
+	logger: FastifyBaseLogger;
+}): Promise<boolean> {
+	const { deps, account, conversation, pendingReply, flagReason, logger } = options;
+	if (conversation.status === 'needs_attention') {
+		return false;
+	}
+	await deps.conversations.setReviewState(account.id, conversation.id, {
+		status: 'needs_attention',
+		pendingReply,
+		flagReason,
+	});
+	// No human actor for a webhook — notify the whole team.
+	const memberIds = (await deps.memberships.listByAccount(account.id)).map(
+		(membership) => membership.userId,
+	);
+	await deps.notifier.conversationNeedsReview({
+		accountId: account.id,
+		actorId: '' as UserId,
+		memberIds,
+		contactName: conversation.contactName,
+		logger,
+	});
+	return true;
 }
 
 /**
@@ -225,8 +283,10 @@ export async function flagDeliveryFailure(options: {
 	if (!conversation) {
 		return { handled: false, outcome: 'no_conversation' };
 	}
-	// A delivery-failure is the only path to `needs_attention` for an agent thread,
-	// so the flag itself dedupes a redelivered webhook.
+	// `needs_attention` dedupes a redelivered webhook. It is no longer reached only
+	// by a delivery failure — a capability can hand a turn to a human too — so an
+	// already-flagged conversation is reported as such whatever flagged it, and the
+	// note below is skipped rather than piling a second explanation onto the thread.
 	if (conversation.status === 'needs_attention') {
 		return { handled: false, outcome: 'already_flagged' };
 	}
@@ -234,20 +294,12 @@ export async function flagDeliveryFailure(options: {
 		author: 'note',
 		body: noteBody,
 	});
-	await deps.conversations.setReviewState(account.id, thread.conversationId, {
-		status: 'needs_attention',
+	await flagConversationForReview({
+		deps,
+		account,
+		conversation,
 		pendingReply: '',
 		flagReason: DELIVERY_FAILED_REASON,
-	});
-	// No human actor for a webhook — notify the whole team.
-	const memberIds = (await deps.memberships.listByAccount(account.id)).map(
-		(membership) => membership.userId,
-	);
-	await deps.notifier.conversationNeedsReview({
-		accountId: account.id,
-		actorId: '' as UserId,
-		memberIds,
-		contactName: conversation.contactName,
 		logger,
 	});
 	return { handled: true, outcome };

@@ -1,5 +1,6 @@
 import type { AgentSlot } from '@rivus/core';
 import { isAcknowledgement, matchOfferedSlot, parseProposedTime, parseSlotChoice } from './parse';
+import { isPureGreeting } from './question';
 import {
 	BOOKING_HORIZON_DAYS,
 	type BusyInterval,
@@ -15,6 +16,11 @@ import {
  * mirroring `services/inbox.ts` — so the whole state machine is unit-testable;
  * each channel (email today, SMS/WhatsApp later) supplies the I/O around it and
  * renders the decision in its own voice.
+ *
+ * {@link AgentDecision} is deliberately wider than this one engine: it is the
+ * whole agent's move vocabulary, so every capability's decision flows through
+ * the same composer and every channel renders it without a change. The kinds
+ * {@link decideScheduling} never returns are marked as such below.
  */
 
 export type AgentDecision =
@@ -34,7 +40,24 @@ export type AgentDecision =
 			alternatives: AgentSlot[];
 	  }
 	/** Nothing is open in the search window — ask them to propose a time. */
-	| { kind: 'no_availability' };
+	| { kind: 'no_availability' }
+	/** They only said hello — say hello back and ask what they need. */
+	| { kind: 'greet' }
+	/**
+	 * Not from this engine — the knowledge capability's move: the question was
+	 * answered from the account's published knowledge base. `offeredSlots` carries
+	 * a standing offer the question interrupted (empty when there is none), which
+	 * the reply re-lists unchanged so the numbering the contact was given still
+	 * picks the same window. `customerKnown` is false for a contact with no CRM
+	 * record, who is answered *and* pointed at self-signup.
+	 */
+	| { kind: 'answer_question'; answer: string; offeredSlots: AgentSlot[]; customerKnown: boolean }
+	/**
+	 * Not from this engine — the knowledge capability's move: the knowledge base
+	 * can't answer this (or the caution policy says a human should), so the agent
+	 * says so and the conversation is flagged for the team.
+	 */
+	| { kind: 'hold_for_team' };
 
 export interface SchedulingDecisionInput {
 	/** Whether the sender resolved to a CRM customer. */
@@ -162,6 +185,21 @@ export function decideScheduling(input: SchedulingDecisionInput): AgentDecision 
 	// to a fresh offer below, so a booked thread can still start another round.
 	if (input.bookedSlot && isAcknowledgement(input.text)) {
 		return { kind: 'confirm_existing', slot: input.bookedSlot };
+	}
+
+	// Someone who has only said "hello" hasn't asked for anything yet, and meeting
+	// that with three appointment times reads as an agent that isn't listening.
+	// Two exceptions, both about not losing context the contact already has: on a
+	// booked thread a "hi" reassures the booking (same reasoning as the
+	// acknowledgement above), and while slots are on offer re-listing them is more
+	// useful than a bare hello.
+	if (isPureGreeting(input.text)) {
+		if (input.bookedSlot) {
+			return { kind: 'confirm_existing', slot: input.bookedSlot };
+		}
+		if (input.offeredSlots.length === 0) {
+			return { kind: 'greet' };
+		}
 	}
 
 	const slots = openSlots();

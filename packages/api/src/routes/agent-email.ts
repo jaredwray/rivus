@@ -66,11 +66,22 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 		notifier,
 		receivedEmails,
 		jobs,
+		faqs,
+		faqAnswer,
 	} = app.deps;
 
 	const adapter = createEmailChannelAdapter({ config, customers, mailer });
 	const capabilities = defaultCapabilities();
-	const orchestratorDeps = { config, jobs, conversations, agentThreads };
+	const orchestratorDeps = {
+		config,
+		jobs,
+		conversations,
+		agentThreads,
+		faqs,
+		faqAnswer,
+		memberships,
+		notifier,
+	};
 
 	/**
 	 * Resolve the account an agent-domain local part addresses. New addresses are

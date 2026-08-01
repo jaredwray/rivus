@@ -47,6 +47,8 @@ export const agentWhatsappRoutes: FastifyPluginAsync = async (fastify) => {
 		notifier,
 		whatsappSender,
 		jobs,
+		faqs,
+		faqAnswer,
 	} = app.deps;
 
 	const adapter = createWhatsappChannelAdapter({ customers, sender: whatsappSender });
@@ -59,6 +61,8 @@ export const agentWhatsappRoutes: FastifyPluginAsync = async (fastify) => {
 		memberships,
 		notifier,
 		jobs,
+		faqs,
+		faqAnswer,
 	};
 
 	// Raw body kept byte-for-byte for signature verification (see the email route).
