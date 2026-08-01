@@ -302,13 +302,15 @@ export const agentTesterRoutes: FastifyPluginAsync = async (fastify) => {
 					subject: channel === 'email' ? subject : '',
 				});
 			} catch (error) {
+				// Whatever the failure, the conversation this request just opened must
+				// not outlive it — a thread-less transcript would sit orphaned in the
+				// inbox. Cleanup is best-effort so it can never mask the real error.
+				await conversations.delete(accountId, conversation.id).catch(() => false);
 				if (!(error instanceof ConflictError)) {
 					throw error;
 				}
-				// The contact already has a thread on this channel (the orchestrator's
-				// loser-cleanup): drop the conversation this request just opened rather
-				// than leaving it orphaned in the inbox.
-				await conversations.delete(accountId, conversation.id);
+				// The contact already has a thread on this channel — the orchestrator's
+				// loser-cleanup, surfaced as a conflict the app can explain.
 				throw app.httpErrors.conflict(
 					`A tester session for this contact already exists on ${channel} — delete it to start over.`,
 				);

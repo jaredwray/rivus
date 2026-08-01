@@ -404,6 +404,42 @@ describe('POST /v1/admin/agent-tester/sessions', () => {
 		});
 		expect(sms.channel).toBe('sms');
 	});
+
+	it('cleans up the conversation when the thread create fails for any other reason', async () => {
+		const built = await setup();
+		app = built.app;
+		const before = await built.repos.conversations.list({
+			accountId: built.accountId,
+			page: 1,
+			pageSize: 50,
+		});
+		// A store failure that is NOT the duplicate-session conflict.
+		const create = built.repos.agentThreads.create.bind(built.repos.agentThreads);
+		built.repos.agentThreads.create = async () => {
+			built.repos.agentThreads.create = create;
+			throw new Error('agent-thread store is down (test)');
+		};
+		const failed = await app.inject({
+			method: 'POST',
+			url: `${BASE}/sessions`,
+			headers: authHeader(built.staff.token),
+			payload: { channel: 'email', contactAddress: CUSTOMER_EMAIL },
+		});
+		expect(failed.statusCode).toBe(500);
+		// The conversation the failing request opened was rolled back with it.
+		const after = await built.repos.conversations.list({
+			accountId: built.accountId,
+			page: 1,
+			pageSize: 50,
+		});
+		expect(after.total).toBe(before.total);
+		// The store recovered, so the same contact opens a session cleanly after.
+		const session = await openSession(app, built.staff.token, {
+			channel: 'email',
+			contactAddress: CUSTOMER_EMAIL,
+		});
+		expect(session.contactAddress).toBe(CUSTOMER_EMAIL);
+	});
 });
 
 describe('POST /v1/admin/agent-tester/sessions/:id/messages', () => {
