@@ -52,6 +52,17 @@ const answerSchema = z.object({
 	faqIds: z.array(z.string()),
 });
 
+/**
+ * Where an answer's TEXT came from. `model` means a language model composed it
+ * from the FAQs we sent; `keyword` means it is an FAQ's stored answer returned
+ * verbatim by the deterministic matcher — which fires whenever no provider is
+ * configured or every provider failed, and which matches on a single token
+ * overlap. That is fine for a human picking from suggestions and far too loose
+ * to text a customer unreviewed, so the provenance travels with the answer and
+ * `decideRivusReply` decides what may be auto-sent.
+ */
+export type FaqAnswerGrounding = 'model' | 'keyword';
+
 export interface FaqAnswer {
 	/** Whether the knowledge base covers the question. */
 	answered: boolean;
@@ -59,6 +70,8 @@ export interface FaqAnswer {
 	answer: string;
 	/** The FAQ(s) the answer is based on, so the caller can cite its source. */
 	sources: FaqId[];
+	/** How the answer text was produced — `keyword` whenever no model wrote it. */
+	grounding: FaqAnswerGrounding;
 }
 
 /** Minimal logger surface — compatible with `console` and Fastify's pino logger. */
@@ -159,7 +172,8 @@ export class AiFaqAnswerService implements FaqAnswerService {
 
 	async answer(input: { question: string }, candidates: Faq[]): Promise<FaqAnswer> {
 		if (candidates.length === 0) {
-			return { answered: false, answer: '', sources: [] };
+			// No model ran, so nothing here is model-grounded.
+			return { answered: false, answer: '', sources: [], grounding: 'keyword' };
 		}
 		const shortlist = await this.shortlist(input.question, candidates);
 		const ids = new Set<string>(shortlist.map((faq) => faq.id));
@@ -185,7 +199,8 @@ export class AiFaqAnswerService implements FaqAnswerService {
 			return deterministicFaqAnswer(input.question, shortlist);
 		}
 		if (!result.answered) {
-			return { answered: false, answer: '', sources: [] };
+			// The model read the knowledge base and said it doesn't cover this.
+			return { answered: false, answer: '', sources: [], grounding: 'model' };
 		}
 		const answer = snippet(result.answer.trim(), MAX_ANSWER_LENGTH);
 		if (answer === '') {
@@ -196,9 +211,10 @@ export class AiFaqAnswerService implements FaqAnswerService {
 		const sources = result.faqIds.filter((id) => ids.has(id)) as FaqId[];
 		if (sources.length === 0) {
 			const [closest] = rankByKeyword(input.question, shortlist);
-			return { answered: true, answer, sources: closest ? [closest.id] : [] };
+			// The citation was recovered by keyword, but the model still wrote the text.
+			return { answered: true, answer, sources: closest ? [closest.id] : [], grounding: 'model' };
 		}
-		return { answered: true, answer, sources };
+		return { answered: true, answer, sources, grounding: 'model' };
 	}
 
 	/**
@@ -398,12 +414,13 @@ export class EmbeddingFaqRetriever implements FaqRetriever {
 export function deterministicFaqAnswer(question: string, candidates: Faq[]): FaqAnswer {
 	const [top] = rankByKeyword(question, candidates);
 	if (!top) {
-		return { answered: false, answer: '', sources: [] };
+		return { answered: false, answer: '', sources: [], grounding: 'keyword' };
 	}
 	return {
 		answered: true,
 		answer: snippet(top.answer.trim(), MAX_ANSWER_LENGTH),
 		sources: [top.id],
+		grounding: 'keyword',
 	};
 }
 

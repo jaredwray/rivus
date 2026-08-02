@@ -6,7 +6,11 @@ import { defaultCapabilities } from '../services/agent/capabilities';
 import { createWhatsappChannelAdapter } from '../services/agent/whatsapp/adapter';
 import { parseZernioInbound } from '../services/agent/whatsapp/inbound';
 import { verifyZernioSignature } from '../services/zernio-whatsapp';
-import { channelWebhookResponseSchema, dispatchPhoneChannelEvent } from './agent-phone-shared';
+import {
+	channelWebhookResponseSchema,
+	dispatchPhoneChannelEvent,
+	type PhoneWebhookDeps,
+} from './agent-phone-shared';
 
 /**
  * The zernio edge of the scheduling agent's WhatsApp channel: zernio posts every
@@ -37,33 +41,13 @@ function headerValue(value: string | string[] | undefined): string {
 
 export const agentWhatsappRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
-	const {
-		config,
-		accounts,
-		customers,
-		conversations,
-		agentThreads,
-		memberships,
-		notifier,
-		whatsappSender,
-		jobs,
-		faqs,
-		faqAnswer,
-	} = app.deps;
+	const { config, customers, whatsappSender } = app.deps;
 
 	const adapter = createWhatsappChannelAdapter({ customers, sender: whatsappSender });
 	const capabilities = defaultCapabilities();
-	const dispatchDeps = {
-		config,
-		accounts,
-		conversations,
-		agentThreads,
-		memberships,
-		notifier,
-		jobs,
-		faqs,
-		faqAnswer,
-	};
+	// The whole dep bag: `PhoneWebhookDeps` narrows it structurally, so widening
+	// what the core reads never edits this route.
+	const dispatchDeps: PhoneWebhookDeps = app.deps;
 
 	// Raw body kept byte-for-byte for signature verification (see the email route).
 	const rawBodies = new WeakMap<FastifyRequest, string>();

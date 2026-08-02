@@ -5,7 +5,11 @@ import { errorResponseSchema } from '../http-schemas';
 import { defaultCapabilities } from '../services/agent/capabilities';
 import { parsePlivoInbound } from '../services/agent/plivo-inbound';
 import { createSmsChannelAdapter } from '../services/agent/sms/adapter';
-import { channelWebhookResponseSchema, dispatchPhoneChannelEvent } from './agent-phone-shared';
+import {
+	channelWebhookResponseSchema,
+	dispatchPhoneChannelEvent,
+	type PhoneWebhookDeps,
+} from './agent-phone-shared';
 import { plivoWebhookAuthHook } from './plivo-webhook-auth';
 import { formUrlencodedParser } from './webhook-http';
 
@@ -26,33 +30,13 @@ import { formUrlencodedParser } from './webhook-http';
 
 export const agentSmsPlivoRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
-	const {
-		config,
-		accounts,
-		customers,
-		conversations,
-		agentThreads,
-		memberships,
-		notifier,
-		smsSender,
-		jobs,
-		faqs,
-		faqAnswer,
-	} = app.deps;
+	const { config, customers, smsSender } = app.deps;
 
 	const adapter = createSmsChannelAdapter({ customers, sender: smsSender });
 	const capabilities = defaultCapabilities();
-	const dispatchDeps = {
-		config,
-		accounts,
-		conversations,
-		agentThreads,
-		memberships,
-		notifier,
-		jobs,
-		faqs,
-		faqAnswer,
-	};
+	// The whole dep bag: `PhoneWebhookDeps` narrows it structurally, so widening
+	// what the core reads never edits this route.
+	const dispatchDeps: PhoneWebhookDeps = app.deps;
 
 	app.addContentTypeParser(
 		'application/x-www-form-urlencoded',

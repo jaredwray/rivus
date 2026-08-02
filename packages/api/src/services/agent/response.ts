@@ -229,10 +229,13 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 		case 'answer_question': {
 			// A question asked mid-offer must not cost the contact their options, so
 			// the standing offer is restated verbatim — same slots, same order, so the
-			// numbers they were given still mean the same windows.
+			// numbers they were given still mean the same windows. The wording claims
+			// nothing about those windows still being free: nobody re-checked the
+			// calendar to answer a question, and the pick that follows re-checks it
+			// anyway (declining with alternatives if one was taken meanwhile).
 			if (decision.offeredSlots.length > 0) {
 				return {
-					lead: [decision.answer, 'The times I offered are still open:'],
+					lead: [decision.answer, "When you're ready, here are the times I offered:"],
 					slots: decision.offeredSlots,
 					action: null,
 					trail: [pickAnOption(context.medium)],
@@ -269,7 +272,14 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 					`Good question — I don't have that in front of me, so I've passed it to the ${context.accountName} team. They'll follow up with you shortly.`,
 				],
 				...none,
-				trail: [`If there's anything else in the meantime, just ${replyHere(context.medium)}.`],
+				trail: [
+					// The caller is still connected and the line stays open for another
+					// turn, so "call back" (what `replyHere` says for voice) would be the
+					// wrong instruction — same adjacency as the answer above.
+					context.medium === 'voice'
+						? "If there's anything else in the meantime, just tell me."
+						: `If there's anything else in the meantime, just ${replyHere(context.medium)}.`,
+				],
 			};
 	}
 }

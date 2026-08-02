@@ -1,7 +1,7 @@
 import { normalizePhone } from '@rivus/core';
 import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
-import type { AgentCapability } from '../services/agent/capabilities';
+import type { AgentCapability, OrchestratorDeps } from '../services/agent/capabilities';
 import type { ChannelAdapter, InboundAgentMessage } from '../services/agent/channel';
 import {
 	flagDeliveryFailure,
@@ -26,19 +26,14 @@ import type { AppDeps } from '../types';
 /** The phone-number channels this dispatcher serves. */
 export type PhoneChannel = 'whatsapp' | 'sms';
 
-/** What the webhook routes need from {@link AppDeps} to dispatch an event. */
-export type PhoneWebhookDeps = Pick<
-	AppDeps,
-	| 'config'
-	| 'accounts'
-	| 'conversations'
-	| 'agentThreads'
-	| 'memberships'
-	| 'notifier'
-	| 'jobs'
-	| 'faqs'
-	| 'faqAnswer'
->;
+/**
+ * What the webhook routes need to dispatch an event: everything the shared
+ * orchestrator reads, plus this dispatcher's own extras. Defined as an extension
+ * of {@link OrchestratorDeps} rather than a parallel list, so a capability that
+ * starts reading another repository widens that type and nothing here (or in the
+ * four provider routes) changes.
+ */
+export type PhoneWebhookDeps = OrchestratorDeps & Pick<AppDeps, 'accounts'>;
 
 /** The 200 body every channel webhook answers with (one shared OpenAPI id). */
 export const channelWebhookResponseSchema = z
@@ -63,17 +58,7 @@ export async function dispatchPhoneChannelEvent(options: {
 	logger: FastifyBaseLogger;
 }): Promise<InboundHandleResult> {
 	const { deps, channel, adapter, capabilities, event, logger } = options;
-	const {
-		accounts,
-		conversations,
-		agentThreads,
-		memberships,
-		notifier,
-		config,
-		jobs,
-		faqs,
-		faqAnswer,
-	} = deps;
+	const { accounts, conversations, agentThreads, memberships, notifier } = deps;
 
 	// Delivery failure: a message Rivus sent never reached the customer.
 	if (event.type === WHATSAPP_FAILED_EVENT) {
@@ -129,7 +114,9 @@ export async function dispatchPhoneChannelEvent(options: {
 		externalMessageId: event.data.messageId,
 	};
 	return handleInboundAgentMessage({
-		deps: { config, jobs, conversations, agentThreads, faqs, faqAnswer, memberships, notifier },
+		// `PhoneWebhookDeps` extends `OrchestratorDeps`, so the bag passes straight
+		// through — no field list here to fall out of date.
+		deps,
 		adapter,
 		capabilities,
 		account,

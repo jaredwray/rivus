@@ -2,7 +2,7 @@ import type { AccountId } from '@rivus/core';
 import { describe, expect, it, vi } from 'vitest';
 import type { ChannelCapabilities } from '../src/services/agent/channel';
 import { renderChatResponse } from '../src/services/agent/chat-renderer';
-import { composeAgentResponse } from '../src/services/agent/response';
+import { composeAgentResponse, renderResponseText } from '../src/services/agent/response';
 import { parseZernioInbound, WHATSAPP_MESSAGE_EVENT } from '../src/services/agent/whatsapp/inbound';
 import { NoopChannelProvisioner } from '../src/services/channel-provisioning';
 import type { FetchLike } from '../src/services/resend-mailer';
@@ -269,5 +269,58 @@ describe('renderChatResponse', () => {
 		);
 		expect(text.length).toBeLessThanOrEqual(12);
 		expect(text.endsWith('…')).toBe(true);
+	});
+
+	it('leaves a message that already fits byte-for-byte alone', () => {
+		const response = composeAgentResponse({ kind: 'no_availability' }, replyContext());
+		expect(renderChatResponse(response, CHAT_CAPS)).toBe(renderResponseText(response));
+	});
+
+	// SMS is the tight one: 737 characters against an answer that may run to 1200.
+	const SMS_LIMIT = 737;
+	const LONG_ANSWER = `Our hours vary by season. ${'We are open Monday through Friday and most Saturdays, and we cover the whole metro area. '.repeat(12)}`;
+
+	it('takes the budget out of prose so an unknown sender still gets the signup link', () => {
+		const response = composeAgentResponse(
+			{ kind: 'answer_question', answer: LONG_ANSWER, offeredSlots: [], customerKnown: false },
+			replyContext(),
+		);
+		// A tail cut would drop the trailing action block and strand the contact.
+		expect(renderResponseText(response).length).toBeGreaterThan(SMS_LIMIT);
+		const text = renderChatResponse(response, { ...CHAT_CAPS, maxTextLength: SMS_LIMIT });
+		expect(text.length).toBeLessThanOrEqual(SMS_LIMIT);
+		expect(text).toContain(replyContext().signupUrl);
+		expect(text).toContain('Join Cascade Plumbing as a customer');
+		// The answer is shortened, not dropped.
+		expect(text).toContain('Our hours vary by season.');
+		expect(text).toContain('…');
+	});
+
+	it('keeps the numbered options when a long answer restates a standing offer', () => {
+		const slots = [
+			{ startAt: '2026-07-07T16:00:00.000Z', durationMinutes: 60 },
+			{ startAt: '2026-07-09T21:00:00.000Z', durationMinutes: 60 },
+		];
+		const text = renderChatResponse(
+			composeAgentResponse(
+				{ kind: 'answer_question', answer: LONG_ANSWER, offeredSlots: slots, customerKnown: true },
+				replyContext(),
+			),
+			{ ...CHAT_CAPS, maxTextLength: SMS_LIMIT },
+		);
+		expect(text.length).toBeLessThanOrEqual(SMS_LIMIT);
+		expect(text).toContain('1.');
+		expect(text).toContain('2.');
+		expect(text).toContain('Reply with the number');
+	});
+
+	it('renders the same long answer whole on an unbounded channel', () => {
+		const response = composeAgentResponse(
+			{ kind: 'answer_question', answer: LONG_ANSWER, offeredSlots: [], customerKnown: false },
+			replyContext(),
+		);
+		const text = renderChatResponse(response, { ...CHAT_CAPS, maxTextLength: null });
+		expect(text).toBe(renderResponseText(response));
+		expect(text).toContain(LONG_ANSWER.trim());
 	});
 });

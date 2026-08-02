@@ -166,7 +166,9 @@ describe('composeAgentResponse — answering a question', () => {
 		]);
 		const text = renderResponseText(response);
 		expect(text).toContain(ANSWER);
-		expect(text).toContain('The times I offered are still open:');
+		// No freshness claim: nobody re-checked the calendar to answer a question.
+		expect(text).toContain("When you're ready, here are the times I offered:");
+		expect(text).not.toContain('still open');
 		expect(text).toContain('Reply with the number that works for you');
 	});
 
@@ -225,11 +227,13 @@ describe('composeAgentResponse — greeting and holding', () => {
 		expect(text).toContain('reply to this email');
 	});
 
-	it('tells a caller to call back rather than reply', () => {
+	it('keeps a caller on the line rather than telling them to call back', () => {
+		// The gather stays open after a held turn, so "call back" would be wrong.
 		const text = renderResponseText(
 			composeAgentResponse({ kind: 'hold_for_team' }, context({ medium: 'voice' })),
 		);
-		expect(text).toContain('call back');
+		expect(text).toContain('just tell me');
+		expect(text).not.toContain('call back');
 		expect(text).not.toContain('reply');
 	});
 });

@@ -369,8 +369,9 @@ describe('POST /v1/faqs/answer', () => {
 							answered: true,
 							answer: 'Our standard rate is $125 an hour, and $85 on weekends.',
 							sources: [sourceId as FaqId],
+							grounding: 'model',
 						}
-					: { answered: false, answer: '', sources: [] };
+					: { answered: false, answer: '', sources: [], grounding: 'model' };
 			},
 		};
 		const app = await buildTestApp({ faqAnswer: stub });
@@ -421,6 +422,8 @@ describe('POST /v1/faqs/answer', () => {
 		});
 
 		expect(response.statusCode).toBe(200);
+		// `grounding` is service-internal: the response schema doesn't declare it, so
+		// Fastify strips it and the wire shape is unchanged.
 		expect(response.json()).toEqual({ answered: false, answer: '', sources: [] });
 		await app.close();
 	});
@@ -428,7 +431,12 @@ describe('POST /v1/faqs/answer', () => {
 	it('drops a cited id that does not belong to the account', async () => {
 		const stub: FaqAnswerService = {
 			async answer(): Promise<FaqAnswer> {
-				return { answered: true, answer: 'Leaked answer.', sources: ['ghost-id' as FaqId] };
+				return {
+					answered: true,
+					answer: 'Leaked answer.',
+					sources: ['ghost-id' as FaqId],
+					grounding: 'model',
+				};
 			},
 		};
 		const app = await buildTestApp({ faqAnswer: stub });
@@ -460,7 +468,7 @@ describe('POST /v1/faqs/answer', () => {
 		const stub: FaqAnswerService = {
 			async answer(_input, candidates): Promise<FaqAnswer> {
 				received = candidates;
-				return { answered: false, answer: '', sources: [] };
+				return { answered: false, answer: '', sources: [], grounding: 'model' };
 			},
 		};
 		const app = await buildTestApp({ faqAnswer: stub });
@@ -492,8 +500,8 @@ describe('POST /v1/faqs/answer', () => {
 				// Echo whatever it was given as the source, to prove drafts can't leak.
 				const [first] = candidates;
 				return first
-					? { answered: true, answer: first.answer, sources: [first.id] }
-					: { answered: false, answer: '', sources: [] };
+					? { answered: true, answer: first.answer, sources: [first.id], grounding: 'model' }
+					: { answered: false, answer: '', sources: [], grounding: 'model' };
 			},
 		};
 		const app = await buildTestApp({ faqAnswer: stub });

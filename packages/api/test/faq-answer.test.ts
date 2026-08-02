@@ -85,7 +85,7 @@ describe('AiFaqAnswerService.answer', () => {
 
 		const result = await service.answer({ question: 'what is the meaning of life?' }, [makeFaq()]);
 
-		expect(result).toEqual({ answered: false, answer: '', sources: [] });
+		expect(result).toEqual({ answered: false, answer: '', sources: [], grounding: 'model' });
 	});
 
 	it('short-circuits with no model call when there are no FAQs', async () => {
@@ -96,6 +96,8 @@ describe('AiFaqAnswerService.answer', () => {
 			answered: false,
 			answer: '',
 			sources: [],
+			// No model ran at all, so nothing here is model-grounded.
+			grounding: 'keyword',
 		});
 		expect(mock).not.toHaveBeenCalled();
 	});
@@ -210,7 +212,12 @@ describe('AiFaqAnswerService.answer', () => {
 
 		const result = await service.answer({ question: 'completely unrelated zzqqx?' }, [makeFaq()]);
 
-		expect(result).toEqual({ answered: true, answer: 'A general reply.', sources: [] });
+		expect(result).toEqual({
+			answered: true,
+			answer: 'A general reply.',
+			sources: [],
+			grounding: 'model',
+		});
 	});
 
 	it('logs and degrades to deterministic when a model fails', async () => {
@@ -270,14 +277,19 @@ describe('deterministicFaqAnswer / NoopFaqAnswerService', () => {
 		];
 		const result = deterministicFaqAnswer('how much does a service call cost?', faqs);
 
-		expect(result).toEqual({ answered: true, answer: 'It costs $89.', sources: ['faq-cost'] });
+		expect(result).toEqual({
+			answered: true,
+			answer: 'It costs $89.',
+			sources: ['faq-cost'],
+			grounding: 'keyword',
+		});
 	});
 
 	it('reports not-answered when nothing overlaps', async () => {
 		const service: FaqAnswerService = new NoopFaqAnswerService();
 		const result = await service.answer({ question: 'tell me a joke' }, [makeFaq()]);
 
-		expect(result).toEqual({ answered: false, answer: '', sources: [] });
+		expect(result).toEqual({ answered: false, answer: '', sources: [], grounding: 'keyword' });
 	});
 
 	it('reports not-answered for an empty knowledge base', () => {
@@ -285,6 +297,7 @@ describe('deterministicFaqAnswer / NoopFaqAnswerService', () => {
 			answered: false,
 			answer: '',
 			sources: [],
+			grounding: 'keyword',
 		});
 	});
 });

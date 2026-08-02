@@ -6,6 +6,7 @@ import {
 	BILLING_PAUSE_REASON,
 	decideRivusReply,
 	isBillingSensitive,
+	KEYWORD_DRAFT_PAUSE_REASON,
 	latestCustomerMessage,
 	UNSURE_PAUSE_REASON,
 } from '../src/services/inbox';
@@ -20,8 +21,15 @@ function message(author: Message['author'], body: string): Message {
 	};
 }
 
-const answered: FaqAnswer = { answered: true, answer: 'We are open 9–6.', sources: [] };
-const unanswered: FaqAnswer = { answered: false, answer: '', sources: [] };
+const answered: FaqAnswer = {
+	answered: true,
+	answer: 'We are open 9–6.',
+	sources: [],
+	grounding: 'model',
+};
+const unanswered: FaqAnswer = { answered: false, answer: '', sources: [], grounding: 'model' };
+/** The same answer, but written by the keyword matcher rather than a model. */
+const keywordAnswered: FaqAnswer = { ...answered, grounding: 'keyword' };
 
 describe('isBillingSensitive', () => {
 	it('flags money and billing wording', () => {
@@ -95,13 +103,41 @@ describe('decideRivusReply', () => {
 	it('holds an answered billing question for review', () => {
 		const decision = decideRivusReply({
 			customerMessage: 'Can you explain my invoice?',
-			answer: { answered: true, answer: 'The difference is a part.', sources: [] },
+			answer: {
+				answered: true,
+				answer: 'The difference is a part.',
+				sources: [],
+				grounding: 'model',
+			},
 		});
 		expect(decision).toEqual({
 			pause: true,
 			draft: 'The difference is a part.',
 			reason: BILLING_PAUSE_REASON,
 		});
+	});
+
+	it('holds a keyword-matched draft, keeping it for a human to approve', () => {
+		// With no model available the match can be a single shared word, so the draft
+		// is a suggestion — good enough to offer a human, not to send on its own.
+		const decision = decideRivusReply({
+			customerMessage: 'What are your hours?',
+			answer: keywordAnswered,
+		});
+		expect(decision).toEqual({
+			pause: true,
+			draft: 'We are open 9–6.',
+			reason: KEYWORD_DRAFT_PAUSE_REASON,
+		});
+	});
+
+	it('prefers the billing reason when a keyword draft is also money-sensitive', () => {
+		const decision = decideRivusReply({
+			customerMessage: 'Can you explain my invoice?',
+			answer: keywordAnswered,
+		});
+		expect(decision.pause).toBe(true);
+		expect(decision.reason).toBe(BILLING_PAUSE_REASON);
 	});
 
 	it('holds an unanswerable question with no draft', () => {

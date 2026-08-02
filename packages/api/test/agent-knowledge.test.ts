@@ -20,8 +20,12 @@ import type { ChannelAdapter } from '../src/services/agent/channel';
 import { handleInboundAgentMessage } from '../src/services/agent/orchestrator';
 import { formatSlotLabel } from '../src/services/agent/slots';
 import { createSmsChannelAdapter } from '../src/services/agent/sms/adapter';
-import type { FaqAnswer, FaqAnswerService } from '../src/services/faq-answer';
-import { BILLING_PAUSE_REASON, UNSURE_PAUSE_REASON } from '../src/services/inbox';
+import type { FaqAnswer, FaqAnswerGrounding, FaqAnswerService } from '../src/services/faq-answer';
+import {
+	BILLING_PAUSE_REASON,
+	KEYWORD_DRAFT_PAUSE_REASON,
+	UNSURE_PAUSE_REASON,
+} from '../src/services/inbox';
 import { buildTestAppWithRepos, type RecordingSmsSender, signupOwner } from './helpers';
 
 /**
@@ -51,6 +55,8 @@ const HOURS_ANSWER = "We're open Monday through Friday, 9:00 AM to 5:00 PM.";
  */
 class StubFaqAnswerService implements FaqAnswerService {
 	readonly grounded: Faq[][] = [];
+	/** Swapped to 'keyword' to stand in for a model outage (see the caution policy). */
+	grounding: FaqAnswerGrounding = 'model';
 
 	constructor(private readonly reply: string) {}
 
@@ -58,9 +64,9 @@ class StubFaqAnswerService implements FaqAnswerService {
 		this.grounded.push(candidates);
 		const [first] = candidates;
 		if (!first) {
-			return { answered: false, answer: '', sources: [] };
+			return { answered: false, answer: '', sources: [], grounding: 'keyword' };
 		}
-		return { answered: true, answer: this.reply, sources: [first.id] };
+		return { answered: true, answer: this.reply, sources: [first.id], grounding: this.grounding };
 	}
 }
 
@@ -356,6 +362,53 @@ describe('knowledge capability — handing a turn to the team', () => {
 		expect(await reviewAlerts(harness)).toBe(1);
 	});
 
+	it('refreshes the held draft when a second question arrives, without paging twice', async () => {
+		const harness = await setup();
+		app = harness.app;
+
+		// First: nothing published yet, so the thread is flagged with no draft at all.
+		expect((await harness.inbound('do you do tile work?')).outcome).toBe('hold_for_team');
+		await publishHoursFaq(harness);
+		// Then a money question the knowledge base *can* answer. The team must see
+		// the draft for the newest question, not the stale empty one — their approve
+		// banner is how they answer, and it has to match the latest customer words.
+		expect((await harness.inbound('how much do I owe on my invoice?')).outcome).toBe(
+			'hold_for_team',
+		);
+
+		const thread = await harness.thread();
+		const conversation = await harness.repos.conversations.findById(
+			harness.accountId,
+			thread.conversationId,
+		);
+		expect(conversation?.status).toBe('needs_attention');
+		expect(conversation?.pendingReply).toBe(HOURS_ANSWER);
+		expect(conversation?.flagReason).toBe(BILLING_PAUSE_REASON);
+		// One thread, one alert — the second flag updates state but doesn't re-page.
+		expect(await reviewAlerts(harness)).toBe(1);
+	});
+
+	it('holds a keyword-matched draft rather than texting it unreviewed', async () => {
+		const harness = await setup();
+		app = harness.app;
+		await publishHoursFaq(harness);
+		// No AI provider configured (or every provider down): the answer is whatever
+		// FAQ shared the most words, which is a suggestion for a human, not a reply.
+		harness.faqAnswer.grounding = 'keyword';
+
+		const result = await harness.inbound(HOURS_QUESTION);
+		expect(result.outcome).toBe('hold_for_team');
+		expect(harness.lastReply()).not.toContain(HOURS_ANSWER);
+		const thread = await harness.thread();
+		const conversation = await harness.repos.conversations.findById(
+			harness.accountId,
+			thread.conversationId,
+		);
+		expect(conversation?.flagReason).toBe(KEYWORD_DRAFT_PAUSE_REASON);
+		// The draft is kept so approving it is one tap.
+		expect(conversation?.pendingReply).toBe(HOURS_ANSWER);
+	});
+
 	it('pauses a money question even when the knowledge base answered it', async () => {
 		const harness = await setup();
 		app = harness.app;
@@ -478,6 +531,21 @@ describe('knowledge capability — turns it must never claim', () => {
 		const harness = await setup();
 		app = harness.app;
 		expect(knowledgeCapability.matches(contextFor(harness, text, thread))).toBe(false);
+	});
+
+	it('reads the subject when an email arrives with an empty body', async () => {
+		const harness = await setup();
+		app = harness.app;
+		const asSubject = (subject: string, text = ''): TurnContext => ({
+			...contextFor(harness, text),
+			message: { sender: { address: CONTACT, name: 'Dana' }, text, subject, externalMessageId: '' },
+		});
+		// The whole question can live in the subject line, with nothing below it.
+		expect(knowledgeCapability.matches(asSubject('Re: What are your hours?'))).toBe(true);
+		// A scheduling-shaped subject still belongs to the engine.
+		expect(knowledgeCapability.matches(asSubject('Can I get someone out next week?'))).toBe(false);
+		// A body always wins over the subject it arrived under.
+		expect(knowledgeCapability.matches(asSubject('What are your hours?', '2'))).toBe(false);
 	});
 
 	it('claims a question whether or not an offer is standing', async () => {

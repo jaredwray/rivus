@@ -9,7 +9,7 @@ import { createSmsChannelAdapter } from '../services/agent/sms/adapter';
 import { parseTwilioInbound, type TwilioChannel } from '../services/agent/twilio-inbound';
 import { createWhatsappChannelAdapter } from '../services/agent/whatsapp/adapter';
 import type { AppDeps } from '../types';
-import { dispatchPhoneChannelEvent } from './agent-phone-shared';
+import { dispatchPhoneChannelEvent, type PhoneWebhookDeps } from './agent-phone-shared';
 import { twilioWebhookAuthHook } from './twilio-webhook-auth';
 import { formUrlencodedParser } from './webhook-http';
 
@@ -42,31 +42,12 @@ function buildTwilioMessagingRoutes(options: {
 	return async (fastify) => {
 		const app = fastify.withTypeProvider<ZodTypeProvider>();
 		const deps = app.deps;
-		const {
-			config,
-			accounts,
-			conversations,
-			agentThreads,
-			memberships,
-			notifier,
-			jobs,
-			faqs,
-			faqAnswer,
-		} = deps;
+		const { config } = deps;
 
 		const adapter = options.adapter(deps);
 		const capabilities = defaultCapabilities();
-		const dispatchDeps = {
-			config,
-			accounts,
-			conversations,
-			agentThreads,
-			memberships,
-			notifier,
-			jobs,
-			faqs,
-			faqAnswer,
-		};
+		// See `agent-phone-shared.ts`: the bag is narrowed by the type, not by hand.
+		const dispatchDeps: PhoneWebhookDeps = deps;
 
 		app.addContentTypeParser(
 			'application/x-www-form-urlencoded',

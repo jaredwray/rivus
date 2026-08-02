@@ -1,6 +1,6 @@
 import type { AccountId, Faq, FaqId } from '@rivus/core';
 import type { FaqRepository } from '../repositories/types';
-import type { FaqAnswerService } from './faq-answer';
+import type { FaqAnswerGrounding, FaqAnswerService } from './faq-answer';
 import type { FaqMergeSuggestion, FaqSimilarityService } from './faq-similarity';
 
 /**
@@ -58,6 +58,8 @@ export interface KnowledgeAnswer {
 	answered: boolean;
 	answer: string;
 	sources: Array<{ id: FaqId; question: string }>;
+	/** Whether a model wrote the answer or the deterministic keyword matcher did. */
+	grounding: FaqAnswerGrounding;
 }
 
 /**
@@ -87,5 +89,10 @@ export async function answerFromKnowledge(
 		.map((id) => byId.get(id))
 		.filter((faq): faq is (typeof candidates)[number] => faq !== undefined)
 		.map((faq) => ({ id: faq.id, question: faq.question }));
-	return { answered: result.answered, answer: result.answer, sources };
+	return {
+		answered: result.answered,
+		answer: result.answer,
+		sources,
+		grounding: result.grounding,
+	};
 }

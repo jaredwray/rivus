@@ -78,13 +78,20 @@ async function seedFaq(
 }
 
 /** An answering service scripted per test (the Noop default answers nothing). */
-function answering(result: FaqAnswer): FaqAnswerService & { candidates: Faq[][] } {
+/**
+ * A scripted answering service. Grounding defaults to `model` because these tests
+ * are about chat's use of an answer, not about the keyword-fallback caution rule.
+ */
+function answering(
+	result: Omit<FaqAnswer, 'grounding'> & Partial<Pick<FaqAnswer, 'grounding'>>,
+): FaqAnswerService & { candidates: Faq[][] } {
+	const answer: FaqAnswer = { grounding: 'model', ...result };
 	const candidates: Faq[][] = [];
 	return {
 		candidates,
 		async answer(_input, faqs) {
 			candidates.push(faqs);
-			return result;
+			return answer;
 		},
 	};
 }

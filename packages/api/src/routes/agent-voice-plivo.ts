@@ -71,18 +71,7 @@ const callPayloadSchema = z.object({
 
 export const agentVoicePlivoRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
-	const {
-		config,
-		accounts,
-		customers,
-		conversations,
-		agentThreads,
-		jobs,
-		faqs,
-		faqAnswer,
-		memberships,
-		notifier,
-	} = app.deps;
+	const { accounts, customers } = app.deps;
 
 	const capabilities = defaultCapabilities();
 
@@ -183,16 +172,7 @@ export const agentVoicePlivoRoutes: FastifyPluginAsync = async (fastify) => {
 					return speakDocument(VOICE_LINES.anonymous);
 				}
 				const turn = await runVoiceTurn({
-					deps: {
-						config,
-						jobs,
-						conversations,
-						agentThreads,
-						faqs,
-						faqAnswer,
-						memberships,
-						notifier,
-					},
+					deps: app.deps,
 					customers,
 					capabilities,
 					account: resolved,

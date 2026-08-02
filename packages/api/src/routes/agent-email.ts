@@ -3,7 +3,7 @@ import type { FastifyBaseLogger, FastifyError, FastifyPluginAsync, FastifyReques
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { errorResponseSchema } from '../http-schemas';
-import { defaultCapabilities } from '../services/agent/capabilities';
+import { defaultCapabilities, type OrchestratorDeps } from '../services/agent/capabilities';
 import type { InboundAgentMessage } from '../services/agent/channel';
 import { createEmailChannelAdapter } from '../services/agent/email/adapter';
 import {
@@ -65,23 +65,14 @@ export const agentEmailRoutes: FastifyPluginAsync = async (fastify) => {
 		mailer,
 		notifier,
 		receivedEmails,
-		jobs,
-		faqs,
-		faqAnswer,
 	} = app.deps;
 
 	const adapter = createEmailChannelAdapter({ config, customers, mailer });
 	const capabilities = defaultCapabilities();
-	const orchestratorDeps = {
-		config,
-		jobs,
-		conversations,
-		agentThreads,
-		faqs,
-		faqAnswer,
-		memberships,
-		notifier,
-	};
+	// `AppDeps` is a structural superset of `OrchestratorDeps`, so the whole bag is
+	// passed rather than hand-picked: what the core needs is the core's business, and
+	// a capability that starts reading another repository must never be a route edit.
+	const orchestratorDeps: OrchestratorDeps = app.deps;
 
 	/**
 	 * Resolve the account an agent-domain local part addresses. New addresses are

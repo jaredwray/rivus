@@ -17,6 +17,7 @@ import { isAcknowledgement, matchOfferedSlot, parseProposedTime, parseSlotChoice
 import { isInformationalQuestion } from './question';
 import { type AgentReplyContext, type AgentResponse, composeAgentResponse } from './response';
 import { BOOKING_HORIZON_DAYS, type BusyInterval, formatSlotLabel, zonedParts } from './slots';
+import { cleanSubject } from './subject';
 
 /**
  * The core agent's feature layer. A capability is the ONLY thing a new feature
@@ -179,6 +180,21 @@ export function threadPatchFor(decision: AgentDecision): UpdateAgentThread {
 	}
 }
 
+/**
+ * The words the knowledge capability reads. An email can carry its whole question
+ * in the subject with an empty body ("What are your hours?" and nothing else), so
+ * the subject is the fallback — cleaned of `Re:`/`Fwd:` chains like every other
+ * subject read in the core.
+ *
+ * Scheduling deliberately does NOT get this: a reply subject persists across every
+ * turn of a thread, so feeding it to the time parsers could re-read an old subject
+ * as a fresh booking on a later message. Here it is safe because a subject that
+ * reads as a question is answered, and one that doesn't is handed straight back.
+ */
+function questionTextFor(message: InboundAgentMessage): string {
+	return message.text.trim() !== '' ? message.text : cleanSubject(message.subject);
+}
+
 /** Everything the channel-neutral composer needs, read off the turn. */
 function replyContextFor(ctx: TurnContext): AgentReplyContext {
 	return {
@@ -290,34 +306,38 @@ export const knowledgeCapability: AgentCapability = {
 	id: 'knowledge',
 	matches(ctx: TurnContext): boolean {
 		const { thread, message, timeZone, now } = ctx;
+		const text = questionTextFor(message);
 		// Exactly the inputs the engine would get, so "can scheduling read this?" is
 		// answered by the same parsers that would then read it — the two can't drift.
 		const offered = thread.state === 'slots_offered' ? thread.offeredSlots : [];
 		if (
-			parseSlotChoice(message.text, offered.length) !== null ||
-			matchOfferedSlot(message.text, offered, timeZone) !== null ||
-			parseProposedTime(message.text, { timeZone, now }) !== null ||
-			isAcknowledgement(message.text)
+			parseSlotChoice(text, offered.length) !== null ||
+			matchOfferedSlot(text, offered, timeZone) !== null ||
+			parseProposedTime(text, { timeZone, now }) !== null ||
+			isAcknowledgement(text)
 		) {
 			return false;
 		}
-		return isInformationalQuestion(message.text);
+		return isInformationalQuestion(text);
 	},
 	async handle(ctx: TurnContext): Promise<CapabilityOutcome> {
 		const { account, customer, thread, message, deps } = ctx;
+		const question = questionTextFor(message);
 		const knowledge = await answerFromKnowledge(
 			{ faqs: deps.faqs, faqAnswer: deps.faqAnswer },
 			account.id,
-			message.text,
+			question,
 		);
 		// The inbox's caution policy, unchanged: a money question pauses even when
-		// the knowledge base answered it, and an unanswerable one pauses with no draft.
+		// the knowledge base answered it, a draft no model wrote pauses for review,
+		// and an unanswerable one pauses with no draft at all.
 		const held = decideRivusReply({
-			customerMessage: message.text,
+			customerMessage: question,
 			answer: {
 				answered: knowledge.answered,
 				answer: knowledge.answer,
 				sources: knowledge.sources.map((source) => source.id),
+				grounding: knowledge.grounding,
 			},
 		});
 		const customerKnown = customer !== null;

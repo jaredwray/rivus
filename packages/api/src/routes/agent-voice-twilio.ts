@@ -89,18 +89,7 @@ const callPayloadSchema = z.object({
 
 export const agentVoiceTwilioRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
-	const {
-		config,
-		accounts,
-		customers,
-		conversations,
-		agentThreads,
-		jobs,
-		faqs,
-		faqAnswer,
-		memberships,
-		notifier,
-	} = app.deps;
+	const { config, accounts, customers } = app.deps;
 
 	const capabilities = defaultCapabilities();
 
@@ -203,16 +192,7 @@ export const agentVoiceTwilioRoutes: FastifyPluginAsync = async (fastify) => {
 					return sayDocument(VOICE_LINES.anonymous);
 				}
 				const turn = await runVoiceTurn({
-					deps: {
-						config,
-						jobs,
-						conversations,
-						agentThreads,
-						faqs,
-						faqAnswer,
-						memberships,
-						notifier,
-					},
+					deps: app.deps,
 					customers,
 					capabilities,
 					account: resolved,

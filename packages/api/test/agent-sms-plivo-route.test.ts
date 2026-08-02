@@ -7,11 +7,16 @@ import { createInMemoryRepositories } from '../src/repositories/memory';
 import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
 import { NoopChannelProvisioner, NoopNumberReleaser } from '../src/services/channel-provisioning';
 import { createDecider } from '../src/services/chat/decide';
-import { NoopFaqAnswerService } from '../src/services/faq-answer';
+import {
+	type FaqAnswer,
+	type FaqAnswerService,
+	NoopFaqAnswerService,
+} from '../src/services/faq-answer';
 import { NoopFaqSimilarityService } from '../src/services/faq-similarity';
 import { createNotificationService } from '../src/services/notifications';
 import { signPlivoUrl } from '../src/services/plivo';
 import { createWebsiteAuditService } from '../src/services/website-audit';
+import type { AppDeps } from '../src/types';
 import {
 	buildTestAppWithRepos,
 	RecordingMailer,
@@ -43,9 +48,18 @@ function sender(app: FastifyInstance): RecordingSmsSender {
 	return app.deps.smsSender as RecordingSmsSender;
 }
 
+/** A scripted answering service standing in for a configured AI provider. */
+function modelAnswering(answer: string): FaqAnswerService {
+	return {
+		async answer(): Promise<FaqAnswer> {
+			return { answered: true, answer, sources: [], grounding: 'model' };
+		},
+	};
+}
+
 /** Build an app + repos and enable SMS on the signed-up owner's account. */
-async function setup() {
-	const { app, repos } = await buildTestAppWithRepos();
+async function setup(overrides: Partial<AppDeps> = {}) {
+	const { app, repos } = await buildTestAppWithRepos(overrides);
 	const owner = await signupOwner(app);
 	const accountId = owner.account.id as AccountId;
 	await repos.accounts.setChannelConfig(accountId, 'sms', {
@@ -132,7 +146,10 @@ describe('POST /v1/channels/sms/plivo/inbound', () => {
 	});
 
 	it('answers a knowledge-base question over SMS instead of offering slots', async () => {
-		const { app: built, repos, accountId } = await setup();
+		const answer = "We're open Monday through Friday, 9:00 AM to 5:00 PM.";
+		// A configured provider: the built-in keyword matcher's drafts are held for
+		// review instead of being texted (see KEYWORD_DRAFT_PAUSE_REASON).
+		const { app: built, repos, accountId } = await setup({ faqAnswer: modelAnswering(answer) });
 		app = built;
 		await repos.customers.create(accountId, {
 			name: 'Dana Fox',
@@ -143,7 +160,6 @@ describe('POST /v1/channels/sms/plivo/inbound', () => {
 			balance: 0,
 			notes: '',
 		});
-		const answer = "We're open Monday through Friday, 9:00 AM to 5:00 PM.";
 		await repos.faqs.create(accountId, {
 			question: 'What are your business hours?',
 			answer,

@@ -219,11 +219,18 @@ export async function handleInboundAgentMessage(options: {
 }
 
 /**
- * Put one conversation in front of a human: flag it `needs_attention` with the
- * draft and reason, then alert every member. `needs_attention` IS the flag, so
- * an already-flagged conversation is left alone and nobody is notified twice —
- * that single guard is what makes both callers (a redelivered failure webhook,
- * a reprocessed inbound turn) idempotent. Returns whether it flagged.
+ * Put one conversation in front of a human: record the draft and reason, and —
+ * the first time — alert every member.
+ *
+ * The two halves dedupe differently on purpose. The review STATE always reflects
+ * the newest turn: a customer who asks a second question while the first is still
+ * held must not leave the team staring at the previous draft in the approve
+ * banner while their actual latest words sit further down the transcript. The
+ * NOTIFICATION fires only on the transition into `needs_attention`, so a
+ * redelivered webhook (or a channel with no message id, where the orchestrator's
+ * own dedup is off) can't page the whole team twice for one thread.
+ *
+ * Returns whether this call was the one that raised the flag.
  */
 async function flagConversationForReview(options: {
 	deps: Pick<AppDeps, 'conversations' | 'memberships' | 'notifier'>;
@@ -235,14 +242,15 @@ async function flagConversationForReview(options: {
 	logger: FastifyBaseLogger;
 }): Promise<boolean> {
 	const { deps, account, conversation, pendingReply, flagReason, logger } = options;
-	if (conversation.status === 'needs_attention') {
-		return false;
-	}
+	const alreadyFlagged = conversation.status === 'needs_attention';
 	await deps.conversations.setReviewState(account.id, conversation.id, {
 		status: 'needs_attention',
 		pendingReply,
 		flagReason,
 	});
+	if (alreadyFlagged) {
+		return false;
+	}
 	// No human actor for a webhook — notify the whole team.
 	const memberIds = (await deps.memberships.listByAccount(account.id)).map(
 		(membership) => membership.userId,
@@ -285,8 +293,10 @@ export async function flagDeliveryFailure(options: {
 	}
 	// `needs_attention` dedupes a redelivered webhook. It is no longer reached only
 	// by a delivery failure — a capability can hand a turn to a human too — so an
-	// already-flagged conversation is reported as such whatever flagged it, and the
-	// note below is skipped rather than piling a second explanation onto the thread.
+	// already-flagged conversation stops the flow entirely rather than piling on a
+	// second note. Returning here (instead of falling through to the shared helper,
+	// which does update the review state) is deliberate: a bounce arriving after a
+	// held question must not overwrite the customer's draft with an empty one.
 	if (conversation.status === 'needs_attention') {
 		return { handled: false, outcome: 'already_flagged' };
 	}

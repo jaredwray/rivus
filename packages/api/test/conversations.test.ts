@@ -2,6 +2,7 @@ import { type AccountId, agentEmailLocalPart, type ConversationId } from '@rivus
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createInMemoryRepositories, type InMemoryRepositories } from '../src/repositories/memory';
+import type { FaqAnswer, FaqAnswerService } from '../src/services/faq-answer';
 import {
 	addMember,
 	authHeader,
@@ -12,6 +13,15 @@ import {
 	type RecordingWhatsappSender,
 	signupOwner,
 } from './helpers';
+
+/** A scripted answering service standing in for a configured AI provider. */
+function modelAnswering(answer: string): FaqAnswerService {
+	return {
+		async answer(): Promise<FaqAnswer> {
+			return { answered: true, answer, sources: [], grounding: 'model' };
+		},
+	};
+}
 
 describe('conversation routes', () => {
 	let app: FastifyInstance;
@@ -299,6 +309,17 @@ describe('conversation routes', () => {
 		});
 
 		it('sends a grounded answer for an everyday question', async () => {
+			// The conversations route captures its answering service when the plugin is
+			// registered, so a model-grounded stub has to be in place at build time. The
+			// default keyword matcher now holds its drafts for review.
+			await app.close();
+			({ app, repos } = await buildTestAppWithRepos({
+				faqAnswer: modelAnswering('We are open Monday to Friday, 9 AM to 6 PM.'),
+			}));
+			const owner = await signupOwner(app);
+			token = owner.token;
+			accountId = owner.account.id;
+
 			await seedFaq('What are your business hours?', 'We are open Monday to Friday, 9 AM to 6 PM.');
 			const conversation = (await createConversation()).json();
 			await addMessage(conversation.id, 'customer', 'What are your hours?');
@@ -315,6 +336,28 @@ describe('conversation routes', () => {
 			expect(body.conversation.pendingReply).toBe('');
 			expect(body.messages.at(-1)).toMatchObject({ author: 'rivus' });
 			expect(body.messages.at(-1).body).toContain('9 AM to 6 PM');
+		});
+
+		it('holds a keyword-matched draft instead of sending it', async () => {
+			// No AI provider configured: the built-in matcher answers on keyword overlap
+			// alone, so the draft is offered for approval rather than sent.
+			await seedFaq('What are your business hours?', 'We are open Monday to Friday, 9 AM to 6 PM.');
+			const conversation = (await createConversation()).json();
+			await addMessage(conversation.id, 'customer', 'What are your hours?');
+
+			const response = await app.inject({
+				method: 'POST',
+				url: `/v1/conversations/${conversation.id}/reply`,
+				headers: authHeader(token),
+			});
+
+			expect(response.statusCode).toBe(200);
+			const body = response.json();
+			expect(body.conversation.status).toBe('needs_attention');
+			expect(body.conversation.flagReason).toContain('AI answering was unavailable');
+			// The draft is kept for one-tap approval, not appended to the transcript.
+			expect(body.conversation.pendingReply).toContain('9 AM to 6 PM');
+			expect(body.messages.every((m: { author: string }) => m.author !== 'rivus')).toBe(true);
 		});
 
 		it('holds a billing question for human review', async () => {
@@ -747,6 +790,16 @@ describe('inbox replies dispatch email on the email channel', () => {
 	});
 
 	it('emails a grounded answer when a human lets Rivus reply', async () => {
+		// See the note in "sends a grounded answer": auto-send is the model path.
+		await app.close();
+		({ app, repos } = await buildTestAppWithRepos({
+			faqAnswer: modelAnswering('We are open Monday to Friday, 9 AM to 6 PM.'),
+		}));
+		const owner = await signupOwner(app);
+		token = owner.token;
+		accountId = owner.account.id as AccountId;
+		slug = owner.account.slug;
+
 		await repos.faqs.create(accountId, {
 			question: 'What are your hours?',
 			answer: 'We are open Monday to Friday, 9 AM to 6 PM.',
