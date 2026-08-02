@@ -143,9 +143,15 @@ declares exactly `bookJob` and `flagForReview`; the orchestrator's only calendar
 
 - **Cancellation.** `namesCancellation` is exported from `parse.ts` and hard-declines every
   reschedule path; the orchestration, state and wording seams are named (§6.11). No cancel parser,
-  decision kind, `JobStatus` transition or wording is designed here. A message that is both
-  ("can we cancel and rebook for Friday?") is claimed by neither capability and falls through to
-  scheduling — nothing is destroyed and nothing is moved.
+  decision kind, `JobStatus` transition or wording is designed here. **A message that is both** —
+  "cancel this and rebook for Friday at 2pm" — is claimed by reschedule and answered
+  `reschedule_held` + `flagForReview`, **not** allowed to fall through. Letting it fall through was
+  the original plan and it was wrong: knowledge declines (`SCHEDULING_VOCABULARY` has `cancel[a-z]*`),
+  and `decideScheduling` then reads "Friday at 2pm" as an ordinary proposal — non-overlapping with
+  the Thursday booking, so the `bookedSlot` guard at `engine.ts:162-164` never fires — and returns
+  `book`. The customer ends up with **two** appointments and no cancellation: the §1.2(a) harm,
+  reached through the one path the plan had described as safe. A human resolves the mixed intent;
+  the agent neither cancels nor double-books.
 - **A bare digit as a clock time** ("make it 4", "can we do 2?"). `STANDALONE_TIME`
   (`parse.ts:149-157`) refuses bare digits on purpose, and once `reschedule_offered` exists a
   numbered offer is on the table *by construction* — the exact collision that comment warns about.
@@ -259,6 +265,17 @@ true. (7) `isAcknowledgement || isPureGreeting` → true. (8) `isInformationalQu
 question. That is a direct breach of Goal 2, so `parseRescheduleRequest` adds a
 `namesOptionInquiry(text)` guard: a wh-word (`what|when|where|how|which|why`) or a copular frame
 (`is|are|was|does|will` + the option reference) with **no** acceptance token (`works`, `let's`,
+`can we do`, `lets do`, `i'll take`, `book` — **affirmative frames only, never a bare verb**; see
+below) — and, separately, a message naming **more than one** option is never a pick at all, since
+`parseSlotChoice`'s keyworded branch would silently take the first. Full token list and the
+two-option rule in the test pairs (§9.2).
+
+Bare `do` cannot be an acceptance token, and the reason is a second question-shaped move path
+created by the guard itself: "How do I compare option 2 with option 3?" carries the wh-word that
+marks it an inquiry, but a bare-`do` token would suppress the guard, and `parseSlotChoice` would
+resolve `option 2` — moving a booking on a comparison question. Scoping to `can we do` / `let's do`
+keeps the affirmative reading and drops the interrogative one; the two-option rule catches the same
+message a second way.
 `i'll take`, `can we do`, `book`, `do`) means the reply is asking, not choosing.
 
 The guard lives in the pick **resolution**, not in `matches` — the turn is still reschedule's, and
@@ -561,7 +578,7 @@ automatically — the only work there is a test proving it parses the new value.
 | `booked` (J) | "move it to 1pm" — **the exact time it is already at** | `reschedule_unchanged { slot: J, requestedStartAt }` | `booked`, `offeredSlots: []` | none. Instant equality only — an overlapping but different start ("move my 1pm to 1:30") is a real move (§6.6) |
 | `booked` (J) | a bare "2" — a replayed voice pick, or a stray digit | `reschedule_unchanged { slot: J, requestedStartAt: null }` | `booked` | none. Claimed by `matches` step (4) so it can never become a generic **booking** offer that arms the next digit (§6.13) |
 | `booked`, J > 8h long | any reschedule ask | `reschedule_held { slot: J }` | `booked` (patch is `{}`) | `flagForReview`; the reply still names the booking and says nothing moved |
-| **`reschedule_offered`** (J, 3 windows) | **"2" — the hard case** | `reschedule { from: J's current slot, to: offeredSlots[1] }`; re-checked for `in_past`/`taken` only, mirroring `engine.ts:131-151` | `booked`, `offeredSlots: []`, `bookedJobId` unchanged, **exactly one job** | `moveJob` + note + `jobUpdated`; `endsConversation` |
+| **`reschedule_offered`** (J, 3 windows) | **"2" — the hard case** | `reschedule { from: J's current slot, to: offeredSlots[1] }`; the pick re-runs the full `slotObjection` at J's **current** duration (every reason but notice, §6.8) | `booked`, `offeredSlots: []`, `bookedJobId` unchanged, **exactly one job** | `moveJob` + note + `jobUpdated`; `endsConversation` |
 | `reschedule_offered` | "2", days later — the window has passed | `reschedule_unavailable { in_past, alternatives: fresh }` | `reschedule_offered` with fresh alternatives | none |
 | `reschedule_offered` | "actually can you do Friday at 10 instead?" | `reschedule` — the target wins over the standing offer | `booked` | `moveJob` — the **same** job, never a second |
 | `reschedule_offered` | "actually keep it" / "thanks!" / "hi" | `reschedule_unchanged { requestedStartAt: null }` | `booked`, `offeredSlots: []` — the stale offer is retired because the reply did not restate it | none |
@@ -572,7 +589,8 @@ automatically — the only work there is a test proving it parses the new value.
 | `reschedule_offered` | the team moves J in the app, no inbox reply | n/a — no agent turn | **`reschedule_offered`, `offeredSlots: []`** (Phase 7) — state kept so the next "2" is still a move turn, §6.11 | none |
 | `slots_offered` (nothing booked) | "can we reschedule?" | no anchor → `offer_slots` | `slots_offered` — here it means "different times please"; a pick **books** | none |
 | `new` / `bookedJobId: ''` | "can you move it to 4pm?" — booked on another channel | CRM lookup: exactly one live upcoming job → `reschedule`; zero → `nothing_to_reschedule`; ≥ 2 → `reschedule_held { slot: null }` | `booked` with `bookedJobId` written onto **this** channel's thread | `moveJob`, or `flagForReview` on the ambiguous branch |
-| any | "cancel my appointment" | `namesCancellation` → reschedule declines; knowledge declines (`cancel[a-z]*`) → `offer_slots` | `slots_offered` | none — nothing moved, nothing called off. The cancel seam |
+| any | "cancel my appointment" — cancellation alone | `namesCancellation` → reschedule declines; knowledge declines (`cancel[a-z]*`) → `offer_slots` | `slots_offered` | none — nothing moved, nothing called off. The cancel seam |
+| `booked` (J) | "cancel this and rebook for Friday at 2pm" — **mixed** | `reschedule_held { slot: J }` — claimed, never passed to scheduling | `booked` (patch `{}`) | `flagForReview`. Falling through would return `book` for the non-overlapping Friday target and leave the customer with two appointments (§2) |
 | `booked` | "is there a fee to postpone?" | `namesPolicyQuestion` → reschedule declines → knowledge answers | unchanged | none |
 | `booked` | the refusal corpus ("move the fridge to the garage", "we're moving house", "see you later!", "I get off work at 4:30") | reschedule declines lexically → knowledge or scheduling as today | unchanged | none. `job.startAt` byte-identical afterwards |
 
@@ -720,6 +738,21 @@ team deleted the job mid-turn — nothing delivered, nothing recorded, and a `Re
 logged at `error` with `{ jobId, startAt, previousStartAt }` and swallowed so the delivery error
 still reaches the provider.
 
+**Where the `try` ends is transport-dependent, and voice is the exception.** The rollback boundary
+encodes *"the customer now has the message, so the move must stand."* For email, SMS and WhatsApp
+that is true at `adapter.deliver` — it performed a network send. **For voice it is not:**
+`deliver` only writes the rendered speech into an in-memory capture, and nothing is spoken until
+`runVoiceTurn` returns and the route builds its XML (`routes/agent-voice-shared.ts:164-170`). So a
+failure in the transcript or thread writes *after* `deliver` makes the route speak its generic
+apology while `jobs.update` stands committed — the caller is told something went wrong and their
+appointment moves anyway, silently. That is the worst outcome in the whole design: a move the
+customer was explicitly told did not happen.
+
+`ChannelCapabilities` therefore declares `deliveryIsDeferred: boolean` (true for voice only), and
+when it is set the orchestrator keeps `rollbackEffects` armed through the post-delivery transcript
+and thread writes. It is a capability flag rather than a channel check in the orchestrator for the
+same reason `endsConversation` is (§3.7): the orchestrator must not learn the names of channels.
+
 **Why absolute.** A SET replays as a no-op where a shift would move the job twice — the only
 protection voice has. It also covers the crash window between the job write and
 `agentThreads.update` that message-id dedupe cannot reach: the replay re-reads the job, finds it
@@ -754,8 +787,8 @@ inside the `catch` (leaves a `needs_attention` behind for a turn the customer ne
 
 **Decision.** `reschedule_unavailable` carries the same four reasons as `propose_unavailable` and
 nothing else. `MIN_NOTICE_MINUTES` stays inside `computeOpenSlots`/`computeOpenSlotsOnDay`
-(`slots.ts:194`, `:295`). A pick of a standing move offer is re-checked for `in_past` and `taken`
-only.
+(`slots.ts:194`, `:295`). A pick of a standing move offer is re-checked by re-running the **full**
+`slotObjection` against the job's **current** `durationMinutes` — every reason except notice.
 
 **Why.** `decideScheduling` deliberately does **not** apply notice to a customer-named time
 (`engine.ts:153-202` checks in_past / horizon / hours / free and nothing else), so a `too_soon`
@@ -766,9 +799,15 @@ no charge. For changes inside 24 hours a small fee may apply"* — and `knowledg
 from exactly those FAQs. The same agent would quote "you can, a fee may apply" and then refuse. It
 also refuses "I'm running late, move me to 4pm", the commonest real reschedule.
 
-Restricting the offered-pick re-check to `in_past`/`taken` matters too: offers satisfy the notice
-window only at the instant they are computed, so a thread that sits a day would otherwise refuse the
-agent's own option 2.
+**Notice is the only reason excluded from the pick re-check — every other one is re-run, at the
+job's current duration.** Excluding notice is necessary: offers satisfy the notice window only at
+the instant they are computed, so a thread that sits a day would otherwise refuse the agent's own
+option 2. But excluding `outside_hours` would be a bug, because an offer's validity depends on a
+duration the team can change between the offer and the pick. A 4:00 PM window is fine for a
+60-minute job and runs past close for a 120-minute one, so a dispatcher who edits only
+`durationMinutes` can turn a valid standing option into one that books past 5:00 PM. Re-running the
+whole objection at the current duration catches that; §6.11 retires the offer as well, so the two
+guards are independent.
 
 **If the business wants a same-day gate**, express it as `flagForReview` attached to a *successful*
 move — the existing human hand-off seam — not as a refusal.
@@ -882,8 +921,9 @@ alone**. Called from all three:
    over): look the thread up with the existing `agentThreads.findByConversationId` and, when its
    state is `reschedule_offered` or `slots_offered`, patch
    `{ state: 'booked' | 'new', offeredSlots: [] }` — retiring the offer only, never `bookedJobId`.
-2. `PATCH /v1/jobs/:id` (`routes/jobs.ts:190-210`), when `job.startAt !== before.startAt` — the same
-   diff `notifier.jobUpdated` already computes — appends
+2. `PATCH /v1/jobs/:id` (`routes/jobs.ts:190-210`), when `job.startAt !== before.startAt` **or
+   `job.durationMinutes !== before.durationMinutes`** — a duration edit invalidates a standing offer
+   just as thoroughly, since every window in it was checked against the old length (§6.8) — appends
    `{ author: 'note', body: 'The team moved <title> from <label> to <label>.' }` using the same
    `formatSlotLabel`, and calls `retireMoveOffers`. **It runs BEFORE `jobs.update`**, not after: if
    the retirement fails the `PATCH` errors with the schedule untouched and a retry re-runs cleanly,
@@ -1333,11 +1373,25 @@ The policy-question guard is a scoping, not a blanket decline.
 
 **Option inquiries (`agent-reschedule.test.ts`, and the reason §3.6's guard exists).** On a
 `reschedule_offered` thread, each of "is option 2 in the morning?", "what time is slot 1?", "how long
-is option 3?" and "which one is on Friday?" must leave `job.startAt` **byte-identical**, keep the
-thread `reschedule_offered`, keep `offeredSlots` in the same order, and re-list them. Paired against
-the acceptances that must still move the job: "can we do the second one?", "option 2 works",
-"let's do option 2", "I'll take slot 3". `parseSlotChoice` matches every one of these eight, so the
-pair is the only thing standing between a question and a moved appointment.
+is option 3?", "which one is on Friday?" and **"how do I compare option 2 with option 3?"** must
+leave `job.startAt` **byte-identical**, keep the thread `reschedule_offered`, keep `offeredSlots` in
+the same order, and re-list them. Paired against the acceptances that must still move the job: "can
+we do the second one?", "option 2 works", "let's do option 2", "I'll take slot 3".
+`parseSlotChoice` matches every one of these nine, so the pair is the only thing standing between a
+question and a moved appointment. The `how do` row is the one that fails if `do` is left as a bare
+acceptance token, and it is *also* caught by the two-option rule — deliberately, so neither guard is
+load-bearing alone.
+
+**Duration edited between offer and pick (`agent-reschedule.test.ts`).** Offer three windows for a
+60-minute job, `PATCH` it to 120 minutes, then pick the 4:00 PM option: it must be declined
+`outside_hours` (4:00 PM + 120 exceeds the 5:00 PM close), **not** moved. Asserted twice over,
+because §6.8's re-check and §6.11's retirement are independent guards and either alone should stop
+it.
+
+**Mixed cancel-and-rebook (`agent-email-route.test.ts`, end to end).** A booked customer emails
+"cancel this and rebook for Friday at 2pm": `jobs.list` total stays **1**, `job.startAt` is
+unchanged, the conversation is `needs_attention`, and the outcome is `reschedule_held` — never
+`book`. This is the regression that the "falls through to scheduling" non-goal would have shipped.
 
 **Regression pins.** `agent-question.test.ts` pins today's `isInformationalQuestion` results for the
 §1.2(b) table, so a future loosening of `SCHEDULING_VOCABULARY` cannot change capability ordering
@@ -1352,7 +1406,9 @@ terminal XML via `endsConversation`; the same speech posted twice moves the job 
 "2" posted twice leaves the thread `booked` and never produces a booking offer** (§6.13 — assert the
 second reply contains no options block and `thread.state !== 'slots_offered'`, the arming step);
 "move my thursday 1pm to friday 2pm" posted twice lands on Friday **both times** (§6.3's reversal);
-and "push it back an hour" offers windows rather than shifting anything (§6.7).
+and "push it back an hour" offers windows rather than shifting anything (§6.7). Plus the
+deferred-delivery rollback (§6.7): a transcript-write failure *after* the capture but before the XML
+is built restores `startAt` — the caller hears the apology and their appointment did not move.
 `jobs.test.ts`: retirement runs **before** `jobs.update`, so a repo failure on the thread write
 leaves `job.startAt` untouched and a retry succeeds (the assertion that catches retire-after-write,
 which would skip retirement forever on the retry). A `PATCH` changing `startAt` appends exactly one "The team moved" note, clears
