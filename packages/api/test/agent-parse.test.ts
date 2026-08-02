@@ -87,7 +87,43 @@ describe('matchOfferedSlot', () => {
 		expect(matchOfferedSlot('tuesday at 2pm works', twoTuesdays, PACIFIC)).toBe(1);
 	});
 
-	it('returns null without a weekday, or with nothing offered', () => {
+	it.each([
+		['lets do 2pm', 1],
+		['2 pm works', 1],
+		['9am please', 0],
+		['2:00pm', 1],
+		['14:00', 1],
+		['can we do 2:00 pm?', 1],
+	])('matches %j to slot %i on its time alone', (text, index) => {
+		expect(matchOfferedSlot(text, offered, PACIFIC)).toBe(index);
+	});
+
+	it('never reads a bare digit as a time — it is a candidate pick, not a clock', () => {
+		expect(matchOfferedSlot('lets do 2', offered, PACIFIC)).toBeNull();
+	});
+
+	it('never picks a window the reply did not name', () => {
+		// Minutes were spelled out and no offer is at 2:30, with or without a day.
+		expect(matchOfferedSlot('2:30pm', offered, PACIFIC)).toBeNull();
+		expect(matchOfferedSlot('thursday at 2:30pm', offered, PACIFIC)).toBeNull();
+		// Nothing is on offer at that hour at all.
+		expect(matchOfferedSlot('10am', offered, PACIFIC)).toBeNull();
+		// An impossible hour reads as no clock time at all.
+		expect(matchOfferedSlot('25:00', offered, PACIFIC)).toBeNull();
+	});
+
+	it('returns null when a bare time is ambiguous across days', () => {
+		// Tuesday July 7th and Wednesday July 8th, both at 9:00 AM Pacific.
+		const twoMornings: AgentSlot[] = [
+			{ startAt: '2026-07-07T16:00:00.000Z', durationMinutes: 60 },
+			{ startAt: '2026-07-08T16:00:00.000Z', durationMinutes: 60 },
+		];
+		expect(matchOfferedSlot('9am works', twoMornings, PACIFIC)).toBeNull();
+		// Naming the day still disambiguates.
+		expect(matchOfferedSlot('wednesday at 9am', twoMornings, PACIFIC)).toBe(1);
+	});
+
+	it('returns null when the reply pins nothing down, or with nothing offered', () => {
 		expect(matchOfferedSlot('sounds good', offered, PACIFIC)).toBeNull();
 		expect(matchOfferedSlot('tuesday', [], PACIFIC)).toBeNull();
 	});
@@ -148,6 +184,15 @@ describe('parseProposedTime', () => {
 		expect(parseProposedTime('tomorrow at 9:75', CTX)).toBeNull();
 	});
 
+	it('rejects an hour no 12-hour clock has, and keeps the two that look like it', () => {
+		// "13am" and "0pm" are a typo or were never a time; either reading is a guess.
+		expect(parseProposedTime('July 10 at 13am', CTX)).toBeNull();
+		expect(parseProposedTime('July 10 at 0pm', CTX)).toBeNull();
+		// Noon and midnight are the hours the bound must leave alone.
+		expect(parseProposedTime('July 10 at 12pm', CTX)).toBe('2026-07-10T19:00:00.000Z');
+		expect(parseProposedTime('July 10 at 12am', CTX)).toBe('2026-07-10T07:00:00.000Z');
+	});
+
 	it('returns null when no complete day + time is named', () => {
 		expect(parseProposedTime('sometime next week?', CTX)).toBeNull();
 		expect(parseProposedTime('at 2pm', CTX)).toBeNull(); // time, no day
@@ -169,6 +214,7 @@ describe('parseSlotChoice — negation guard', () => {
 		'option 2 does not work',
 		"I can't do the second one",
 		'none of those work for me',
+		'not the first one',
 	])('never reads %j as a pick', (text) => {
 		expect(parseSlotChoice(text, 3)).toBeNull();
 	});
@@ -200,8 +246,96 @@ describe('matchOfferedSlot — guards', () => {
 		expect(matchOfferedSlot('tuesday 2026-07-14 works', offered, PACIFIC)).toBeNull();
 	});
 
-	it('refuses to match a negated day', () => {
+	it('refuses to match a negated day or time', () => {
 		expect(matchOfferedSlot("Tuesday doesn't work for me", offered, PACIFIC)).toBeNull();
+		expect(matchOfferedSlot("2pm doesn't work", offered, PACIFIC)).toBeNull();
+	});
+
+	it('leaves a relative day + time to the proposal parser', () => {
+		// It is Wednesday July 1st, so "tomorrow" is the 2nd — the offered Thursday
+		// is the 9th, and its 2 PM is not the 2 PM being asked for.
+		expect(matchOfferedSlot('tomorrow at 2pm', offered, PACIFIC)).toBeNull();
+	});
+
+	it.each([
+		// The hour is on offer, but not in the week the reply is talking about.
+		'next week at 2pm',
+		'tuesday next week at 9am',
+		'a week from thursday at 2pm',
+		'in two weeks at 9am',
+		'the following thursday at 2pm',
+		// "this afternoon" is today; the offers are next week.
+		'2pm this afternoon',
+		// A reply asking to move the window names no window this matcher can check.
+		'can we do it later?',
+		'anything sooner? 9am',
+	])('refuses to match %j, which shifts the window off the offers', (text) => {
+		expect(matchOfferedSlot(text, offered, PACIFIC)).toBeNull();
+	});
+
+	it('still matches the ordinary "next"/"this" weekday forms', () => {
+		// A determiner on a weekday is just how people write the coming one — only a
+		// determiner on a week, month or part of a day shifts the window.
+		expect(matchOfferedSlot('next thursday at 2pm', offered, PACIFIC)).toBe(1);
+		expect(matchOfferedSlot('this tuesday at 9am', offered, PACIFIC)).toBe(0);
+		// Minutes and hours are not shifted windows either.
+		expect(matchOfferedSlot('in 20 mins can we do 2pm?', offered, PACIFIC)).toBe(1);
+	});
+
+	it.each([
+		// A plain refusal, with no contraction to spot it by.
+		'no, not 2pm',
+		'not tuesday',
+		// An exclusion frame names what is NOT wanted.
+		'anything but 2pm',
+	])('refuses to match the refusal in %j', (text) => {
+		expect(matchOfferedSlot(text, offered, PACIFIC)).toBeNull();
+	});
+
+	it('keeps ordinary politeness affirmative', () => {
+		// "no problem"/"no worries" are agreement, not refusal.
+		expect(matchOfferedSlot('no problem, tuesday works', offered, PACIFIC)).toBe(0);
+		expect(matchOfferedSlot('no worries — 2pm works', offered, PACIFIC)).toBe(1);
+	});
+
+	it.each([
+		// A boundary is a request for what lies the other side of it: booking the
+		// boundary itself answers the opposite of what was asked.
+		'anything before 2pm',
+		'until 2pm',
+	])('refuses to book the boundary time in %j', (text) => {
+		expect(matchOfferedSlot(text, offered, PACIFIC)).toBeNull();
+	});
+
+	it('still matches a time the reply merely approximates', () => {
+		// "around 2pm" is satisfied by the 2 PM window itself, unlike "before 2pm".
+		expect(matchOfferedSlot('around 2pm works', offered, PACIFIC)).toBe(1);
+	});
+
+	it('refuses to pick one of several times the reply listed', () => {
+		expect(matchOfferedSlot('9am or 2pm works', offered, PACIFIC)).toBeNull();
+		expect(matchOfferedSlot('tuesday at 9am or 2pm', offered, PACIFIC)).toBeNull();
+	});
+
+	it('counts one time named twice as one time', () => {
+		expect(matchOfferedSlot('yes 2pm, 2pm!', offered, PACIFIC)).toBe(1);
+		// Two spellings of 2:00 PM are still 2:00 PM.
+		expect(matchOfferedSlot('2pm or 14:00', offered, PACIFIC)).toBe(1);
+	});
+
+	it('reads an hour a 12-hour clock does not have as no time at all', () => {
+		expect(matchOfferedSlot('13am', offered, PACIFIC)).toBeNull();
+	});
+
+	it('refuses to match when the reply names a slashed date', () => {
+		expect(matchOfferedSlot('8/5 at 2pm', offered, PACIFIC)).toBeNull();
+		expect(matchOfferedSlot('tuesday 7/14 at 9am', offered, PACIFIC)).toBeNull();
+	});
+
+	it('still matches around the sizes and hours a trades inbox is full of', () => {
+		// "1/2 inch" and "24/7" are not dates, and their digits are not hours.
+		expect(matchOfferedSlot('1/2 inch pipe — tuesday at 9am works', offered, PACIFIC)).toBe(0);
+		expect(matchOfferedSlot('we are reachable 24/7, tuesday 9am works', offered, PACIFIC)).toBe(0);
 	});
 });
 
@@ -424,5 +558,8 @@ describe('parseProposedTime — negated times are not proposals', () => {
 		expect(parseProposedTime('none of those — July 10 at 2pm?', CTX)).toBe(
 			'2026-07-10T21:00:00.000Z',
 		);
+		// A bare "no" refuses the pick, but the clause after it still proposes: the
+		// comma splits them, and only the clause that says no is skipped.
+		expect(parseProposedTime('no, tuesday at 2pm works', CTX)).toBe('2026-07-07T21:00:00.000Z');
 	});
 });

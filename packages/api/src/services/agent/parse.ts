@@ -72,11 +72,20 @@ const WEEKDAY_WORD =
 	/\b(?:(?:next|this) )?(sun|sunday|mon|monday|tue|tues|tuesday|wed|weds|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday)\b/;
 
 // A reply that says no. Any of these anywhere in the message disables the
-// slot-*picking* paths — "the first one doesn't work" must never book slot 1.
-// Time *proposals* stay enabled: "Tuesday doesn't work, how about Wednesday at
-// 2?" still parses Wednesday, because the proposal parser runs regardless.
+// slot-*picking* paths — "the first one doesn't work" must never book slot 1,
+// and "no, not 1pm" must never book 1pm. Time *proposals* stay enabled:
+// "Tuesday doesn't work, how about Wednesday at 2?" still parses Wednesday,
+// because the proposal parser runs regardless — it reads the message clause by
+// clause and skips the ones that say no, so a plain "not"/"no" here refuses the
+// pick without swallowing the alternative the same message offers.
+//
+// The bare words are scoped so ordinary politeness stays affirmative: "no" is
+// not a refusal in "no problem"/"no worries", and an exclusion frame counts only
+// where it excludes something concrete — a named alternative ("anything but
+// tuesday") or a time ("but 2pm"), never the conversational "sorry for the
+// delay, but tuesday works".
 const NEGATION =
-	/\b(?:doesn'?t|does not|don'?t|do not|won'?t|will not|can'?t|cannot|couldn'?t|isn'?t|is not|not going to|no longer|none of|neither|nope)\b/;
+	/\b(?:doesn'?t|don'?t|won'?t|can'?t|cannot|couldn'?t|isn'?t|not|none of|neither|nope)\b|\bno\b(?! (?:problem|worries|rush|sweat|biggie))|\b(?:anything|anytime|any time|any day) (?:but|except)\b|\b(?:but|except|other than|besides|instead of|rather than) (?=\d)/;
 
 // Where one clause of a rejection ends and the alternative begins: sentence
 // punctuation, or a pivot word that introduces the counter-offer. Shared by the
@@ -90,12 +99,127 @@ function refusesPick(normalized: string): boolean {
 }
 
 // An explicit calendar reference — a day-of-month ("the 14th"), a month name,
-// or an ISO date. When one is present, fuzzy weekday matching must not run:
-// "Tuesday the 14th at 9am" names a specific date, and if the date parser
-// couldn't resolve it the safe answer is to re-offer, not to book the offered
-// Tuesday a week earlier.
+// an ISO date, or a slashed pair ("8/5"). When one is present, fuzzy weekday
+// matching must not run: "Tuesday the 14th at 9am" names a specific date, and
+// if the date parser couldn't resolve it the safe answer is to re-offer, not to
+// book the offered Tuesday a week earlier. The slashed form carries the exact
+// carve-outs `question.ts`'s CALENDAR_REFERENCE uses, so the sizes a trades
+// inbox is full of ("1/2 inch", '3/4"', "3/4-hp") and opening hours ("24/7")
+// stay what they are rather than becoming dates.
 const EXPLICIT_DATE =
-	/\b\d{1,2}(?:st|nd|rd|th)\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b/;
+	/\b\d{1,2}(?:st|nd|rd|th)\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b|\b(?!24\/7\b)\d{1,2}\/\d{1,2}\b(?!\s*["″”]|[\s-]+(?:inch(?:es)?|hp|horsepower|tons?|baths?|gal(?:lons?)?|gpm|psi|lbs?|pounds?|ft|foot|feet)\b)/;
+
+// A time used as a boundary rather than as a choice: "anything before 1pm" is
+// not a pick of the 1:00 PM window, it is a request for what comes earlier, and
+// booking the boundary itself is exactly backwards. Deliberately narrower than
+// it could be — "around 1pm" and "by 1pm" are both satisfied by the 1:00 PM
+// window, so they stay pickable.
+const TIME_BOUND = /\b(?:before|after|past|until|till|til)\s*(?=\d)/;
+
+// A window shifted off the one the offers live in — "next week", "a week from
+// thursday", "in two weeks", "the following thursday", "this afternoon", or a
+// bare "later"/"sooner". Like {@link EXPLICIT_DATE} each names a stretch of
+// calendar the offer matcher cannot check the offers against: "1pm next week"
+// hour-matches THIS week's 1:00 PM offer and would book the wrong week. So the
+// matcher refuses and the reply falls to the day/time parsers, or to a fresh
+// offer — the safe failure is restating the options, never a booking nobody
+// asked for. Determiners deliberately pair only with week/month/weekend and the
+// parts of a day, never with a weekday: "next thursday at 2pm" is how people
+// write the coming Thursday and must keep matching. Minute and hour units are
+// just as deliberately absent, so "in 20 mins can we do 1pm?" still books.
+const SHIFTED_WINDOW =
+	/\b(?:next|this|other|another|different|following|that)\s+(?:week|month|weekend)\b|\b(?:this|next)\s+(?:morning|afternoon|evening)\b|\b(?:week|weekend|month)\s+after\b|\b(?:in|after|within)\s+(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d{1,2})\s+(?:weeks?|months?|days?)\b|\b(?:weeks?|months?|days?)\s+(?:from|out|ahead)\b|\bfollowing\s+(?:sun|mon|tue|wed|thu|fri|sat)[a-z]*\b|\bafter\s+next\b|\b(?:later|sooner)\b/;
+
+// A day named relative to today. Like {@link EXPLICIT_DATE} it points at one
+// calendar day the offer matcher cannot check the offers against, so a time
+// standing next to it ("tomorrow at 2pm") must never pick the 2 PM on some
+// other offered day; {@link parseProposedTime} reads the day and the time
+// together and books what was actually said.
+const RELATIVE_DAY = /\b(?:today|tonight|tomorrow)\b/;
+
+// The clock time in a reply that also names a weekday: the first number in the
+// message, minutes and meridiem optional. Loose on purpose — the day is already
+// pinned down, so the hour only has to choose between that day's offers
+// ("tuesday at 9 works"). Only a number touching a slash is skipped: by the time
+// this runs, {@link EXPLICIT_DATE} has already refused every slashed pair that
+// could be a date, so the ones still here are the sizes a trades inbox is made
+// of, and the 1 in "1/2 inch pipe — tuesday at 9am works" is not one o'clock.
+const DAY_SCOPED_TIME = /(?<!\/)\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b(?!\/)/;
+
+// The clock time in a reply that names no day at all, where the time IS the
+// whole pick: digits with a meridiem ("1pm", "1 pm"), or with colon-minutes
+// ("13:00", "1:30pm"). A bare digit is deliberately not a time here — with a
+// numbered list on the table "lets do 1" is indistinguishable from a pick of
+// option 1, the same reasoning that keeps a bare ordinal out of
+// {@link parseRequestedDay}. The whole message is searched rather than only its
+// first number: in "in 20 mins can we do 1pm?" the first number is the
+// meridiem-less 20, and the time the customer named comes after it.
+const STANDALONE_TIME = /\b(\d{1,2}):(\d{2})\s*(am|pm)?\b|\b(\d{1,2})\s*(am|pm)\b/;
+// The same shapes, swept over the whole message rather than stopped at the
+// first — see {@link namesSeveralTimes}.
+const STANDALONE_TIMES = new RegExp(STANDALONE_TIME.source, 'g');
+
+/** A clock time a reply pinned down: a 24-hour hour, and minutes when it gave them. */
+interface WantedTime {
+	hour: number;
+	minute: number | null;
+}
+
+function wantedTime(
+	hourText: string,
+	minuteText: string | undefined,
+	meridiem: string | undefined,
+): WantedTime | null {
+	const hour = resolveHour(Number(hourText), meridiem);
+	if (hour === null) {
+		return null;
+	}
+	return { hour, minute: minuteText === undefined ? null : Number(minuteText) };
+}
+
+function dayScopedTime(normalized: string): WantedTime | null {
+	const match = normalized.match(DAY_SCOPED_TIME);
+	return match?.[1] ? wantedTime(match[1], match[2], match[3]) : null;
+}
+
+/** The time one {@link STANDALONE_TIME} match names, in whichever shape it hit. */
+function matchedTime(match: RegExpMatchArray): WantedTime | null {
+	if (match[1]) {
+		return wantedTime(match[1], match[2], match[3]);
+	}
+	if (match[4]) {
+		return wantedTime(match[4], undefined, match[5]);
+	}
+	return null;
+}
+
+function standaloneTime(normalized: string): WantedTime | null {
+	if (RELATIVE_DAY.test(normalized)) {
+		return null;
+	}
+	const match = normalized.match(STANDALONE_TIME);
+	return match ? matchedTime(match) : null;
+}
+
+/**
+ * Whether a reply names more than one clock time — "9am or 2pm works". Taking
+ * the first would book a window the customer only listed as one candidate, so
+ * both paths refuse and the engine restates the options. Times are compared as
+ * minutes of the day, which is what makes "2pm or 14:00" one time and not two,
+ * and only the unmistakable shapes count: a bare digit is a street number as
+ * often as an hour, and it can't be told apart from the number of a listed
+ * option either.
+ */
+function namesSeveralTimes(normalized: string): boolean {
+	const minutesOfDay = new Set<number>();
+	for (const match of normalized.matchAll(STANDALONE_TIMES)) {
+		const time = matchedTime(match);
+		if (time) {
+			minutesOfDay.add(time.hour * 60 + (time.minute ?? 0));
+		}
+	}
+	return minutesOfDay.size > 1;
+}
 
 /**
  * Which offered slot (1-based → 0-based index) a reply picks, or null when it
@@ -162,11 +286,19 @@ export function parseSlotChoice(text: string, offeredCount: number): number | nu
 }
 
 /**
- * Which offered slot a reply names by day — "Tuesday works", "the 10am on
- * Tuesday" — or null unless exactly one offered slot matches everything the
- * reply pinned down (weekday, and the hour when one is given). Ambiguity is
- * never guessed: two Tuesday offers and "Tuesday works" → null, and the
- * engine restates the options.
+ * Which offered slot a reply names by day and/or by time — "Tuesday works",
+ * "the 10am on Tuesday", "lets do 1pm" — or null unless exactly one offered
+ * slot matches everything the reply pinned down. Ambiguity is never guessed:
+ * two Tuesday offers and "Tuesday works" → null, two 9:00 AM offers on
+ * different days and "9am" → null, and a reply that shifts the window it is
+ * talking about ("1pm next week", "anything sooner?") → null. In every one of
+ * them the engine restates the options instead.
+ *
+ * A time with no day behind it only counts when it is unmistakably a clock
+ * ("1pm", "13:00"); a bare digit stays a candidate pick of option 1, never a
+ * time. Minutes, when the reply gives them, must match the slot's — "1:30pm"
+ * never books the 1:00 PM window, because the agent must not book a time
+ * nobody named.
  */
 export function matchOfferedSlot(
 	text: string,
@@ -177,25 +309,37 @@ export function matchOfferedSlot(
 		return null;
 	}
 	const normalized = text.toLowerCase();
-	if (refusesPick(normalized) || EXPLICIT_DATE.test(normalized)) {
+	if (
+		refusesPick(normalized) ||
+		EXPLICIT_DATE.test(normalized) ||
+		SHIFTED_WINDOW.test(normalized) ||
+		TIME_BOUND.test(normalized) ||
+		namesSeveralTimes(normalized)
+	) {
 		return null;
 	}
 	const weekdayMatch = normalized.match(/\b(sun|mon|tue|wed|thu|fri|sat)[a-z]*\b/);
-	if (!weekdayMatch?.[1]) {
+	const weekday = weekdayMatch?.[1] ? WEEKDAYS[weekdayMatch[1]] : undefined;
+	const wanted = weekday === undefined ? standaloneTime(normalized) : dayScopedTime(normalized);
+	// A reply that pinned down neither a day nor a clock picks nothing.
+	if (weekday === undefined && wanted === null) {
 		return null;
 	}
-	const weekday = WEEKDAYS[weekdayMatch[1]];
-	const time = normalized.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/);
-	const wantedHour = time?.[1] ? resolveHour(Number(time[1]), time[3]) : null;
 
 	const matches: number[] = [];
 	offeredSlots.forEach((slot, index) => {
 		const parts = zonedParts(new Date(slot.startAt), timeZone);
-		if (parts.weekday !== weekday) {
+		if (weekday !== undefined && parts.weekday !== weekday) {
 			return;
 		}
-		if (wantedHour !== null && parts.hour !== wantedHour) {
-			return;
+		if (wanted) {
+			if (parts.hour !== wanted.hour) {
+				return;
+			}
+			// Minutes only narrow when the reply spelled them out, and then exactly.
+			if (wanted.minute !== null && parts.minute !== wanted.minute) {
+				return;
+			}
 		}
 		matches.push(index);
 	});
@@ -206,10 +350,15 @@ export function matchOfferedSlot(
  * Resolve a written hour to a 24-hour clock. Without am/pm, small hours are
  * read as afternoon ("at 2" → 14:00 — the business day runs 9–17, so 2am is
  * never what a customer means), 8–12 as written (morning, noon), and 13–23 as
- * 24-hour notation.
+ * 24-hour notation. With am/pm the hour must be one a 12-hour clock has: "13am"
+ * and "0pm" are a typo or something that was never a time, and either reading
+ * of them would be a guess.
  */
 function resolveHour(hour: number, meridiem: string | undefined): number | null {
 	if (hour < 0 || hour > 23) {
+		return null;
+	}
+	if (meridiem !== undefined && (hour < 1 || hour > 12)) {
 		return null;
 	}
 	if (meridiem === 'am') {

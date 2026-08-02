@@ -328,7 +328,7 @@ export function decideScheduling(input: SchedulingDecisionInput): AgentDecision 
 	return { kind: 'offer_slots', slots };
 }
 
-/** The offered slot the reply picks — by number/ordinal, or by naming its day. */
+/** The offered slot the reply picks — by number/ordinal, or by naming its day/time. */
 function pickOfferedSlot(input: SchedulingDecisionInput): AgentSlot | null {
 	if (input.offeredSlots.length === 0) {
 		return null;
@@ -337,9 +337,9 @@ function pickOfferedSlot(input: SchedulingDecisionInput): AgentSlot | null {
 	if (byNumber !== null) {
 		return input.offeredSlots[byNumber] ?? null;
 	}
-	const byDay = matchOfferedSlot(input.text, input.offeredSlots, input.timeZone);
-	if (byDay !== null) {
-		return input.offeredSlots[byDay] ?? null;
+	const byDayOrTime = matchOfferedSlot(input.text, input.offeredSlots, input.timeZone);
+	if (byDayOrTime !== null) {
+		return input.offeredSlots[byDayOrTime] ?? null;
 	}
 	return null;
 }
