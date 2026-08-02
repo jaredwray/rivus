@@ -723,7 +723,17 @@ function realDay(year: number, month: number, day: number): RequestedDay | null 
  */
 function rollYearForward(date: RequestedDay, today: RequestedDay): RequestedDay {
 	const ordered = (parts: RequestedDay) => parts.year * 10_000 + parts.month * 100 + parts.day;
-	return ordered(date) < ordered(today) ? { ...date, year: date.year + 1 } : date;
+	if (ordered(date) >= ordered(today)) {
+		return date;
+	}
+	// The next year that actually has this day. Only February 29 can skip years —
+	// blindly taking year + 1 would hand the engine a date Date.UTC quietly
+	// normalizes to March 1 — and a leap year is never more than eight away.
+	let year = date.year + 1;
+	while (!isRealDate(year, date.month, date.day)) {
+		year += 1;
+	}
+	return { ...date, year };
 }
 
 function buildInstant(

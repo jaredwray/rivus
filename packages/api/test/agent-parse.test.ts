@@ -343,6 +343,18 @@ describe('parseRequestedDay', () => {
 		expect(parseRequestedDay('2026-13-01', CTX)).toBeNull();
 	});
 
+	it('rolls a passed leap day to the next leap year, not to a phantom February 29', () => {
+		// Asked in mid-2028 (a leap year, its February 29 already behind), the next
+		// real February 29 is 2032 — a blind year + 1 would hand the engine
+		// 2029-02-29, which Date.UTC quietly normalizes to March 1.
+		const afterLeapDay = { timeZone: PACIFIC, now: new Date('2028-06-01T17:00:00.000Z') };
+		expect(parseRequestedDay('february 29', afterLeapDay)).toEqual({
+			year: 2032,
+			month: 2,
+			day: 29,
+		});
+	});
+
 	it('never reads a negated day as a request', () => {
 		expect(parseRequestedDay("thursday doesn't work", CTX)).toBeNull();
 		expect(parseRequestedDay("I can't do thursday", CTX)).toBeNull();

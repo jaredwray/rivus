@@ -2,7 +2,7 @@ import type { AgentSlot } from '@rivus/core';
 import { describe, expect, it } from 'vitest';
 import { decideScheduling } from '../src/services/agent/engine';
 import type { BusyInterval } from '../src/services/agent/slots';
-import { SEARCH_WINDOW_DAYS, zonedParts } from '../src/services/agent/slots';
+import { BOOKING_HORIZON_DAYS, SEARCH_WINDOW_DAYS, zonedParts } from '../src/services/agent/slots';
 
 const PACIFIC = 'America/Los_Angeles';
 // Wednesday July 1st 2026, 10:00 AM PDT.
@@ -294,6 +294,22 @@ describe('decideScheduling — the customer asks about a whole day', () => {
 		expect(decision.kind).toBe('day_unavailable');
 		if (decision.kind === 'day_unavailable') {
 			expect(decision.reason).toBe('beyond_horizon');
+		}
+	});
+
+	it('never offers an hour past the horizon, even on a day whose morning is inside it', () => {
+		// Noon PDT on Thursday July 2nd + 60 days lands at noon on Monday August
+		// 31st: the 31st's morning is bookable, its afternoon is past the horizon —
+		// and an hour the proposal branch would decline must not be offered here.
+		const noon = new Date('2026-07-02T19:00:00.000Z');
+		const horizonMs = noon.getTime() + BOOKING_HORIZON_DAYS * 24 * 60 * 60_000;
+		const decision = decide({ text: 'august 31', now: noon });
+		expect(decision.kind).toBe('offer_slots');
+		if (decision.kind === 'offer_slots') {
+			expect(decision.slots.length).toBeGreaterThan(0);
+			for (const slot of decision.slots) {
+				expect(Date.parse(slot.startAt)).toBeLessThanOrEqual(horizonMs);
+			}
 		}
 	});
 

@@ -202,11 +202,14 @@ export function decideScheduling(input: SchedulingDecisionInput): AgentDecision 
 		return { kind: 'book', slot };
 	}
 
-	// A day with no clock time on it ("next Thursday?", "anything on the 6th?")
-	// is a question about that day. Answering it with the generic next openings
-	// ignores the only thing the contact actually asked, so the day is looked at
-	// directly. This runs after the proposal branch on purpose: a complete day +
-	// time is a booking request and always wins.
+	// A day with no clock time on it ("next Thursday?", "anything on August
+	// 6th?") is a question about that day. Answering it with the generic next
+	// openings ignores the only thing the contact actually asked, so the day is
+	// looked at directly. This runs after the proposal branch on purpose: a
+	// complete day + time is a booking request and always wins. (A bare ordinal —
+	// "the 6th" — is deliberately NOT read as a day: with options on the table it
+	// is indistinguishable from a pick of option 6, and this parser guesses in
+	// neither direction.)
 	const requestedDay = parseRequestedDay(input.text, {
 		timeZone: input.timeZone,
 		now: input.now,
@@ -252,7 +255,8 @@ export function decideScheduling(input: SchedulingDecisionInput): AgentDecision 
 		}
 		// Only the calendar inside the horizon was loaded, so a day past it is
 		// declined rather than reported open against jobs that were never fetched.
-		if (dayStart.getTime() > input.now.getTime() + BOOKING_HORIZON_DAYS * 24 * 60 * 60_000) {
+		const horizonMs = input.now.getTime() + BOOKING_HORIZON_DAYS * 24 * 60 * 60_000;
+		if (dayStart.getTime() > horizonMs) {
 			return {
 				kind: 'day_unavailable',
 				reason: 'beyond_horizon',
@@ -269,12 +273,15 @@ export function decideScheduling(input: SchedulingDecisionInput): AgentDecision 
 				alternatives: openSlots(),
 			};
 		}
+		// The horizon is enforced per slot, not just on the day's midnight: on the
+		// edge day the horizon can fall mid-afternoon, and an hour past it must not
+		// be offered when the same hour proposed outright would be declined.
 		const daySlots = computeOpenSlotsOnDay({
 			now: input.now,
 			timeZone: input.timeZone,
 			busy: input.busy,
 			day: requestedDay,
-		});
+		}).filter((slot) => Date.parse(slot.startAt) <= horizonMs);
 		if (daySlots.length > 0) {
 			return {
 				kind: 'offer_slots',
