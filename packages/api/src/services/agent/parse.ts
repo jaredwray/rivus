@@ -605,8 +605,16 @@ export function isAcknowledgement(text: string): boolean {
 // so a bare "another" (or "second", which every numbered pick is full of) is
 // never enough. The verb forms require the verb: "can you also book…" adds a
 // visit, "option 2 also works" picks one.
+//
+// "also need/want" carries its own trap, so it is guarded by a lookahead:
+// "I also need to reschedule" / "also want it moved" / "also need my
+// appointment changed" are asks about the EXISTING booking, and reading them as
+// an additional visit re-creates the very double-booking this vocabulary exists
+// to prevent. The lookahead covers both continuations — "to <move-verb>" and
+// "<it/that/my/…> … <moved/changed/…>" — within the clause. `book`/`schedule`
+// need no guard: what they add is by construction a new visit.
 const ADDITIONAL_VISIT =
-	/\b(?:another|a second|an additional|a separate|one more|an extra)\s+(?:appointment|visit|booking|job)\b|\balso\s+(?:book|schedule|need|want)\b|\bin addition\b|\bkeep\s+both\b|\bboth\s+(?:appointments|visits|bookings)\b/;
+	/\b(?:another|a second|an additional|a separate|one more|an extra)\s+(?:appointment|visit|booking|job)\b|\balso\s+(?:book|schedule)\b|\balso\s+(?:need|want)\b(?!\s+(?:to\s+|(?:it|that|this|them|my|our|the)\b[^.?!;]*?)(?:re-?schedul|re-?book|chang|mov|shift|postpon|cancel|push|bump|adjust))|\bin addition\b|\bkeep\s+both\b|\bboth\s+(?:appointments|visits|bookings)\b/;
 
 /**
  * Whether the message asks for an appointment IN ADDITION to one the contact

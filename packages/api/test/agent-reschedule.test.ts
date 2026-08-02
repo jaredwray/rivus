@@ -253,6 +253,23 @@ describe('reschedule — a pick while booked moves the appointment, never double
 		expect(jobs.map((job) => job.startAt)).toContain('2026-07-06T10:00:00.000Z');
 	});
 
+	it('reads "also need to reschedule" as a move, never as an additional visit', async () => {
+		const harness = await setup();
+		app = harness.app;
+		const jobId = await harness.book({ startAt: BOOKED_AT });
+		await harness.inbound('Can I get someone out to look at my water heater?');
+
+		// "also need" must not authorize a second booking when what follows it is
+		// the reschedule itself — that reading re-creates the reported bug.
+		const result = await harness.inbound('I also need to reschedule — can you do Monday at 10am?');
+
+		expect(result.outcome).toBe('reschedule');
+		const jobs = await harness.customerJobs();
+		expect(jobs).toHaveLength(1);
+		expect(jobs[0]?.id).toBe(jobId);
+		expect(jobs[0]?.startAt).toBe('2026-07-06T10:00:00.000Z');
+	});
+
 	it('books exactly as before for a customer with nothing on the calendar', async () => {
 		const harness = await setup();
 		app = harness.app;
