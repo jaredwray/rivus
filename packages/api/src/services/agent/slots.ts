@@ -1,4 +1,4 @@
-import type { AgentSlot, IsoDateString } from '@rivus/core';
+import type { AgentSlot, IsoDateString, JobId } from '@rivus/core';
 
 /**
  * Pure availability math for the scheduling agent: which appointment windows
@@ -31,6 +31,13 @@ export const BOOKING_HORIZON_DAYS = 60;
 export interface BusyInterval {
 	startAt: IsoDateString;
 	durationMinutes: number;
+	/**
+	 * The job occupying the window, when the loader knows it. Lets a move's
+	 * conflict check exclude the window the job being moved is vacating — by id,
+	 * never by value: excluding by value would also drop a co-located second job
+	 * (two techs, same hour) and silently double-book. Ignored by the slot math.
+	 */
+	jobId?: JobId;
 }
 
 /** A wall-clock reading of an instant in some time zone. */
@@ -358,6 +365,26 @@ export function formatDayLabel(
 }
 
 /**
+ * "1:00 PM" — the time half of a slot label on its own, for copy that names two
+ * times on the same day ("from 1:00 PM to 4:00 PM") without repeating the date.
+ */
+export function formatTimeLabel(startAt: IsoDateString, timeZone: string): string {
+	return new Intl.DateTimeFormat('en-US', {
+		timeZone,
+		hour: 'numeric',
+		minute: '2-digit',
+		hour12: true,
+	}).format(new Date(startAt));
+}
+
+/** Whether two instants fall on the same local calendar day in a zone. */
+export function isSameZonedDay(a: IsoDateString, b: IsoDateString, timeZone: string): boolean {
+	const left = zonedParts(new Date(a), timeZone);
+	const right = zonedParts(new Date(b), timeZone);
+	return left.year === right.year && left.month === right.month && left.day === right.day;
+}
+
+/**
  * "Tuesday, July 7 at 9:00 AM" — how a slot reads in the account's zone. When
  * `currentYear` is given and the slot falls in a different year, the year is
  * spelled out ("Monday, January 4, 2027 at 9:00 AM") so a booking that crosses
@@ -376,11 +403,5 @@ export function formatSlotLabel(
 		day: 'numeric',
 		...(currentYear !== undefined && slotYear !== currentYear ? { year: 'numeric' } : {}),
 	}).format(new Date(startAt));
-	const time = new Intl.DateTimeFormat('en-US', {
-		timeZone,
-		hour: 'numeric',
-		minute: '2-digit',
-		hour12: true,
-	}).format(new Date(startAt));
-	return `${day} at ${time}`;
+	return `${day} at ${formatTimeLabel(startAt, timeZone)}`;
 }

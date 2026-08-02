@@ -2,6 +2,22 @@
 
 **Status: Planned — not started.**
 
+> **Interim guard shipped (2026-08-02), ahead of this plan.** A reported
+> transcript hit §1.2(a)'s harm through the offer path: a booked customer asked
+> to change their time, was answered with a generic numbered offer, picked "2",
+> and the agent booked a **second** job while the first stood. Until this plan
+> lands, `schedulingCapability` now converts a `book` decision on a thread with
+> a standing offer into a **move of the customer's one live upcoming job**
+> (`reschedule` / `reschedule_unavailable` / `reschedule_held` decision kinds,
+> `moveJob` side effect with rollback, `BusyInterval.jobId`) — same row,
+> calendar total unchanged, both windows named in the reply. An explicit
+> additional-visit ask (`namesAdditionalVisit`) still books a second job; more
+> than one upcoming job hands the move to a human. Direct proposals on a
+> `booked`-state thread (no standing offer) are untouched and remain this
+> plan's to claim, as is all reschedule vocabulary. See
+> `agent-reschedule.test.ts` for the pinned behavior; the decision kinds and
+> `moveJob` shape follow §4.3/§4.5 so the full capability inherits them.
+
 A customer books through the Rivus agent and then writes back "can you reschedule that to 4pm
 instead?". Today that message produces a generic list of three openings and leaves the original
 appointment standing on the calendar. This plan adds a first-class **reschedule** capability: one

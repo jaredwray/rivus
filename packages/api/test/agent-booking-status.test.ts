@@ -274,16 +274,19 @@ describe('booking status — answering what the customer already has', () => {
 		expect(result.outcome).toBe('booking_status');
 		expect(harness.lastReply()).toContain('The times I offered are still open:');
 		// Same slots, same order — the numbers the contact was given still mean the
-		// same windows, and a "2" back still books the second one.
+		// same windows, and a "2" back still resolves to the second one. With an
+		// appointment already on the calendar that pick MOVES it (the full flow is
+		// pinned in agent-reschedule.test.ts) — it must never book a second visit.
 		expect((await harness.thread()).offeredSlots).toEqual(slots);
-		const booked = await harness.inbound('2');
-		expect(booked.outcome).toBe('book');
-		const { jobs } = await harness.repos.jobs.list({
+		const moved = await harness.inbound('2');
+		expect(moved.outcome).toBe('reschedule');
+		const { jobs, total } = await harness.repos.jobs.list({
 			accountId: harness.accountId,
 			page: 1,
 			pageSize: 50,
 		});
-		expect(jobs.some((job) => job.startAt === slots[1]?.startAt)).toBe(true);
+		expect(total).toBe(1);
+		expect(jobs[0]?.startAt).toBe(slots[1]?.startAt);
 	});
 
 	it('leaves a thread that booked through the agent exactly as it was', async () => {

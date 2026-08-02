@@ -1,9 +1,14 @@
-import type { Account, Conversation, ConversationChannel, JobId, UserId } from '@rivus/core';
+import type { Account, Conversation, ConversationChannel, Job, JobId, UserId } from '@rivus/core';
 import type { FastifyBaseLogger } from 'fastify';
 import { ConflictError } from '../../repositories/errors';
 import type { AppDeps } from '../../types';
 import { DELIVERY_FAILED_REASON } from '../inbox';
-import type { AgentCapability, OrchestratorDeps, TurnContext } from './capabilities';
+import {
+	type AgentCapability,
+	type OrchestratorDeps,
+	RetryDeliveryError,
+	type TurnContext,
+} from './capabilities';
 import type { ChannelAdapter, InboundAgentMessage, OutboundContext } from './channel';
 import { buildCustomerSignupUrl } from './signup';
 import { safeTimeZone } from './slots';
@@ -150,11 +155,24 @@ export async function handleInboundAgentMessage(options: {
 
 	// Execute declared side effects before delivering, so a delivery failure can
 	// roll them back (an unconfirmed booking would otherwise block the redelivery).
-	let bookedJobId = '';
+	let createdJobId = '';
 	if (result.sideEffects?.bookJob) {
 		const { note: _note, ...jobInput } = result.sideEffects.bookJob;
 		const job = await jobs.create(account.id, jobInput);
-		bookedJobId = job.id;
+		createdJobId = job.id;
+	}
+	// A move follows the same pre-delivery contract as the create above. A null
+	// update means the team deleted the job mid-turn: nothing has been sent or
+	// recorded yet, so fail the delivery and let the provider redeliver.
+	const moveJob = result.sideEffects?.moveJob;
+	let movedJob: Job | null = null;
+	if (moveJob) {
+		movedJob = await jobs.update(account.id, moveJob.jobId, { startAt: moveJob.startAt });
+		if (!movedJob) {
+			throw new RetryDeliveryError(
+				'The appointment being moved no longer exists; the delivery will be retried.',
+			);
+		}
 	}
 
 	const outboundCtx: OutboundContext = {
@@ -168,11 +186,27 @@ export async function handleInboundAgentMessage(options: {
 	try {
 		transcriptLine = await adapter.deliver(result.response, outboundCtx);
 	} catch (error) {
-		// The reply never reached the customer, so a just-created booking must not
-		// stand: undo it and let the error surface (5xx → the provider redelivers,
-		// and the thread state hasn't advanced, so the retry reprocesses cleanly).
-		if (bookedJobId !== '') {
-			await jobs.delete(account.id, bookedJobId as JobId).catch(() => false);
+		// The reply never reached the customer, so the calendar must not keep a
+		// change they were never told about: undo the create, restore the move, and
+		// let the error surface (5xx → the provider redelivers, and the thread
+		// state hasn't advanced, so the retry reprocesses cleanly).
+		if (createdJobId !== '') {
+			await jobs.delete(account.id, createdJobId as JobId).catch(() => false);
+		}
+		if (moveJob && movedJob) {
+			const restored = await jobs
+				.update(account.id, moveJob.jobId, { startAt: moveJob.previousStartAt })
+				.catch(() => null);
+			if (!restored) {
+				options.logger.error(
+					{
+						jobId: moveJob.jobId,
+						startAt: moveJob.startAt,
+						previousStartAt: moveJob.previousStartAt,
+					},
+					'agent reschedule left in place: restoring the job after a failed delivery did not succeed',
+				);
+			}
 		}
 		throw error;
 	}
@@ -185,6 +219,23 @@ export async function handleInboundAgentMessage(options: {
 		await conversations.addMessage(account.id, thread.conversationId, {
 			author: 'note',
 			body: result.sideEffects.bookJob.note,
+		});
+	}
+	if (moveJob && movedJob) {
+		await conversations.addMessage(account.id, thread.conversationId, {
+			author: 'note',
+			body: moveJob.note,
+		});
+		// The same notice a dispatcher's reschedule raises, so an agent move is
+		// indistinguishable downstream. Agent-booked jobs carry no assignee, so for
+		// those this is a no-op today — it starts working for team-entered jobs
+		// (which usually have one) and the day agent bookings get auto-assigned.
+		await deps.notifier.jobUpdated({
+			accountId: account.id,
+			actorId: '' as UserId,
+			before: { ...movedJob, startAt: moveJob.previousStartAt },
+			job: movedJob,
+			logger: options.logger,
 		});
 	}
 	// Handing the turn to a human happens only once the customer has actually been
@@ -207,6 +258,10 @@ export async function handleInboundAgentMessage(options: {
 		}
 	}
 
+	// A created job and a moved one both become the thread's booking — the move
+	// case also links a thread that never knew about a job the team entered
+	// elsewhere, so later turns can read it as this thread's appointment.
+	const bookedJobId = createdJobId !== '' ? createdJobId : (moveJob?.jobId ?? '');
 	await agentThreads.update(account.id, thread.id, {
 		...result.threadPatch,
 		...(bookedJobId !== '' ? { bookedJobId } : {}),

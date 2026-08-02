@@ -32,6 +32,8 @@ function context(overrides: Partial<AgentReplyContext> = {}): AgentReplyContext 
 
 const SLOT_A = { startAt: '2026-07-07T16:00:00.000Z', durationMinutes: 60 };
 const SLOT_B = { startAt: '2026-07-09T21:00:00.000Z', durationMinutes: 60 };
+/** Later the same Pacific day as SLOT_A (2:00 PM), for the same-day move wording. */
+const SLOT_A_LATER = { startAt: '2026-07-07T21:00:00.000Z', durationMinutes: 60 };
 const SLOTS = [SLOT_A, SLOT_B];
 const ANSWER = "We're open Monday through Friday, 9:00 AM to 5:00 PM.";
 /** Midnight Pacific on Tuesday July 7th — a whole day, as the engine names one. */
@@ -72,6 +74,24 @@ const DECISIONS: AgentDecision[] = [
 	{ kind: 'booking_status', bookings: BOOKINGS, more: true, offeredSlots: SLOTS },
 	{ kind: 'no_booking', alternatives: SLOTS },
 	{ kind: 'no_booking', alternatives: [] },
+	{ kind: 'reschedule', title: 'Water heater install', from: SLOT_A, to: SLOT_B },
+	{ kind: 'reschedule', title: 'Water heater install', from: SLOT_A, to: SLOT_A_LATER },
+	{
+		kind: 'reschedule_unavailable',
+		reason: 'taken',
+		from: SLOT_A,
+		requestedStartAt: SLOT_B.startAt,
+		alternatives: SLOTS,
+	},
+	{
+		kind: 'reschedule_unavailable',
+		reason: 'outside_hours',
+		from: SLOT_A,
+		requestedStartAt: SLOT_B.startAt,
+		alternatives: [],
+	},
+	{ kind: 'reschedule_held', slot: SLOT_A },
+	{ kind: 'reschedule_held', slot: null },
 ];
 
 describe('composeAgentResponse', () => {
@@ -425,6 +445,105 @@ describe('composeAgentResponse — nothing on the calendar for them', () => {
 		expect(text).toContain(
 			"Reply with a few times that work for you and I'll check them against the calendar.",
 		);
+	});
+});
+
+describe('composeAgentResponse — moving the appointment they already have', () => {
+	const move = {
+		kind: 'reschedule' as const,
+		title: 'Water heater install',
+		from: SLOT_A,
+		to: SLOT_B,
+	};
+
+	it('names both the old window and the new one on a move across days', () => {
+		const text = renderResponseText(composeAgentResponse(move, context()));
+		expect(text).toContain("You're moved!");
+		expect(text).toContain(
+			'Water heater install — now Thursday, July 9 at 2:00 PM (60 minutes), instead of Tuesday, July 7 at 9:00 AM.',
+		);
+		expect(text).toContain('Need to change or cancel?');
+	});
+
+	it('names the date once on a same-day move', () => {
+		const text = renderResponseText(composeAgentResponse({ ...move, to: SLOT_A_LATER }, context()));
+		expect(text).toContain(
+			'Water heater install — now Tuesday, July 7 at 2:00 PM (60 minutes), instead of 9:00 AM.',
+		);
+	});
+
+	it('speaks a move naturally on voice, dates spelled out across days', () => {
+		const sameDay = renderResponseText(
+			composeAgentResponse({ ...move, to: SLOT_A_LATER }, context({ medium: 'voice' })),
+		);
+		expect(sameDay).toContain(
+			"I've moved your Water heater install on Tuesday, July 7 from 9:00 AM to 2:00 PM.",
+		);
+		expect(sameDay).toContain("It's still 60 minutes.");
+		const crossDay = renderResponseText(composeAgentResponse(move, context({ medium: 'voice' })));
+		expect(crossDay).toContain(
+			"I've moved your Water heater install from Tuesday, July 7 at 9:00 AM to Thursday, July 9 at 2:00 PM.",
+		);
+	});
+
+	it('says in its own sentence that a declined move left the booking standing', () => {
+		const text = renderResponseText(
+			composeAgentResponse(
+				{
+					kind: 'reschedule_unavailable',
+					reason: 'taken',
+					from: SLOT_A,
+					requestedStartAt: SLOT_B.startAt,
+					alternatives: SLOTS,
+				},
+				context(),
+			),
+		);
+		expect(text).toContain('Unfortunately Thursday, July 9 at 2:00 PM was just taken.');
+		expect(text).toContain(
+			"I haven't moved anything — you're still booked for Tuesday, July 7 at 9:00 AM.",
+		);
+		expect(text).toContain('Here is what I could move you to instead:');
+		expect(text).toContain("Reply with the number you'd like to move to");
+	});
+
+	it('keeps the still-booked sentence when there is nothing to offer instead', () => {
+		const text = renderResponseText(
+			composeAgentResponse(
+				{
+					kind: 'reschedule_unavailable',
+					reason: 'outside_hours',
+					from: SLOT_A,
+					requestedStartAt: SLOT_B.startAt,
+					alternatives: [],
+				},
+				context(),
+			),
+		);
+		expect(text).toContain("you're still booked for Tuesday, July 7 at 9:00 AM.");
+		expect(text).toContain("couldn't find another opening");
+		expect(text).not.toContain('move you to instead');
+	});
+
+	it('hands a move to a human without moving anything, and says so', () => {
+		const known = renderResponseText(
+			composeAgentResponse({ kind: 'reschedule_held', slot: SLOT_A }, context()),
+		);
+		expect(known).toContain('get it moved');
+		expect(known).toContain(
+			"Nothing has changed in the meantime: you're still booked for Tuesday, July 7 at 9:00 AM.",
+		);
+		const ambiguous = renderResponseText(
+			composeAgentResponse({ kind: 'reschedule_held', slot: null }, context()),
+		);
+		expect(ambiguous).toContain('more than one appointment');
+		expect(ambiguous).toContain('Nothing on your calendar has changed.');
+		// A caller is still on the line — "call back" would be the wrong instruction.
+		const spoken = renderResponseText(
+			composeAgentResponse({ kind: 'reschedule_held', slot: null }, context({ medium: 'voice' })),
+		);
+		expect(spoken).toContain('just tell me.');
+		expect(spoken).not.toContain('call back');
 	});
 });
 

@@ -1,6 +1,12 @@
 import type { AgentSlot } from '@rivus/core';
 import type { AgentDecision } from './engine';
-import { formatDayLabel, formatSlotLabel, zonedParts } from './slots';
+import {
+	formatDayLabel,
+	formatSlotLabel,
+	formatTimeLabel,
+	isSameZonedDay,
+	zonedParts,
+} from './slots';
 
 /**
  * The channel-neutral vocabulary every agent reply is composed from. These are
@@ -159,6 +165,28 @@ function pickAnOption(medium: ChannelMedium): string {
 }
 
 /**
+ * How a contact picks a window to MOVE to — {@link pickAnOption}'s move
+ * sibling. "Move to" instead of "works for you": these numbers relocate the
+ * booking they already have, and the trail must say so.
+ */
+function pickAMove(medium: ChannelMedium): string {
+	return medium === 'voice'
+		? "Say the number you'd like to move to, or suggest another time."
+		: "Reply with the number you'd like to move to, or suggest another time.";
+}
+
+/**
+ * The closing line after the agent has just booked or moved an appointment —
+ * from here the team, not the agent, owns changes. Shared by `book` and
+ * `reschedule` so the two confirmations can't drift.
+ */
+function teamHandlesChangesTrail(context: AgentReplyContext): string {
+	return context.medium === 'voice'
+		? `Need to change or cancel? Just call back and the ${context.accountName} team will take care of it.`
+		: `Need to change or cancel? Reply here and the ${context.accountName} team will take care of it.`;
+}
+
+/**
  * The self-signup invitation for a contact the CRM doesn't know. Shared by
  * `send_signup_link` and by an answer to an unregistered contact, so the two
  * can't drift into telling the same person two different things.
@@ -220,10 +248,81 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 					`${context.jobTitle} — ${formatSlotLabel(decision.slot.startAt, context.timeZone, year)} (${decision.slot.durationMinutes} minutes).`,
 				],
 				...none,
+				trail: [teamHandlesChangesTrail(context)],
+			};
+		case 'reschedule': {
+			// The old window is named in every variant (a misread ask must be visible
+			// in the confirmation itself), but on a same-day move only its time — the
+			// date is already on the new window, and repeating it reads (and on voice,
+			// sounds) like two appointments.
+			const sameDay = isSameZonedDay(decision.from.startAt, decision.to.startAt, context.timeZone);
+			const fromLabel = sameDay
+				? formatTimeLabel(decision.from.startAt, context.timeZone)
+				: formatSlotLabel(decision.from.startAt, context.timeZone, year);
+			if (context.medium === 'voice') {
+				return {
+					lead: [
+						sameDay
+							? `I've moved your ${decision.title} on ${formatDayLabel(decision.to.startAt, context.timeZone, year)} from ${fromLabel} to ${formatTimeLabel(decision.to.startAt, context.timeZone)}.`
+							: `I've moved your ${decision.title} from ${fromLabel} to ${formatSlotLabel(decision.to.startAt, context.timeZone, year)}.`,
+						`It's still ${decision.to.durationMinutes} minutes.`,
+					],
+					...none,
+					trail: [teamHandlesChangesTrail(context)],
+				};
+			}
+			return {
+				lead: [
+					"You're moved!",
+					`${decision.title} — now ${formatSlotLabel(decision.to.startAt, context.timeZone, year)} (${decision.to.durationMinutes} minutes), instead of ${fromLabel}.`,
+				],
+				...none,
+				trail: [teamHandlesChangesTrail(context)],
+			};
+		}
+		case 'reschedule_unavailable': {
+			// `reasonSentence` verbatim, then — in its own sentence, before anything
+			// else — that nothing moved: a declined move that doesn't say the booking
+			// still stands leaves the customer unsure whether they now have no time
+			// at all.
+			const requestedLabel = formatSlotLabel(decision.requestedStartAt, context.timeZone, year);
+			const stillBooked = `I haven't moved anything — you're still booked for ${formatSlotLabel(decision.from.startAt, context.timeZone, year)}.`;
+			if (decision.alternatives.length === 0) {
+				return {
+					lead: [reasonSentence(decision.reason, requestedLabel), stillBooked],
+					...none,
+					trail: [noAlternativesTrail(context)],
+				};
+			}
+			return {
+				lead: [
+					reasonSentence(decision.reason, requestedLabel),
+					stillBooked,
+					'Here is what I could move you to instead:',
+				],
+				slots: decision.alternatives,
+				action: null,
+				trail: [pickAMove(context.medium)],
+			};
+		}
+		case 'reschedule_held':
+			return {
+				lead: decision.slot
+					? [
+							`I've passed this one to the ${context.accountName} team — they'll follow up shortly to get it moved.`,
+							`Nothing has changed in the meantime: you're still booked for ${formatSlotLabel(decision.slot.startAt, context.timeZone, year)}.`,
+						]
+					: [
+							`It looks like you have more than one appointment with us, so I've passed this to the ${context.accountName} team rather than move the wrong one. They'll follow up shortly.`,
+							'Nothing on your calendar has changed.',
+						],
+				...none,
 				trail: [
+					// A caller is still on the line, so "call back" (what `replyHere`
+					// says for voice) would be the wrong instruction here.
 					context.medium === 'voice'
-						? `Need to change or cancel? Just call back and the ${context.accountName} team will take care of it.`
-						: `Need to change or cancel? Reply here and the ${context.accountName} team will take care of it.`,
+						? "If there's anything else in the meantime, just tell me."
+						: `If there's anything else in the meantime, just ${replyHere(context.medium)}.`,
 				],
 			};
 		case 'confirm_existing':

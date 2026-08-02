@@ -599,6 +599,27 @@ export function isAcknowledgement(text: string): boolean {
 	return sawAcknowledgement;
 }
 
+// The additional-visit phrases are anchored on a booking noun on purpose:
+// "another appointment" asks for a second visit, while "another time" /
+// "another slot" / "another option" ask for DIFFERENT windows for the same one,
+// so a bare "another" (or "second", which every numbered pick is full of) is
+// never enough. The verb forms require the verb: "can you also book…" adds a
+// visit, "option 2 also works" picks one.
+const ADDITIONAL_VISIT =
+	/\b(?:another|a second|an additional|a separate|one more|an extra)\s+(?:appointment|visit|booking|job)\b|\balso\s+(?:book|schedule|need|want)\b|\bin addition\b|\bkeep\s+both\b|\bboth\s+(?:appointments|visits|bookings)\b/;
+
+/**
+ * Whether the message asks for an appointment IN ADDITION to one the contact
+ * already has ("can I book another appointment for the upstairs bath?"), rather
+ * than a change to it. For a contact who already holds a booking, this is what
+ * authorizes the turn to create a second job instead of moving the one they
+ * have — the same reading either way would silently do the wrong thing for the
+ * other intent.
+ */
+export function namesAdditionalVisit(text: string): boolean {
+	return ADDITIONAL_VISIT.test(text.toLowerCase().replace(/\s+/g, ' '));
+}
+
 /**
  * The specific instant a reply proposes ("July 10 at 2pm", "10 July 14:00",
  * "2026-07-10 14:00", "Tuesday at 2pm", "tomorrow at 9"), as a UTC ISO

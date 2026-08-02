@@ -1,11 +1,14 @@
 import type {
 	Account,
 	AccountId,
+	AgentSlot,
 	AgentThread,
 	ConversationChannel,
 	CreateJobInput,
 	Customer,
 	CustomerId,
+	IsoDateString,
+	Job,
 	JobId,
 	JobStatus,
 } from '@rivus/core';
@@ -18,6 +21,7 @@ import { type AgentDecision, type BookedAppointment, decideScheduling } from './
 import {
 	isAcknowledgement,
 	matchOfferedSlot,
+	namesAdditionalVisit,
 	parseProposedTime,
 	parseRequestedDay,
 	parseSlotChoice,
@@ -26,9 +30,13 @@ import { isInformationalQuestion, namesBookingStatusQuestion } from './question'
 import { type AgentReplyContext, type AgentResponse, composeAgentResponse } from './response';
 import {
 	BOOKING_HORIZON_DAYS,
+	BUSINESS_END_HOUR,
+	BUSINESS_START_HOUR,
 	type BusyInterval,
 	computeOpenSlots,
 	formatSlotLabel,
+	isSlotFree,
+	isWithinBusinessHours,
 	zonedParts,
 } from './slots';
 
@@ -89,6 +97,26 @@ export interface CapabilitySideEffects {
 		note: string;
 	};
 	/**
+	 * Move an existing job BEFORE delivering, exactly like `bookJob` — and
+	 * restored to `previousStartAt` if the send fails, since a customer who never
+	 * received the confirmation must not find their appointment moved.
+	 *
+	 * `startAt` is an ABSOLUTE instant, never a delta, so a replayed turn
+	 * re-applies the same window instead of shifting the job twice — the only
+	 * protection voice has, where `externalMessageId` is '' and dedupe is off.
+	 *
+	 * The patch deliberately carries ONLY `startAt`: a move never changes the
+	 * duration, and re-asserting it would clobber a duration a human edited
+	 * between the capability's read and this write.
+	 */
+	moveJob?: {
+		jobId: JobId;
+		startAt: IsoDateString;
+		previousStartAt: IsoDateString;
+		/** The inline transcript note recorded after a successful send. */
+		note: string;
+	};
+	/**
 	 * Flag the thread's conversation for human review and alert the team. Run
 	 * AFTER a successful send, unlike `bookJob`: nothing about the reply depends
 	 * on the flag existing first, and flagging afterwards means a failed delivery
@@ -142,7 +170,7 @@ export async function loadBusyIntervals(
 		const { jobs: batch, total } = await jobs.list({ accountId, page, pageSize: 100, from, to });
 		for (const job of batch) {
 			if (job.status !== 'canceled') {
-				busy.push({ startAt: job.startAt, durationMinutes: job.durationMinutes });
+				busy.push({ startAt: job.startAt, durationMinutes: job.durationMinutes, jobId: job.id });
 			}
 		}
 		if (page * 100 >= total || batch.length === 0) {
@@ -208,6 +236,23 @@ export function threadPatchFor(decision: AgentDecision): UpdateAgentThread {
 			return decision.alternatives.length > 0
 				? { state: 'slots_offered', offeredSlots: decision.alternatives }
 				: { state: 'new', offeredSlots: [] };
+		case 'reschedule':
+			// The SAME booking, at its new time: booked again, offer retired. The
+			// orchestrator points `bookedJobId` at the moved job, which also links a
+			// thread that never knew about a booking the team entered elsewhere.
+			return { state: 'booked', offeredSlots: [] };
+		case 'reschedule_unavailable':
+			// The move windows were numbered in the reply, so they become the
+			// standing offer (at the job's own duration) — a "2" back must move to
+			// the second one, through this same gate, at that duration.
+			return decision.alternatives.length > 0
+				? { state: 'slots_offered', offeredSlots: decision.alternatives }
+				: { state: 'new', offeredSlots: [] };
+		case 'reschedule_held':
+			// A human owns the move now; the booking and the thread stay put. A
+			// repeated pick re-holds, and the needs_attention guard keeps the team
+			// from being paged twice.
+			return {};
 	}
 }
 
@@ -236,6 +281,142 @@ function channelLabel(channel: ConversationChannel): string {
 		case 'phone':
 			return 'phone';
 	}
+}
+
+/** The job statuses a move may touch: not yet under way, not called off. */
+const MOVABLE_JOB_STATUSES: ReadonlySet<JobStatus> = new Set(['scheduled', 'confirmed']);
+
+/**
+ * What a `book` decision becomes when the contact already has an appointment —
+ * the guard behind the reported transcript. A booked customer asks to change
+ * their time; the agent (having no reschedule vocabulary yet) answers with a
+ * numbered offer; they pick "2" — and the pick books a SECOND job while the
+ * first stands, behind a confident "You're booked!". Nobody is told the
+ * calendar now holds two visits.
+ *
+ * So when a pick or proposal from a thread with a standing offer would book,
+ * and the customer has exactly one live upcoming job, that job is MOVED to the
+ * chosen window instead: same row, `jobs.list` total unchanged, and the reply
+ * names both the old window and the new one so a misread ask is visible in the
+ * message that made it. The job is read from the CRM, not the thread, for the
+ * same reason `loadUpcomingBookings` is — the booking may have been made over
+ * the phone or entered by the team, and this thread never saw it.
+ *
+ * Returns null to book exactly as before: the customer has nothing upcoming.
+ * With more than one upcoming job (which one?), or one the agent must not
+ * touch (already under way, or too long for its own re-validation), nothing
+ * moves and the team is paged. The caller has already checked
+ * {@link namesAdditionalVisit} — a customer who asked for a visit IN ADDITION
+ * to the one they have books a second one exactly as before. The full
+ * reschedule capability (RESCHEDULE_PLAN.md) supersedes this guard by claiming
+ * the ask itself; until then this is what keeps a booked thread from gaining a
+ * second job by accident.
+ */
+async function resolveMoveOnBook(options: {
+	deps: OrchestratorDeps;
+	accountId: AccountId;
+	customerId: CustomerId;
+	/** The picked window, validated by the engine as a fresh 60-minute slot. */
+	slot: AgentSlot;
+	busy: BusyInterval[];
+	timeZone: string;
+	now: Date;
+}): Promise<{ decision: AgentDecision; sideEffects?: CapabilitySideEffects } | null> {
+	const { deps, accountId, customerId, slot, busy, timeZone, now } = options;
+	const upcoming = await collectUpcomingJobs(deps.jobs, accountId, customerId, now, 2);
+	if (upcoming.jobs.length === 0) {
+		return null;
+	}
+	if (upcoming.jobs.length > 1) {
+		return {
+			decision: { kind: 'reschedule_held', slot: null },
+			sideEffects: {
+				flagForReview: {
+					pendingReply: '',
+					flagReason: 'This customer picked a new time but has more than one upcoming job.',
+				},
+			},
+		};
+	}
+	const [job] = upcoming.jobs;
+	if (!job) {
+		return null;
+	}
+	const from: AgentSlot = { startAt: job.startAt, durationMinutes: job.durationMinutes };
+	// A visit already under way (or one in a state the agent doesn't manage) is
+	// not the agent's to move — and neither is a job the slot generators could
+	// never place, which would otherwise be "declined" with a guaranteed-empty
+	// list of alternatives.
+	if (!MOVABLE_JOB_STATUSES.has(job.status) || Date.parse(job.startAt) <= now.getTime()) {
+		return {
+			decision: { kind: 'reschedule_held', slot: from },
+			sideEffects: {
+				flagForReview: {
+					pendingReply: '',
+					flagReason:
+						"This customer picked a new time, but their appointment isn't the agent's to move.",
+				},
+			},
+		};
+	}
+	if (BUSINESS_START_HOUR * 60 + job.durationMinutes > BUSINESS_END_HOUR * 60) {
+		return {
+			decision: { kind: 'reschedule_held', slot: from },
+			sideEffects: {
+				flagForReview: {
+					pendingReply: '',
+					flagReason: 'A job longer than the business day cannot be moved by the agent.',
+				},
+			},
+		};
+	}
+	// Re-validate the picked window as THIS job's window — its real duration, not
+	// the standard slot length — excluding the interval the job itself occupies:
+	// the window being vacated must not block the move, but only by id (§ the
+	// comment on {@link BusyInterval.jobId}). Offers below keep the full busy
+	// list, so the customer's own current window is never advertised back to them.
+	const target: AgentSlot = { startAt: slot.startAt, durationMinutes: job.durationMinutes };
+	const moveAlternatives = () =>
+		computeOpenSlots({ now, timeZone, busy, durationMinutes: job.durationMinutes });
+	if (!isWithinBusinessHours(target.startAt, target.durationMinutes, timeZone)) {
+		return {
+			decision: {
+				kind: 'reschedule_unavailable',
+				reason: 'outside_hours',
+				from,
+				requestedStartAt: target.startAt,
+				alternatives: moveAlternatives(),
+			},
+		};
+	}
+	if (
+		!isSlotFree(
+			target,
+			busy.filter((interval) => interval.jobId !== job.id),
+		)
+	) {
+		return {
+			decision: {
+				kind: 'reschedule_unavailable',
+				reason: 'taken',
+				from,
+				requestedStartAt: target.startAt,
+				alternatives: moveAlternatives(),
+			},
+		};
+	}
+	const year = zonedParts(now, timeZone).year;
+	return {
+		decision: { kind: 'reschedule', title: job.title, from, to: target },
+		sideEffects: {
+			moveJob: {
+				jobId: job.id,
+				startAt: target.startAt,
+				previousStartAt: job.startAt,
+				note: `Rivus moved ${job.title} from ${formatSlotLabel(job.startAt, timeZone, year)} to ${formatSlotLabel(target.startAt, timeZone, year)}.`,
+			},
+		},
+	};
 }
 
 /**
@@ -267,7 +448,7 @@ export const schedulingCapability: AgentCapability = {
 			}
 		}
 
-		const decision = decideScheduling({
+		let decision = decideScheduling({
 			customerKnown: customer !== null,
 			text: message.text,
 			offeredSlots: thread.state === 'slots_offered' ? thread.offeredSlots : [],
@@ -276,6 +457,32 @@ export const schedulingCapability: AgentCapability = {
 			now,
 			bookedSlot,
 		});
+		let sideEffects: CapabilitySideEffects | undefined;
+
+		// A pick (or a suggested time) while an offer stands, from a contact who
+		// already has an appointment, is a reschedule — not a second booking. The
+		// one reading that still books a second job is a message that asks for an
+		// additional visit in so many words.
+		if (
+			decision.kind === 'book' &&
+			customer &&
+			thread.state === 'slots_offered' &&
+			!namesAdditionalVisit(message.text)
+		) {
+			const move = await resolveMoveOnBook({
+				deps,
+				accountId: account.id,
+				customerId: customer.id,
+				slot: decision.slot,
+				busy,
+				timeZone,
+				now,
+			});
+			if (move) {
+				decision = move.decision;
+				sideEffects = move.sideEffects;
+			}
+		}
 
 		const response = composeAgentResponse(decision, replyContextFor(ctx));
 
@@ -284,6 +491,9 @@ export const schedulingCapability: AgentCapability = {
 			outcome: decision.kind,
 			threadPatch: threadPatchFor(decision),
 		};
+		if (sideEffects) {
+			outcome.sideEffects = sideEffects;
+		}
 
 		if (decision.kind === 'book' && customer) {
 			const year = zonedParts(now, timeZone).year;
@@ -434,8 +644,39 @@ export async function loadUpcomingBookings(
 	customerId: CustomerId,
 	now: Date,
 ): Promise<{ bookings: BookedAppointment[]; more: boolean }> {
+	const upcoming = await collectUpcomingJobs(
+		jobs,
+		accountId,
+		customerId,
+		now,
+		MAX_REPORTED_BOOKINGS,
+	);
+	return {
+		bookings: upcoming.jobs.map((job) => ({
+			title: job.title,
+			startAt: job.startAt,
+			durationMinutes: job.durationMinutes,
+		})),
+		more: upcoming.more,
+	};
+}
+
+/**
+ * The pager behind {@link loadUpcomingBookings} and the reschedule guard's
+ * "does this customer already have an appointment?" read, so the two can never
+ * disagree about what counts as one. Collects the customer's live upcoming jobs
+ * soonest-first up to `limit`; `more` reports whether the cap hid any (one job
+ * past it is all it takes to know, so the rest of the calendar is never read).
+ */
+async function collectUpcomingJobs(
+	jobs: OrchestratorDeps['jobs'],
+	accountId: AccountId,
+	customerId: CustomerId,
+	now: Date,
+	limit: number,
+): Promise<{ jobs: Job[]; more: boolean }> {
 	const from = new Date(now.getTime() - BUSY_LOOKBACK_MINUTES * 60_000).toISOString();
-	const bookings: BookedAppointment[] = [];
+	const upcoming: Job[] = [];
 	for (let page = 1; ; page += 1) {
 		const { jobs: batch, total } = await jobs.list({
 			accountId,
@@ -451,16 +692,10 @@ export async function loadUpcomingBookings(
 			if (Date.parse(job.startAt) + job.durationMinutes * 60_000 <= now.getTime()) {
 				continue;
 			}
-			if (bookings.length === MAX_REPORTED_BOOKINGS) {
-				// One past the cap is all it takes to know the list is short — the rest
-				// of the calendar doesn't have to be read to say "and more after that".
-				return { bookings, more: true };
+			if (upcoming.length === limit) {
+				return { jobs: upcoming, more: true };
 			}
-			bookings.push({
-				title: job.title,
-				startAt: job.startAt,
-				durationMinutes: job.durationMinutes,
-			});
+			upcoming.push(job);
 		}
 		if (page * BOOKING_PAGE_SIZE >= total || batch.length === 0) {
 			break;
@@ -471,7 +706,7 @@ export async function loadUpcomingBookings(
 			);
 		}
 	}
-	return { bookings, more: false };
+	return { jobs: upcoming, more: false };
 }
 
 /**
