@@ -238,6 +238,75 @@ describe('POST /v1/channels/email/inbound — end to end', () => {
 		await app.close();
 	});
 
+	it('answers a question about one named day with that day’s openings only', async () => {
+		// The reported bug: "What availability do you have next Thursday?" came back
+		// with the generic next three openings and never looked at Thursday.
+		const { app, repos } = await buildTestAppWithRepos();
+		const owner = await signupOwner(app);
+		const slug = owner.account.slug;
+		const accountId = owner.account.id as AccountId;
+		await repos.customers.create(accountId, {
+			name: 'Dana Fox',
+			email: SENDER,
+			phone: '',
+			address: '',
+			lifetimeValue: 0,
+			balance: 0,
+			notes: '',
+		});
+
+		// A deterministic weekday 2–4 days out (account timezone is UTC by default):
+		// far enough out to clear the 24-hour notice window, and near enough that the
+		// weekday's next occurrence is that very date.
+		const target = new Date();
+		target.setUTCDate(target.getUTCDate() + 2);
+		while (target.getUTCDay() === 0 || target.getUTCDay() === 6) {
+			target.setUTCDate(target.getUTCDate() + 1);
+		}
+		const weekday = new Intl.DateTimeFormat('en-US', {
+			timeZone: 'UTC',
+			weekday: 'long',
+		}).format(target);
+		const dayLabel = new Intl.DateTimeFormat('en-US', {
+			timeZone: 'UTC',
+			weekday: 'long',
+			month: 'long',
+			day: 'numeric',
+			// The agent spells out a year that isn't the current one (a target across
+			// New Year), so the expected label has to as well.
+			...(target.getUTCFullYear() !== new Date().getUTCFullYear() ? { year: 'numeric' } : {}),
+		}).format(target);
+
+		const response = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: inboundPayload(slug, {
+				text: `Hi! What availability do you have next ${weekday}?`,
+			}),
+		});
+		expect(response.json()).toEqual({ handled: true, outcome: 'offer_slots' });
+
+		// The reply names the day and every option it lists falls on it.
+		const reply = agentMailbox(app).agentEmails.at(-1);
+		expect(reply?.text).toContain(`has open on ${dayLabel}:`);
+		expect(reply?.text).not.toContain('next openings');
+		const options = (reply?.text ?? '').split('\n').filter((line) => /^\d+\. /.test(line));
+		expect(options.length).toBeGreaterThan(0);
+		for (const option of options) {
+			expect(option).toContain(dayLabel);
+		}
+
+		// …and the standing offer the thread keeps is that day, so a "2" back books
+		// one of the windows the customer was actually shown.
+		const thread = await repos.agentThreads.findByContact(accountId, 'email', SENDER);
+		expect(thread?.offeredSlots).toHaveLength(options.length);
+		for (const slot of thread?.offeredSlots ?? []) {
+			expect(slot.startAt.slice(0, 10)).toBe(target.toISOString().slice(0, 10));
+		}
+
+		await app.close();
+	});
+
 	it('reassures a booked customer who just confirms, instead of re-offering slots', async () => {
 		const { app, repos } = await buildTestAppWithRepos();
 		const owner = await signupOwner(app);

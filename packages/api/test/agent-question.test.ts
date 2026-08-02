@@ -63,6 +63,10 @@ describe('isInformationalQuestion — scheduling turns are never questions', () 
 		'does that time work for you?',
 		'how about Wednesday?',
 		'what else is open?',
+		// A day with no clock time on it is the engine's to answer — it looks at
+		// that day rather than re-listing the generic next openings.
+		'do you have anything thursday?',
+		'What availability do you have next Thursday?',
 		// The phrasing that opens most real threads — a booking request wearing a
 		// question mark.
 		'Can I get someone out to fix my water heater next week?',

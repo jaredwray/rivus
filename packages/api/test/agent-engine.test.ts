@@ -2,7 +2,7 @@ import type { AgentSlot } from '@rivus/core';
 import { describe, expect, it } from 'vitest';
 import { decideScheduling } from '../src/services/agent/engine';
 import type { BusyInterval } from '../src/services/agent/slots';
-import { SEARCH_WINDOW_DAYS } from '../src/services/agent/slots';
+import { SEARCH_WINDOW_DAYS, zonedParts } from '../src/services/agent/slots';
 
 const PACIFIC = 'America/Los_Angeles';
 // Wednesday July 1st 2026, 10:00 AM PDT.
@@ -222,6 +222,148 @@ describe('decideScheduling — review-driven guards', () => {
 		if (decision.kind === 'propose_unavailable') {
 			expect(decision.reason).toBe('taken');
 		}
+	});
+});
+
+describe('decideScheduling — the customer asks about a whole day', () => {
+	// Sunday August 2nd 2026, 5:34 PM Pacific — the reported bug's clock, where
+	// "next Thursday" came back as Monday/Tuesday/Wednesday openings.
+	const SUNDAY = new Date('2026-08-03T00:34:00.000Z');
+	// Thursday August 6th, midnight to midnight Pacific.
+	const THURSDAY_START = '2026-08-06T07:00:00.000Z';
+
+	function decideOn(text: string, overrides: { busy?: BusyInterval[] } = {}) {
+		return decide({ text, now: SUNDAY, busy: overrides.busy ?? [] });
+	}
+
+	it('answers a day-only ask with that day, not with the next three openings', () => {
+		const decision = decideOn('Hi! What availability do you have next Thursday?');
+		expect(decision.kind).toBe('offer_slots');
+		if (decision.kind === 'offer_slots') {
+			expect(decision.requestedDayStartAt).toBe(THURSDAY_START);
+			expect(decision.slots.length).toBeGreaterThan(0);
+			// Every option is on the Thursday they asked about.
+			for (const slot of decision.slots) {
+				const parts = zonedParts(new Date(slot.startAt), PACIFIC);
+				expect({ year: parts.year, month: parts.month, day: parts.day }).toEqual({
+					year: 2026,
+					month: 8,
+					day: 6,
+				});
+			}
+		}
+	});
+
+	it('says the day is full and offers what is open when it is booked solid', () => {
+		const busy = [{ startAt: THURSDAY_START, durationMinutes: 24 * 60 }];
+		const decision = decideOn('anything thursday?', { busy });
+		expect(decision.kind).toBe('day_unavailable');
+		if (decision.kind === 'day_unavailable') {
+			expect(decision.reason).toBe('full');
+			expect(decision.requestedDayStartAt).toBe(THURSDAY_START);
+			expect(decision.alternatives.length).toBeGreaterThan(0);
+			// The alternatives are on other days — that Thursday has nothing left.
+			for (const slot of decision.alternatives) {
+				expect(zonedParts(new Date(slot.startAt), PACIFIC).day).not.toBe(6);
+			}
+		}
+	});
+
+	it('says the business is closed for a weekend day', () => {
+		const decision = decideOn('saturday?');
+		expect(decision.kind).toBe('day_unavailable');
+		if (decision.kind === 'day_unavailable') {
+			expect(decision.reason).toBe('closed');
+			// Saturday August 8th, midnight Pacific.
+			expect(decision.requestedDayStartAt).toBe('2026-08-08T07:00:00.000Z');
+			expect(decision.alternatives.length).toBeGreaterThan(0);
+		}
+	});
+
+	it('declines a day that has already passed', () => {
+		const decision = decideOn('2026-06-01');
+		expect(decision.kind).toBe('day_unavailable');
+		if (decision.kind === 'day_unavailable') {
+			expect(decision.reason).toBe('in_past');
+		}
+	});
+
+	it('declines a day beyond the booking horizon instead of answering blind', () => {
+		// December is well past the 60-day horizon the busy calendar was loaded for.
+		const decision = decideOn('2026-12-01');
+		expect(decision.kind).toBe('day_unavailable');
+		if (decision.kind === 'day_unavailable') {
+			expect(decision.reason).toBe('beyond_horizon');
+		}
+	});
+
+	it('treats a day-only mention of the booked day as a confirmation', () => {
+		// Thursday August 6th at 9:00 AM Pacific is already on the calendar.
+		const bookedSlot = { startAt: '2026-08-06T16:00:00.000Z', durationMinutes: 60 };
+		const decision = decideScheduling({
+			customerKnown: true,
+			text: 'see you thursday!',
+			offeredSlots: [],
+			busy: [bookedSlot],
+			timeZone: PACIFIC,
+			now: SUNDAY,
+			bookedSlot,
+		});
+		expect(decision).toEqual({ kind: 'confirm_existing', slot: bookedSlot });
+	});
+
+	it('still opens a fresh round when a booked contact asks about another day', () => {
+		const bookedSlot = { startAt: '2026-08-06T16:00:00.000Z', durationMinutes: 60 };
+		const decision = decideScheduling({
+			customerKnown: true,
+			text: 'what about friday?',
+			offeredSlots: [],
+			busy: [bookedSlot],
+			timeZone: PACIFIC,
+			now: SUNDAY,
+			bookedSlot,
+		});
+		expect(decision.kind).toBe('offer_slots');
+		if (decision.kind === 'offer_slots') {
+			// Friday August 7th, midnight Pacific.
+			expect(decision.requestedDayStartAt).toBe('2026-08-07T07:00:00.000Z');
+		}
+	});
+
+	it('scopes to the asked-about day when the offered slots are all on other days', () => {
+		// Monday, Tuesday and Wednesday are on the table; the reply names Thursday,
+		// so no offer matches and the day branch answers about Thursday instead.
+		const offeredSlots: AgentSlot[] = [
+			{ startAt: '2026-08-03T16:00:00.000Z', durationMinutes: 60 },
+			{ startAt: '2026-08-04T16:00:00.000Z', durationMinutes: 60 },
+			{ startAt: '2026-08-05T16:00:00.000Z', durationMinutes: 60 },
+		];
+		const decision = decide({ text: 'Thursday?', offeredSlots, now: SUNDAY });
+		expect(decision.kind).toBe('offer_slots');
+		if (decision.kind === 'offer_slots') {
+			expect(decision.requestedDayStartAt).toBe(THURSDAY_START);
+		}
+	});
+
+	it('leaves the older, sharper readings of a reply untouched', () => {
+		// A pick of an offered day still books it — picking beats day-scoping.
+		const offeredSlots: AgentSlot[] = [
+			{ startAt: '2026-08-04T16:00:00.000Z', durationMinutes: 60 },
+		];
+		expect(decide({ text: 'Tuesday works!', offeredSlots, now: SUNDAY })).toEqual({
+			kind: 'book',
+			slot: offeredSlots[0],
+		});
+		// A day WITH a time is still a proposal, and books without a day-scoped offer.
+		const proposal = decideOn('thursday at 2pm');
+		expect(proposal).toEqual({
+			kind: 'book',
+			slot: { startAt: '2026-08-06T21:00:00.000Z', durationMinutes: 60 },
+		});
+		// A stranger is still gated on signup, whatever day they name.
+		expect(decide({ customerKnown: false, text: 'next thursday?', now: SUNDAY })).toEqual({
+			kind: 'send_signup_link',
+		});
 	});
 });
 

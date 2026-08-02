@@ -470,6 +470,8 @@ describe('knowledge capability — turns it must never claim', () => {
 		['a slot named by its day', 'thursday works', OFFERED_THREAD],
 		['a proposed time', 'tuesday at 2pm', {}],
 		['a proposed time in a question', 'can you do tomorrow at 9?', {}],
+		['a day named with no time on it', 'do you have anything thursday?', {}],
+		['a day-only availability question', 'what availability do you have next thursday?', {}],
 		['an availability question', 'when can you come out?', {}],
 		['an availability question with a question mark', 'what times do you have available?', {}],
 		['an acknowledgement on a booked thread', 'thanks, see you then!', BOOKED_THREAD],
@@ -500,5 +502,22 @@ describe('knowledge capability — turns it must never claim', () => {
 		);
 		expect((await harness.inbound('1')).outcome).toBe('book');
 		expect((await harness.inbound('thanks, see you then!')).outcome).toBe('confirm_existing');
+	});
+
+	it('answers a day-only question about the day it names, over the same channel', async () => {
+		const harness = await setup();
+		app = harness.app;
+		await publishHoursFaq(harness);
+
+		// NOW is Wednesday July 1st (UTC account), so "thursday" is the 2nd.
+		const result = await harness.inbound('do you have anything thursday?');
+		expect(result.outcome).toBe('offer_slots');
+		const reply = harness.lastReply();
+		expect(reply).toContain('has open on Thursday, July 2:');
+		const offered = (await harness.thread()).offeredSlots;
+		expect(offered.length).toBeGreaterThan(0);
+		for (const slot of offered) {
+			expect(slot.startAt.slice(0, 10)).toBe('2026-07-02');
+		}
 	});
 });

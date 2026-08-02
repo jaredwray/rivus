@@ -28,9 +28,17 @@ const SLOT_B = { startAt: '2026-07-09T21:00:00.000Z', durationMinutes: 60 };
 const SLOTS = [SLOT_A, SLOT_B];
 const ANSWER = "We're open Monday through Friday, 9:00 AM to 5:00 PM.";
 
+/** Midnight Pacific on Tuesday July 7th — a whole day, as the engine names one. */
+const DAY_START = '2026-07-07T07:00:00.000Z';
+
 const DECISIONS: AgentDecision[] = [
 	{ kind: 'send_signup_link' },
 	{ kind: 'offer_slots', slots: SLOTS },
+	// The same offer worded about one named day, and the two shapes of a day that
+	// has nothing to give: with alternatives to fall back on, and without.
+	{ kind: 'offer_slots', slots: SLOTS, requestedDayStartAt: DAY_START },
+	{ kind: 'day_unavailable', reason: 'full', requestedDayStartAt: DAY_START, alternatives: SLOTS },
+	{ kind: 'day_unavailable', reason: 'closed', requestedDayStartAt: DAY_START, alternatives: [] },
 	{ kind: 'book', slot: SLOT_A },
 	{ kind: 'confirm_existing', slot: SLOT_A },
 	{
@@ -58,8 +66,11 @@ const DECISIONS: AgentDecision[] = [
 
 /** A distinct test name per decision, so the variants of one kind don't collide. */
 function decisionLabel(decision: AgentDecision): string {
-	if (decision.kind === 'propose_unavailable') {
+	if (decision.kind === 'propose_unavailable' || decision.kind === 'day_unavailable') {
 		return `${decision.kind}:${decision.reason}:${decision.alternatives.length ? 'alt' : 'none'}`;
+	}
+	if (decision.kind === 'offer_slots') {
+		return decision.requestedDayStartAt ? `${decision.kind}:day` : decision.kind;
 	}
 	if (decision.kind === 'answer_question') {
 		const offer = decision.offeredSlots.length > 0 ? 'offer' : 'none';

@@ -1,6 +1,6 @@
 import type { AgentSlot } from '@rivus/core';
 import type { AgentDecision } from './engine';
-import { formatSlotLabel, zonedParts } from './slots';
+import { formatDayLabel, formatSlotLabel, zonedParts } from './slots';
 
 /**
  * The channel-neutral vocabulary every agent reply is composed from. These are
@@ -91,6 +91,36 @@ function reasonSentence(
 	}
 }
 
+function dayReasonSentence(
+	reason: 'full' | 'closed' | 'in_past' | 'beyond_horizon',
+	dayLabel: string,
+): string {
+	switch (reason) {
+		case 'full':
+			// Deliberately not "fully booked": `full` also covers a day whose remaining
+			// hours are inside the notice window ("tomorrow?" asked at 5 PM), where
+			// there is nothing to offer even though the calendar is empty.
+			return `Unfortunately I don't have anything open on ${dayLabel}.`;
+		case 'closed':
+			return `Unfortunately we're closed on ${dayLabel} — our hours are Monday to Friday, 9:00 AM to 5:00 PM.`;
+		case 'in_past':
+			return `Unfortunately ${dayLabel} has already passed.`;
+		case 'beyond_horizon':
+			return `Unfortunately ${dayLabel} is further out than I can schedule right now — I can book up to about two months ahead.`;
+	}
+}
+
+/**
+ * The closing line when the agent has to decline and has nothing to put in the
+ * declined time's place. Shared by every "that doesn't work" decision so they
+ * can't drift into asking the same contact for times two different ways.
+ */
+function noAlternativesTrail(context: AgentReplyContext): string {
+	return context.medium === 'voice'
+		? `I couldn't find another opening in the next two weeks. Tell me a few times that work for you and I'll check them against ${context.accountName}'s calendar.`
+		: `I couldn't find another opening in the next two weeks — reply with a few times that work for you and I'll check them against ${context.accountName}'s calendar.`;
+}
+
 /** How a contact is told to reply, worded for the medium. */
 function replyHere(medium: ChannelMedium): string {
 	if (medium === 'email') {
@@ -150,7 +180,13 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 			};
 		case 'offer_slots':
 			return {
-				lead: [`Great to hear from you! Here are ${context.accountName}'s next openings:`],
+				// An offer that answers a day-specific ask names that day, so the reply
+				// visibly belongs to the question instead of reading as a generic list.
+				lead: [
+					decision.requestedDayStartAt
+						? `Here is what ${context.accountName} has open on ${formatDayLabel(decision.requestedDayStartAt, context.timeZone, year)}:`
+						: `Great to hear from you! Here are ${context.accountName}'s next openings:`,
+				],
 				slots: decision.slots,
 				action: null,
 				trail: [pickAnOption(context.medium)],
@@ -186,15 +222,29 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 				return {
 					lead: [reasonSentence(decision.reason, requestedLabel)],
 					...none,
-					trail: [
-						context.medium === 'voice'
-							? `I couldn't find another opening in the next two weeks. Tell me a few times that work for you and I'll check them against ${context.accountName}'s calendar.`
-							: `I couldn't find another opening in the next two weeks — reply with a few times that work for you and I'll check them against ${context.accountName}'s calendar.`,
-					],
+					trail: [noAlternativesTrail(context)],
 				};
 			}
 			return {
 				lead: [reasonSentence(decision.reason, requestedLabel), 'Here is what we do have open:'],
+				slots: decision.alternatives,
+				action: null,
+				trail: [pickAnOption(context.medium)],
+			};
+		}
+		case 'day_unavailable': {
+			// Same shape as `propose_unavailable`, one day wide: say why the day they
+			// named is out, then move straight to what they can actually have.
+			const dayLabel = formatDayLabel(decision.requestedDayStartAt, context.timeZone, year);
+			if (decision.alternatives.length === 0) {
+				return {
+					lead: [dayReasonSentence(decision.reason, dayLabel)],
+					...none,
+					trail: [noAlternativesTrail(context)],
+				};
+			}
+			return {
+				lead: [dayReasonSentence(decision.reason, dayLabel), 'Here is what we do have open:'],
 				slots: decision.alternatives,
 				action: null,
 				trail: [pickAnOption(context.medium)],
