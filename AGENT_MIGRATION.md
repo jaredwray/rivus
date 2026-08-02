@@ -177,9 +177,10 @@ app: RivusChat.tsx → existing API client (src/api/client.ts, + chat method)
    `record-deployment` `needs` lists. The deployed Workers freeze but keep
    serving old native builds during the adoption window. **Caveat:** the sync
    step was what kept the agent's `JWT_SECRET` matching the API's — if the
-   secret rotates during the window, push it to the frozen Workers by hand
-   (`wrangler secret put JWT_SECRET --env <environment>` in `packages/agent`),
-   or authenticated chat on old builds silently degrades to signed-out replies.
+   secret rotates while those Workers are still up, it must be pushed to them
+   by hand or authenticated chat on old builds silently degrades to signed-out
+   replies. Step 3 removed the `packages/agent` working copy that command used
+   to run from; see the recovery path there.
 2. After native adoption is confirmed (or immediately, if chat has only ever
    shipped on web): delete the `rivus-agent` / `rivus-agent-dev` Workers, the
    Durable Object namespace (only vestigial state inside), and the
@@ -193,9 +194,27 @@ app: RivusChat.tsx → existing API client (src/api/client.ts, + chat method)
    notes added in this phase (README package table, DEPLOYMENT's frozen-Worker
    paragraph, AGENTS.md layout + package notes, the deploy-workflow comments,
    and the `@rivus/agent` mentions left in `routes/chat.ts` and
-   `services/chat/actions.ts`). The Workers can no longer be redeployed from
-   this repo — recover the sources from git history if step 2 is ever rolled
-   back.
+   `services/chat/actions.ts`).
+
+   **Recovering the package** — needed only while the frozen Workers are still
+   up (i.e. until step 2 lands), and only to push a rotated `JWT_SECRET` to them
+   or to redeploy one in an emergency. The sources are one command away in git
+   history — the restore lands them untracked, so the deletion stays intact on
+   whatever branch you are on:
+
+   ```bash
+   # The parent of the commit that deleted it is the last tree containing it.
+   git restore --source="$(git rev-list -1 HEAD -- packages/agent)^" -- packages/agent
+   pnpm install   # repopulates the agent's deps, which left the lockfile in step 3
+   pnpm --filter @rivus/agent exec wrangler secret put JWT_SECRET --env <environment>
+   git clean -fd packages/agent   # discard when done (the files are untracked)
+   ```
+
+   `pnpm install` will rewrite `pnpm-lock.yaml` to re-add the agent's importer —
+   check that out again along with the directory when you are finished.
+
+   Once step 2 retires the Workers and domains, this path stops mattering
+   entirely and the history is the only copy anyone needs.
 
 ### Phase 4 (optional, when wanted) — Grow the agent with the AI SDK
 
