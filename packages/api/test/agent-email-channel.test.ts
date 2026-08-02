@@ -390,6 +390,31 @@ describe('agent email templates', () => {
 		expect(text).toContain('1. Tuesday, July 7 at 9:00 AM');
 	});
 
+	it('names the day an offer answers, and lists only that day', () => {
+		const decision: AgentDecision = {
+			kind: 'offer_slots',
+			slots,
+			// Midnight Pacific on Tuesday July 7th.
+			requestedDayStartAt: '2026-07-07T07:00:00.000Z',
+		};
+		const text = renderAgentReplyText(decision, context);
+		expect(text).toContain('has open on Tuesday, July 7:');
+		expect(text).toContain('1. Tuesday, July 7 at 9:00 AM');
+	});
+
+	it('explains a day with nothing on it and offers the alternatives', () => {
+		const decision: AgentDecision = {
+			kind: 'day_unavailable',
+			reason: 'closed',
+			// Midnight Pacific on Saturday July 4th.
+			requestedDayStartAt: '2026-07-04T07:00:00.000Z',
+			alternatives: slots,
+		};
+		const text = renderAgentReplyText(decision, context);
+		expect(text).toContain("we're closed on Saturday, July 4");
+		expect(text).toContain('1. Tuesday, July 7 at 9:00 AM');
+	});
+
 	it('explains out-of-hours and in-the-past asks distinctly', () => {
 		const outside: AgentDecision = {
 			kind: 'propose_unavailable',

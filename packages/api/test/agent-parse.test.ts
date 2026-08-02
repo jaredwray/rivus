@@ -4,6 +4,7 @@ import {
 	isAcknowledgement,
 	matchOfferedSlot,
 	parseProposedTime,
+	parseRequestedDay,
 	parseSlotChoice,
 } from '../src/services/agent/parse';
 
@@ -287,6 +288,117 @@ describe('isAcknowledgement', () => {
 		'how about the 10th',
 	])('does not read numeric scheduling content in %j as an acknowledgement', (text) => {
 		expect(isAcknowledgement(text)).toBe(false);
+	});
+});
+
+describe('parseRequestedDay', () => {
+	// NOW is Wednesday July 1st, so the next Thursday is the 2nd and the next
+	// Wednesday is a whole week out.
+	it.each([
+		['next thursday', { year: 2026, month: 7, day: 2 }],
+		['Thursday?', { year: 2026, month: 7, day: 2 }],
+		['do you have anything on thursday', { year: 2026, month: 7, day: 2 }],
+		['thurs', { year: 2026, month: 7, day: 2 }],
+		['this friday', { year: 2026, month: 7, day: 3 }],
+		['what about monday', { year: 2026, month: 7, day: 6 }],
+	])('reads the day named in %j', (text, expected) => {
+		expect(parseRequestedDay(text, CTX)).toEqual(expected);
+	});
+
+	it('reads a weekday asked on that same weekday as next week', () => {
+		// It is Wednesday: "wednesday?" is about the 8th, not about today. Someone
+		// who means today has the word "today".
+		expect(parseRequestedDay('wednesday?', CTX)).toEqual({ year: 2026, month: 7, day: 8 });
+		// Asked ON a Thursday, "thursday" is the following Thursday.
+		const thursday = { timeZone: PACIFIC, now: new Date('2026-07-02T17:00:00.000Z') };
+		expect(parseRequestedDay('thursday', thursday)).toEqual({ year: 2026, month: 7, day: 9 });
+	});
+
+	it('reads today and tomorrow as bare words', () => {
+		expect(parseRequestedDay('anything today?', CTX)).toEqual({ year: 2026, month: 7, day: 1 });
+		expect(parseRequestedDay('how about tomorrow', CTX)).toEqual({ year: 2026, month: 7, day: 2 });
+	});
+
+	it.each([
+		'august 6',
+		'aug 6th',
+		'6 august',
+		'6th of august',
+		'august 6, 2026',
+		'2026-08-06',
+	])('reads the calendar date in %j', (text) => {
+		expect(parseRequestedDay(text, CTX)).toEqual({ year: 2026, month: 8, day: 6 });
+	});
+
+	it('keeps an explicit year, and rolls a year-less date that already passed', () => {
+		expect(parseRequestedDay('august 6, 2027', CTX)).toEqual({ year: 2027, month: 8, day: 6 });
+		// It is July 2026, so "January 5" points at next January.
+		expect(parseRequestedDay('january 5', CTX)).toEqual({ year: 2027, month: 1, day: 5 });
+		// An explicit past date is kept in the past — the engine declines it with a reason.
+		expect(parseRequestedDay('2026-06-01', CTX)).toEqual({ year: 2026, month: 6, day: 1 });
+	});
+
+	it('rejects impossible dates', () => {
+		expect(parseRequestedDay('february 30', CTX)).toBeNull();
+		expect(parseRequestedDay('2026-13-01', CTX)).toBeNull();
+	});
+
+	it('rolls a passed leap day to the next leap year, not to a phantom February 29', () => {
+		// Asked in mid-2028 (a leap year, its February 29 already behind), the next
+		// real February 29 is 2032 — a blind year + 1 would hand the engine
+		// 2029-02-29, which Date.UTC quietly normalizes to March 1.
+		const afterLeapDay = { timeZone: PACIFIC, now: new Date('2028-06-01T17:00:00.000Z') };
+		expect(parseRequestedDay('february 29', afterLeapDay)).toEqual({
+			year: 2032,
+			month: 2,
+			day: 29,
+		});
+	});
+
+	it('never reads a negated day as a request', () => {
+		expect(parseRequestedDay("thursday doesn't work", CTX)).toBeNull();
+		expect(parseRequestedDay("I can't do thursday", CTX)).toBeNull();
+		// …but the alternative half of the same message still names a day.
+		expect(parseRequestedDay("thursday doesn't work, how about friday?", CTX)).toEqual({
+			year: 2026,
+			month: 7,
+			day: 3,
+		});
+	});
+
+	it.each([
+		'can you fit me in?',
+		'what are your hours?',
+		'are you open 24/7?',
+		'my sink is leaking',
+		'',
+	])('reads no day in %j', (text) => {
+		expect(parseRequestedDay(text, CTX)).toBeNull();
+	});
+
+	it('never reads a day out of an ordinary word that merely starts like one', () => {
+		// This parser reads EVERY turn, not just replies to an offer, so the loose
+		// `sat[a-z]*` shorthand the offer matchers use would answer these with
+		// appointment times for Friday, Sunday and Saturday.
+		expect(parseRequestedDay('my friend recommended you', CTX)).toBeNull();
+		expect(parseRequestedDay('I need a heater for my sunroom', CTX)).toBeNull();
+		expect(parseRequestedDay('the satellite dish is loose', CTX)).toBeNull();
+		expect(parseRequestedDay('my fridge is leaking', CTX)).toBeNull();
+	});
+
+	it('respects the account timezone when resolving a relative day', () => {
+		// 2026-07-02T04:00Z is still July 1st in Pacific but already the 2nd in UTC.
+		const late = new Date('2026-07-02T04:00:00.000Z');
+		expect(parseRequestedDay('tomorrow', { timeZone: PACIFIC, now: late })).toEqual({
+			year: 2026,
+			month: 7,
+			day: 2,
+		});
+		expect(parseRequestedDay('tomorrow', { timeZone: 'UTC', now: late })).toEqual({
+			year: 2026,
+			month: 7,
+			day: 3,
+		});
 	});
 });
 

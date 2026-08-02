@@ -3,6 +3,8 @@ import {
 	BUSINESS_END_HOUR,
 	BUSINESS_START_HOUR,
 	computeOpenSlots,
+	computeOpenSlotsOnDay,
+	formatDayLabel,
 	formatSlotLabel,
 	instantForZonedTime,
 	isSlotFree,
@@ -228,6 +230,107 @@ describe('computeOpenSlots', () => {
 
 	it('returns nothing for a non-positive count', () => {
 		expect(computeOpenSlots({ now: NOW, timeZone: PACIFIC, busy: [], count: 0 })).toEqual([]);
+	});
+});
+
+describe('computeOpenSlotsOnDay', () => {
+	// Tuesday July 7th 2026 — a weekday well past the 24-hour notice window.
+	const TUESDAY = { year: 2026, month: 7, day: 7 };
+
+	function onDay(overrides: Partial<Parameters<typeof computeOpenSlotsOnDay>[0]> = {}) {
+		return computeOpenSlotsOnDay({
+			now: NOW,
+			timeZone: PACIFIC,
+			busy: [],
+			day: TUESDAY,
+			...overrides,
+		});
+	}
+
+	it('spreads its offers across a free day instead of taking the first hours', () => {
+		// 9 AM, 1 PM and 4 PM Pacific — a morning/midday/afternoon choice, not 9-10-11.
+		expect(onDay().map((slot) => slot.startAt)).toEqual([
+			'2026-07-07T16:00:00.000Z',
+			'2026-07-07T20:00:00.000Z',
+			'2026-07-07T23:00:00.000Z',
+		]);
+		expect(onDay()).toHaveLength(OFFER_COUNT);
+	});
+
+	it('stays on the requested day, inside business hours', () => {
+		for (const slot of onDay()) {
+			const parts = zonedParts(new Date(slot.startAt), PACIFIC);
+			expect({ year: parts.year, month: parts.month, day: parts.day }).toEqual(TUESDAY);
+			expect(parts.hour).toBeGreaterThanOrEqual(BUSINESS_START_HOUR);
+			expect(parts.hour + 1).toBeLessThanOrEqual(BUSINESS_END_HOUR);
+		}
+	});
+
+	it('skips hours that collide with a booking', () => {
+		const busy = [
+			// 9 AM and 1 PM Pacific — the two hours the free-day spread would pick.
+			{ startAt: '2026-07-07T16:00:00.000Z', durationMinutes: 60 },
+			{ startAt: '2026-07-07T20:00:00.000Z', durationMinutes: 60 },
+		];
+		const slots = onDay({ busy });
+		expect(slots).toHaveLength(OFFER_COUNT);
+		expect(slots.map((slot) => slot.startAt)).not.toContain('2026-07-07T16:00:00.000Z');
+		expect(slots.map((slot) => slot.startAt)).not.toContain('2026-07-07T20:00:00.000Z');
+	});
+
+	it('returns nothing when the day is booked solid', () => {
+		// Midnight to midnight, Pacific.
+		const busy = [{ startAt: '2026-07-07T07:00:00.000Z', durationMinutes: 24 * 60 }];
+		expect(onDay({ busy })).toEqual([]);
+	});
+
+	it('returns nothing when the whole day sits inside the notice window', () => {
+		// Asked at 5 PM Pacific on the 1st about tomorrow: 24 hours' notice lands
+		// after the last bookable hour on the 2nd.
+		const lateAfternoon = new Date('2026-07-02T00:00:00.000Z');
+		expect(onDay({ now: lateAfternoon, day: { year: 2026, month: 7, day: 2 } })).toEqual([]);
+	});
+
+	it('returns nothing for a weekend day', () => {
+		// Saturday July 4th and Sunday the 5th.
+		expect(onDay({ day: { year: 2026, month: 7, day: 4 } })).toEqual([]);
+		expect(onDay({ day: { year: 2026, month: 7, day: 5 } })).toEqual([]);
+	});
+
+	it('returns everything that is open when fewer slots exist than asked for', () => {
+		// Only the 9 AM and 10 AM hours survive.
+		const busy = [{ startAt: '2026-07-07T18:00:00.000Z', durationMinutes: 8 * 60 }];
+		expect(onDay({ busy }).map((slot) => slot.startAt)).toEqual([
+			'2026-07-07T16:00:00.000Z',
+			'2026-07-07T17:00:00.000Z',
+		]);
+	});
+
+	it('takes the earliest opening for a single-slot count, and nothing for a zero count', () => {
+		expect(onDay({ count: 1 }).map((slot) => slot.startAt)).toEqual(['2026-07-07T16:00:00.000Z']);
+		expect(onDay({ count: 0 })).toEqual([]);
+	});
+
+	it('honors a custom duration when deciding what still fits before close', () => {
+		const slots = onDay({ durationMinutes: 120, count: 8 });
+		// A two-hour job can start at 9 through 3 PM (ending at 5), so seven starts.
+		expect(slots).toHaveLength(7);
+		expect(slots.at(-1)?.startAt).toBe('2026-07-07T22:00:00.000Z');
+	});
+});
+
+describe('formatDayLabel', () => {
+	it('reads as a human day in the account zone', () => {
+		// Midnight Pacific on Tuesday July 7th.
+		expect(formatDayLabel('2026-07-07T07:00:00.000Z', PACIFIC)).toBe('Tuesday, July 7');
+	});
+
+	it('adds the year only when the day falls outside the current year', () => {
+		// Midnight Pacific on Friday January 1st 2027.
+		expect(formatDayLabel('2027-01-01T08:00:00.000Z', PACIFIC, 2026)).toBe(
+			'Friday, January 1, 2027',
+		);
+		expect(formatDayLabel('2026-07-07T07:00:00.000Z', PACIFIC, 2026)).toBe('Tuesday, July 7');
 	});
 });
 

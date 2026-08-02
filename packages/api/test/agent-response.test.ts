@@ -34,11 +34,16 @@ const SLOT_A = { startAt: '2026-07-07T16:00:00.000Z', durationMinutes: 60 };
 const SLOT_B = { startAt: '2026-07-09T21:00:00.000Z', durationMinutes: 60 };
 const SLOTS = [SLOT_A, SLOT_B];
 const ANSWER = "We're open Monday through Friday, 9:00 AM to 5:00 PM.";
+/** Midnight Pacific on Tuesday July 7th — a whole day, as the engine names one. */
+const DAY_START = '2026-07-07T07:00:00.000Z';
 
 /** Every decision kind, with a representative payload. */
 const DECISIONS: AgentDecision[] = [
 	{ kind: 'send_signup_link' },
 	{ kind: 'offer_slots', slots: SLOTS },
+	{ kind: 'offer_slots', slots: SLOTS, requestedDayStartAt: DAY_START },
+	{ kind: 'day_unavailable', reason: 'full', requestedDayStartAt: DAY_START, alternatives: SLOTS },
+	{ kind: 'day_unavailable', reason: 'closed', requestedDayStartAt: DAY_START, alternatives: [] },
 	{ kind: 'book', slot: SLOT_A },
 	{ kind: 'confirm_existing', slot: SLOT_A },
 	{
@@ -197,6 +202,81 @@ describe('composeAgentResponse — answering a question', () => {
 			composeAgentResponse(answer({ customerKnown: false }), context({ medium: 'voice' })),
 		);
 		expect(voice).toContain("web link I'll read out");
+	});
+});
+
+describe('composeAgentResponse — an ask about one day', () => {
+	it('names the day an offer answers, instead of calling it "next openings"', () => {
+		const text = renderResponseText(
+			composeAgentResponse(
+				{ kind: 'offer_slots', slots: SLOTS, requestedDayStartAt: DAY_START },
+				context(),
+			),
+		);
+		expect(text).toContain('Here is what Cascade Plumbing has open on Tuesday, July 7:');
+		expect(text).not.toContain('next openings');
+		expect(text).toContain('1. Tuesday, July 7 at 9:00 AM');
+		expect(text).toContain('Reply with the number that works for you');
+	});
+
+	it('still leads with the generic openings when no day was asked about', () => {
+		const text = renderResponseText(
+			composeAgentResponse({ kind: 'offer_slots', slots: SLOTS }, context()),
+		);
+		expect(text).toContain("Here are Cascade Plumbing's next openings:");
+		expect(text).not.toContain('has open on');
+	});
+
+	function unavailable(
+		reason: 'full' | 'closed' | 'in_past' | 'beyond_horizon',
+		overrides: { requestedDayStartAt?: string; alternatives?: typeof SLOTS } = {},
+	) {
+		return renderResponseText(
+			composeAgentResponse(
+				{
+					kind: 'day_unavailable',
+					reason,
+					requestedDayStartAt: overrides.requestedDayStartAt ?? DAY_START,
+					alternatives: overrides.alternatives ?? [],
+				},
+				context(),
+			),
+		);
+	}
+
+	it('gives each reason its own sentence about the named day', () => {
+		expect(unavailable('full')).toContain(
+			"Unfortunately I don't have anything open on Tuesday, July 7.",
+		);
+		// Midnight Pacific on Saturday July 4th.
+		expect(unavailable('closed', { requestedDayStartAt: '2026-07-04T07:00:00.000Z' })).toContain(
+			"Unfortunately we're closed on Saturday, July 4 — our hours are Monday to Friday, 9:00 AM to 5:00 PM.",
+		);
+		expect(unavailable('in_past')).toContain('Unfortunately Tuesday, July 7 has already passed.');
+		expect(unavailable('beyond_horizon')).toContain(
+			'Unfortunately Tuesday, July 7 is further out than I can schedule right now — I can book up to about two months ahead.',
+		);
+	});
+
+	it('offers the alternatives it does have, numbered and pickable', () => {
+		const text = unavailable('full', { alternatives: SLOTS });
+		expect(text).toContain('Here is what we do have open:');
+		expect(text).toContain('1. Tuesday, July 7 at 9:00 AM');
+		expect(text).toContain('2. Thursday, July 9 at 2:00 PM');
+		expect(text).toContain('Reply with the number that works for you');
+	});
+
+	it('asks for times when it has no alternatives at all', () => {
+		const text = unavailable('full');
+		expect(text).not.toContain('Here is what we do have open:');
+		expect(text).toContain("I couldn't find another opening in the next two weeks");
+		expect(text).toContain("check them against Cascade Plumbing's calendar");
+	});
+
+	it('spells out the year on a day that falls outside this one', () => {
+		// Midnight Pacific on Friday January 1st 2027, asked in July 2026.
+		const text = unavailable('closed', { requestedDayStartAt: '2027-01-01T08:00:00.000Z' });
+		expect(text).toContain("we're closed on Friday, January 1, 2027");
 	});
 });
 

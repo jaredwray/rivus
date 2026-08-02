@@ -13,7 +13,13 @@ import { decideRivusReply } from '../inbox';
 import { answerFromKnowledge } from '../knowledge';
 import type { ChannelCapabilities, InboundAgentMessage } from './channel';
 import { type AgentDecision, decideScheduling } from './engine';
-import { isAcknowledgement, matchOfferedSlot, parseProposedTime, parseSlotChoice } from './parse';
+import {
+	isAcknowledgement,
+	matchOfferedSlot,
+	parseProposedTime,
+	parseRequestedDay,
+	parseSlotChoice,
+} from './parse';
 import { isInformationalQuestion } from './question';
 import { type AgentReplyContext, type AgentResponse, composeAgentResponse } from './response';
 import { BOOKING_HORIZON_DAYS, type BusyInterval, formatSlotLabel, zonedParts } from './slots';
@@ -154,6 +160,9 @@ export function threadPatchFor(decision: AgentDecision): UpdateAgentThread {
 			// The thread stays booked exactly as it was.
 			return {};
 		case 'propose_unavailable':
+		case 'day_unavailable':
+			// The alternatives were listed and numbered in the reply, so they become
+			// the standing offer — a "2" back must still resolve to the second one.
 			return decision.alternatives.length > 0
 				? { state: 'slots_offered', offeredSlots: decision.alternatives }
 				: { state: 'new', offeredSlots: [] };
@@ -297,6 +306,10 @@ export const knowledgeCapability: AgentCapability = {
 			parseSlotChoice(message.text, offered.length) !== null ||
 			matchOfferedSlot(message.text, offered, timeZone) !== null ||
 			parseProposedTime(message.text, { timeZone, now }) !== null ||
+			// A named day is scheduling's to answer even with no time on it; today
+			// `isInformationalQuestion` also refuses those, but the guard belongs here
+			// so the parsers the engine uses stay the ones that decide.
+			parseRequestedDay(message.text, { timeZone, now }) !== null ||
 			isAcknowledgement(message.text)
 		) {
 			return false;

@@ -1,13 +1,22 @@
-import type { AgentSlot } from '@rivus/core';
-import { isAcknowledgement, matchOfferedSlot, parseProposedTime, parseSlotChoice } from './parse';
+import type { AgentSlot, IsoDateString } from '@rivus/core';
+import {
+	isAcknowledgement,
+	matchOfferedSlot,
+	parseProposedTime,
+	parseRequestedDay,
+	parseSlotChoice,
+} from './parse';
 import { isPureGreeting } from './question';
 import {
 	BOOKING_HORIZON_DAYS,
 	type BusyInterval,
 	computeOpenSlots,
+	computeOpenSlotsOnDay,
+	instantForZonedTime,
 	isSlotFree,
 	isWithinBusinessHours,
 	SLOT_DURATION_MINUTES,
+	zonedParts,
 } from './slots';
 
 /**
@@ -26,8 +35,12 @@ import {
 export type AgentDecision =
 	/** The sender isn't a customer yet — invite them to add themselves, then resume. */
 	| { kind: 'send_signup_link' }
-	/** Offer these open windows and wait for a pick. */
-	| { kind: 'offer_slots'; slots: AgentSlot[] }
+	/**
+	 * Offer these open windows and wait for a pick. `requestedDayStartAt` is set
+	 * when the offer answers a day-specific ask ("what do you have Thursday?"), so
+	 * the composer can name the day instead of calling them "next openings".
+	 */
+	| { kind: 'offer_slots'; slots: AgentSlot[]; requestedDayStartAt?: IsoDateString }
 	/** The contact chose a bookable window — book it and confirm. */
 	| { kind: 'book'; slot: AgentSlot }
 	/** They named the time they're already booked for — reassure, don't re-book. */
@@ -37,6 +50,13 @@ export type AgentDecision =
 			kind: 'propose_unavailable';
 			reason: 'taken' | 'outside_hours' | 'in_past' | 'beyond_horizon';
 			requestedStartAt: string;
+			alternatives: AgentSlot[];
+	  }
+	/** The day they asked about has nothing to offer; say why and offer what is open. */
+	| {
+			kind: 'day_unavailable';
+			reason: 'full' | 'closed' | 'in_past' | 'beyond_horizon';
+			requestedDayStartAt: IsoDateString;
 			alternatives: AgentSlot[];
 	  }
 	/** Nothing is open in the search window — ask them to propose a time. */
@@ -90,6 +110,10 @@ export interface SchedulingDecisionInput {
  *   have booked over it since.
  * - A reply proposing its own time books it when it's inside business hours
  *   and free; otherwise the agent says why not and offers what *is* open.
+ * - A reply naming only a day ("what do you have Thursday?") is answered about
+ *   THAT day — the openings on it, or why it has none — instead of with the
+ *   generic next openings, which is what makes the agent look like it read the
+ *   question.
  * - Once a job is booked, a reply that merely acknowledges it ("Confirmed!",
  *   "thanks, see you then") reassures the existing booking rather than reopening
  *   scheduling — only a genuine new request starts another round.
@@ -176,6 +200,101 @@ export function decideScheduling(input: SchedulingDecisionInput): AgentDecision 
 			};
 		}
 		return { kind: 'book', slot };
+	}
+
+	// A day with no clock time on it ("next Thursday?", "anything on August
+	// 6th?") is a question about that day. Answering it with the generic next
+	// openings ignores the only thing the contact actually asked, so the day is
+	// looked at directly. This runs after the proposal branch on purpose: a
+	// complete day + time is a booking request and always wins. (A bare ordinal —
+	// "the 6th" — is deliberately NOT read as a day: with options on the table it
+	// is indistinguishable from a pick of option 6, and this parser guesses in
+	// neither direction.)
+	const requestedDay = parseRequestedDay(input.text, {
+		timeZone: input.timeZone,
+		now: input.now,
+	});
+	if (requestedDay) {
+		const dayStart = instantForZonedTime(input.timeZone, {
+			...requestedDay,
+			hour: 0,
+			minute: 0,
+		});
+		// The next local day's midnight — advanced on the (y, m, d) triple rather
+		// than by adding 24 hours, because a DST day is not 24 hours long.
+		const nextDay = new Date(
+			Date.UTC(requestedDay.year, requestedDay.month - 1, requestedDay.day + 1),
+		);
+		const dayEnd = instantForZonedTime(input.timeZone, {
+			year: nextDay.getUTCFullYear(),
+			month: nextDay.getUTCMonth() + 1,
+			day: nextDay.getUTCDate(),
+			hour: 0,
+			minute: 0,
+		});
+		// "See you Thursday!" about the Thursday already booked on this thread is a
+		// confirmation, not a new ask — the same reasoning as the proposal branch's
+		// booked-slot guard, one day wide instead of one hour.
+		if (input.bookedSlot) {
+			const booked = zonedParts(new Date(input.bookedSlot.startAt), input.timeZone);
+			if (
+				booked.year === requestedDay.year &&
+				booked.month === requestedDay.month &&
+				booked.day === requestedDay.day
+			) {
+				return { kind: 'confirm_existing', slot: input.bookedSlot };
+			}
+		}
+		if (dayEnd.getTime() <= input.now.getTime()) {
+			return {
+				kind: 'day_unavailable',
+				reason: 'in_past',
+				requestedDayStartAt: dayStart.toISOString(),
+				alternatives: openSlots(),
+			};
+		}
+		// Only the calendar inside the horizon was loaded, so a day past it is
+		// declined rather than reported open against jobs that were never fetched.
+		const horizonMs = input.now.getTime() + BOOKING_HORIZON_DAYS * 24 * 60 * 60_000;
+		if (dayStart.getTime() > horizonMs) {
+			return {
+				kind: 'day_unavailable',
+				reason: 'beyond_horizon',
+				requestedDayStartAt: dayStart.toISOString(),
+				alternatives: openSlots(),
+			};
+		}
+		const weekday = zonedParts(dayStart, input.timeZone).weekday;
+		if (weekday === 0 || weekday === 6) {
+			return {
+				kind: 'day_unavailable',
+				reason: 'closed',
+				requestedDayStartAt: dayStart.toISOString(),
+				alternatives: openSlots(),
+			};
+		}
+		// The horizon is enforced per slot, not just on the day's midnight: on the
+		// edge day the horizon can fall mid-afternoon, and an hour past it must not
+		// be offered when the same hour proposed outright would be declined.
+		const daySlots = computeOpenSlotsOnDay({
+			now: input.now,
+			timeZone: input.timeZone,
+			busy: input.busy,
+			day: requestedDay,
+		}).filter((slot) => Date.parse(slot.startAt) <= horizonMs);
+		if (daySlots.length > 0) {
+			return {
+				kind: 'offer_slots',
+				slots: daySlots,
+				requestedDayStartAt: dayStart.toISOString(),
+			};
+		}
+		return {
+			kind: 'day_unavailable',
+			reason: 'full',
+			requestedDayStartAt: dayStart.toISOString(),
+			alternatives: openSlots(),
+		};
 	}
 
 	// Once a job is booked, a reply that only acknowledges it ("Confirmed!",

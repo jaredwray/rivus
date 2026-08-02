@@ -16,6 +16,13 @@ export interface ParseTimeContext {
 	now: Date;
 }
 
+/** A calendar day in the account's zone, with no time of day attached. */
+export interface RequestedDay {
+	year: number;
+	month: number;
+	day: number;
+}
+
 const ORDINAL_WORDS: Record<string, number> = {
 	first: 1,
 	second: 2,
@@ -54,12 +61,28 @@ const WEEKDAYS: Record<string, number> = {
 	sat: 6,
 };
 
+// A day named in full, in the forms people actually write — the same vocabulary
+// `question.ts` treats as a calendar reference. Deliberately NOT the looser
+// `(sun|mon|…)[a-z]*` the offer matchers use: those only run against a set of
+// slots already on the table, while {@link parseRequestedDay} reads every turn,
+// where "my friend recommended you" and "a heater for my sunroom" must not
+// become Friday and Sunday. The captured group always starts with the
+// three-letter key {@link WEEKDAYS} is indexed by.
+const WEEKDAY_WORD =
+	/\b(?:(?:next|this) )?(sun|sunday|mon|monday|tue|tues|tuesday|wed|weds|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday)\b/;
+
 // A reply that says no. Any of these anywhere in the message disables the
 // slot-*picking* paths — "the first one doesn't work" must never book slot 1.
 // Time *proposals* stay enabled: "Tuesday doesn't work, how about Wednesday at
 // 2?" still parses Wednesday, because the proposal parser runs regardless.
 const NEGATION =
 	/\b(?:doesn'?t|does not|don'?t|do not|won'?t|will not|can'?t|cannot|couldn'?t|isn'?t|is not|not going to|no longer|none of|neither|nope)\b/;
+
+// Where one clause of a rejection ends and the alternative begins: sentence
+// punctuation, or a pivot word that introduces the counter-offer. Shared by the
+// time and day parsers so both read "Thursday doesn't work, how about Friday?"
+// as a request for Friday rather than as no request at all.
+const CLAUSE_BOUNDARY = /[,;.?!\n–—]+|\b(?:but|how about|what about|instead|though)\b/;
 
 /** Whether a reply contains a negation that makes a slot pick unsafe to infer. */
 function refusesPick(normalized: string): boolean {
@@ -443,9 +466,7 @@ export function parseProposedTime(text: string, context: ParseTimeContext): IsoD
 	// nothing. But the alternative half of "Tuesday doesn't work, how about
 	// Wednesday at 3?" still does — so read clause by clause, skipping any
 	// clause that says no.
-	for (const clause of normalized.split(
-		/[,;.?!\n–—]+|\b(?:but|how about|what about|instead|though)\b/,
-	)) {
+	for (const clause of normalized.split(CLAUSE_BOUNDARY)) {
 		if (NEGATION.test(clause)) {
 			continue;
 		}
@@ -572,6 +593,147 @@ function parseTimeClause(normalized: string, context: ParseTimeContext): IsoDate
 	}
 
 	return null;
+}
+
+/**
+ * The calendar DAY a reply names when it names no usable clock time — "next
+ * Thursday", "August 6", "tomorrow", "2026-08-06" — read in the account's zone,
+ * or null when it names no day at all.
+ *
+ * The engine calls this only AFTER {@link parseProposedTime} has returned null,
+ * so a complete day + time ("Thursday at 2pm") never reaches here: the two
+ * parsers deliberately recognize the same day forms rather than guarding
+ * against each other, and precedence lives in the engine. Same conservatism as
+ * the rest of this file — a day it cannot read exactly is null, and the engine
+ * re-offers rather than guessing which day was meant.
+ */
+export function parseRequestedDay(text: string, context: ParseTimeContext): RequestedDay | null {
+	const normalized = text.toLowerCase().replace(/\s+/g, ' ');
+	if (!NEGATION.test(normalized)) {
+		return parseDayClause(normalized, context);
+	}
+	// A negated day asks for nothing: "I can't do Thursday" names no day to look
+	// at. The alternative half of "Thursday doesn't work, how about Friday?"
+	// still does — so read clause by clause, skipping any clause that says no.
+	for (const clause of normalized.split(CLAUSE_BOUNDARY)) {
+		if (NEGATION.test(clause)) {
+			continue;
+		}
+		const day = parseDayClause(clause, context);
+		if (day) {
+			return day;
+		}
+	}
+	return null;
+}
+
+function parseDayClause(normalized: string, context: ParseTimeContext): RequestedDay | null {
+	const today = zonedParts(context.now, context.timeZone);
+
+	// 2026-08-06 — an explicit date, taken at face value even when it is already
+	// past (as in {@link parseTimeClause}): the engine declines a past day with a
+	// reason, which reads better than treating the message as unparseable.
+	const iso = normalized.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+	if (iso) {
+		const [, yearText, monthText, dayText] = iso;
+		return realDay(Number(yearText), Number(monthText), Number(dayText));
+	}
+
+	// august 6 / aug 6th / august 6, 2027
+	const monthFirst = normalized.match(
+		/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? (\d{1,2})(?:st|nd|rd|th)?(?:,? (\d{4}))?\b/,
+	);
+	if (monthFirst) {
+		const [, monthWord, dayText, yearText] = monthFirst;
+		const parsed = realDay(
+			yearText ? Number(yearText) : today.year,
+			MONTHS[monthWord ?? ''] ?? 0,
+			Number(dayText),
+		);
+		return parsed && !yearText ? rollYearForward(parsed, today) : parsed;
+	}
+
+	// 6 august / 6th of august / 6 aug 2027
+	const dayFirst = normalized.match(
+		/\b(\d{1,2})(?:st|nd|rd|th)? (?:of )?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:,? (\d{4}))?\b/,
+	);
+	if (dayFirst) {
+		const [, dayText, monthWord, yearText] = dayFirst;
+		const parsed = realDay(
+			yearText ? Number(yearText) : today.year,
+			MONTHS[monthWord ?? ''] ?? 0,
+			Number(dayText),
+		);
+		return parsed && !yearText ? rollYearForward(parsed, today) : parsed;
+	}
+
+	// today / tomorrow as bare words — the "today at 3pm" forms belong to
+	// {@link parseTimeClause}. Day arithmetic runs on a UTC-normalized (y, m, d)
+	// triple so month/year rollover is Date.UTC's problem, not ours.
+	const relative = normalized.match(/\b(today|tomorrow)\b/);
+	if (relative) {
+		const cursor = new Date(
+			Date.UTC(today.year, today.month - 1, today.day + (relative[1] === 'tomorrow' ? 1 : 0)),
+		);
+		return realDay(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, cursor.getUTCDate());
+	}
+
+	// (next |this )?thursday — the next occurrence, scanning local days 1..7.
+	// Never today: someone asking "Thursday?" on a Thursday means next week's, and
+	// a contact who means today has the word "today". "next"/"this" are read as
+	// noise, matching parseProposedTime's convention — people write both for the
+	// same day, and neither changes which occurrence they mean.
+	const weekday = normalized.match(WEEKDAY_WORD);
+	if (weekday?.[1]) {
+		const wanted = WEEKDAYS[weekday[1].slice(0, 3)] ?? 0;
+		for (let offset = 1; offset <= 7; offset += 1) {
+			const cursor = new Date(Date.UTC(today.year, today.month - 1, today.day + offset));
+			const candidate = {
+				year: cursor.getUTCFullYear(),
+				month: cursor.getUTCMonth() + 1,
+				day: cursor.getUTCDate(),
+			};
+			// The weekday is read back from a resolved instant (not assumed from the
+			// cursor) so zones far from UTC classify the right local day. Midday is
+			// used because no DST shift can move it off its own calendar day.
+			const instant = instantForZonedTime(context.timeZone, {
+				...candidate,
+				hour: 12,
+				minute: 0,
+			});
+			if (zonedParts(instant, context.timeZone).weekday === wanted) {
+				return candidate;
+			}
+		}
+	}
+
+	return null;
+}
+
+/** The parts as a calendar day, or null when they don't name a real one (Feb 30). */
+function realDay(year: number, month: number, day: number): RequestedDay | null {
+	return isRealDate(year, month, day) ? { year, month, day } : null;
+}
+
+/**
+ * A month-day written with no year means the next such date: "January 5" said in
+ * December points at next January. Compared as (y, m, d) triples rather than
+ * instants — a day counts as past only once the whole calendar day is behind
+ * today, so "August 2" asked on August 2 still means today.
+ */
+function rollYearForward(date: RequestedDay, today: RequestedDay): RequestedDay {
+	const ordered = (parts: RequestedDay) => parts.year * 10_000 + parts.month * 100 + parts.day;
+	if (ordered(date) >= ordered(today)) {
+		return date;
+	}
+	// The next year that actually has this day. Only February 29 can skip years —
+	// blindly taking year + 1 would hand the engine a date Date.UTC quietly
+	// normalizes to March 1 — and a leap year is never more than eight away.
+	let year = date.year + 1;
+	while (!isRealDate(year, date.month, date.day)) {
+		year += 1;
+	}
+	return { ...date, year };
 }
 
 function buildInstant(

@@ -258,6 +258,105 @@ export function computeOpenSlots(options: ComputeOpenSlotsOptions): AgentSlot[] 
 	return picked;
 }
 
+export interface ComputeOpenSlotsOnDayOptions {
+	/** The current instant — injected so tests are deterministic. */
+	now: Date;
+	/** IANA zone the business keeps its hours in (pass through {@link safeTimeZone}). */
+	timeZone: string;
+	/** Already-booked windows (non-canceled jobs) that block a slot. */
+	busy: BusyInterval[];
+	/** The one local calendar day to look at. */
+	day: { year: number; month: number; day: number };
+	/** How many openings to return; defaults to {@link OFFER_COUNT}. */
+	count?: number;
+	/** Slot length; defaults to {@link SLOT_DURATION_MINUTES}. */
+	durationMinutes?: number;
+}
+
+/**
+ * The open appointment windows on ONE named local day — what the agent answers
+ * "what do you have Thursday?" with. Same rules as {@link computeOpenSlots}
+ * (on-the-hour starts inside business hours, at least {@link MIN_NOTICE_MINUTES}
+ * out, weekends and busy overlaps skipped), applied to a single day instead of a
+ * search window.
+ *
+ * Unlike {@link computeOpenSlots} the day may be anywhere inside
+ * {@link BOOKING_HORIZON_DAYS} rather than the next {@link SEARCH_WINDOW_DAYS} —
+ * the caller loads busy intervals for the whole booking horizon, so a conflict
+ * check that far out is honest. Past the horizon the engine declines the day
+ * outright rather than checking it against a calendar that was never fetched.
+ */
+export function computeOpenSlotsOnDay(options: ComputeOpenSlotsOnDayOptions): AgentSlot[] {
+	const count = options.count ?? OFFER_COUNT;
+	const durationMinutes = options.durationMinutes ?? SLOT_DURATION_MINUTES;
+	if (count <= 0) {
+		return [];
+	}
+	const earliest = options.now.getTime() + MIN_NOTICE_MINUTES * 60_000;
+	const free: AgentSlot[] = [];
+	for (
+		let hour = BUSINESS_START_HOUR;
+		hour * 60 + durationMinutes <= BUSINESS_END_HOUR * 60;
+		hour += 1
+	) {
+		const start = instantForZonedTime(options.timeZone, { ...options.day, hour, minute: 0 });
+		if (start.getTime() < earliest) {
+			continue;
+		}
+		// Weekday is read from the resolved instant (not assumed from the requested
+		// day) so zones far from UTC classify the right local day.
+		const parts = zonedParts(start, options.timeZone);
+		if (parts.weekday === 0 || parts.weekday === 6) {
+			continue;
+		}
+		const slot: AgentSlot = { startAt: start.toISOString(), durationMinutes };
+		if (!isSlotFree(slot, options.busy)) {
+			continue;
+		}
+		free.push(slot);
+	}
+	if (free.length <= count) {
+		return free;
+	}
+	if (count === 1) {
+		return free.slice(0, 1);
+	}
+	// Spread the picks evenly across the day's openings: a morning/midday/afternoon
+	// choice is a more useful answer than 9, 10 and 11 back to back. Indices are
+	// deduped (a short list can round two picks onto one slot) and stay in order.
+	const picked: AgentSlot[] = [];
+	const pickedStarts = new Set<string>();
+	for (let index = 0; index < count; index += 1) {
+		const slot = free[Math.round((index * (free.length - 1)) / (count - 1))];
+		if (slot && !pickedStarts.has(slot.startAt)) {
+			pickedStarts.add(slot.startAt);
+			picked.push(slot);
+		}
+	}
+	return picked;
+}
+
+/**
+ * "Thursday, August 6" — how a whole day reads in the account's zone, for a
+ * reply that talks about the day rather than a time on it. Follows
+ * {@link formatSlotLabel}'s year rule: when `currentYear` is given and the day
+ * falls in another year, the year is spelled out ("Friday, January 1, 2027").
+ */
+export function formatDayLabel(
+	startAt: IsoDateString,
+	timeZone: string,
+	currentYear?: number,
+): string {
+	const dayYear = zonedParts(new Date(startAt), timeZone).year;
+	return new Intl.DateTimeFormat('en-US', {
+		timeZone,
+		weekday: 'long',
+		month: 'long',
+		day: 'numeric',
+		...(currentYear !== undefined && dayYear !== currentYear ? { year: 'numeric' } : {}),
+	}).format(new Date(startAt));
+}
+
 /**
  * "Tuesday, July 7 at 9:00 AM" — how a slot reads in the account's zone. When
  * `currentYear` is given and the slot falls in a different year, the year is
