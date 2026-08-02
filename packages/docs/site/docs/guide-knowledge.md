@@ -31,10 +31,11 @@ first batch during setup; from then on it's yours to grow.
 
 ## What happens without an answer
 
-Rivus sticks to what it knows: booking appointments and the answers you've
-given it. Keep an eye on your inbox for the conversations that need a human
-— they're your knowledge to-do list, and each one you turn into an FAQ makes
-the next customer's answer instant.
+Rivus sticks to what it knows: booking appointments, telling a customer what
+they already have on your calendar, and the answers you've given it. Keep an
+eye on your inbox for the conversations that need a human — they're your
+knowledge to-do list, and each one you turn into an FAQ makes the next
+customer's answer instant.
 
 ## Keeping it current
 

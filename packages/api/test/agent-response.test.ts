@@ -36,6 +36,10 @@ const SLOTS = [SLOT_A, SLOT_B];
 const ANSWER = "We're open Monday through Friday, 9:00 AM to 5:00 PM.";
 /** Midnight Pacific on Tuesday July 7th — a whole day, as the engine names one. */
 const DAY_START = '2026-07-07T07:00:00.000Z';
+/** Appointments the contact already has, as a status answer names them. */
+const BOOKING_A = { title: 'Water heater install', startAt: SLOT_A.startAt, durationMinutes: 60 };
+const BOOKING_B = { title: 'Annual service', startAt: SLOT_B.startAt, durationMinutes: 90 };
+const BOOKINGS = [BOOKING_A, BOOKING_B];
 
 /** Every decision kind, with a representative payload. */
 const DECISIONS: AgentDecision[] = [
@@ -64,6 +68,10 @@ const DECISIONS: AgentDecision[] = [
 	{ kind: 'answer_question', answer: ANSWER, offeredSlots: SLOTS, customerKnown: true },
 	{ kind: 'answer_question', answer: ANSWER, offeredSlots: [], customerKnown: false },
 	{ kind: 'hold_for_team' },
+	{ kind: 'booking_status', bookings: [BOOKING_A], more: false, offeredSlots: [] },
+	{ kind: 'booking_status', bookings: BOOKINGS, more: true, offeredSlots: SLOTS },
+	{ kind: 'no_booking', alternatives: SLOTS },
+	{ kind: 'no_booking', alternatives: [] },
 ];
 
 describe('composeAgentResponse', () => {
@@ -311,6 +319,112 @@ describe('composeAgentResponse — greeting and holding', () => {
 		);
 		expect(text).toContain('call back');
 		expect(text).not.toContain('reply');
+	});
+});
+
+describe('composeAgentResponse — what the contact already has booked', () => {
+	it('names the service and the time, the same way a fresh booking is confirmed', () => {
+		const text = renderResponseText(
+			composeAgentResponse(
+				{ kind: 'booking_status', bookings: [BOOKING_A], more: false, offeredSlots: [] },
+				context(),
+			),
+		);
+		expect(text).toContain("Here's what you have coming up with Cascade Plumbing:");
+		expect(text).toContain('Water heater install — Tuesday, July 7 at 9:00 AM (60 minutes).');
+		expect(text).toContain('If you need to change or cancel, just reply and let me know.');
+	});
+
+	it('never renders bookings as pickable options — they are not choices', () => {
+		const response = composeAgentResponse(
+			{ kind: 'booking_status', bookings: BOOKINGS, more: false, offeredSlots: [] },
+			context(),
+		);
+		expect(response.blocks.some((block) => block.kind === 'options')).toBe(false);
+		const text = renderResponseText(response);
+		expect(text).toContain('Water heater install — Tuesday, July 7 at 9:00 AM (60 minutes).');
+		expect(text).toContain('Annual service — Thursday, July 9 at 2:00 PM (90 minutes).');
+	});
+
+	it('says so when the calendar holds more than the reply lists', () => {
+		const capped = renderResponseText(
+			composeAgentResponse(
+				{ kind: 'booking_status', bookings: BOOKINGS, more: true, offeredSlots: [] },
+				context(),
+			),
+		);
+		expect(capped).toContain("Those are the next 2 — reply to this email if you'd like the rest.");
+		const complete = renderResponseText(
+			composeAgentResponse(
+				{ kind: 'booking_status', bookings: BOOKINGS, more: false, offeredSlots: [] },
+				context(),
+			),
+		);
+		expect(complete).not.toContain('Those are the next');
+	});
+
+	it('restates a standing offer, so a question does not cost the contact their options', () => {
+		const response = composeAgentResponse(
+			{ kind: 'booking_status', bookings: [BOOKING_A], more: false, offeredSlots: SLOTS },
+			context(),
+		);
+		const options = response.blocks.find((block) => block.kind === 'options');
+		expect(options?.kind === 'options' && options.items.map((item) => item.value)).toEqual([
+			'1',
+			'2',
+		]);
+		const text = renderResponseText(response);
+		expect(text).toContain('Water heater install — Tuesday, July 7 at 9:00 AM (60 minutes).');
+		expect(text).toContain('The times I offered are still open:');
+		expect(text).toContain('Reply with the number that works for you');
+	});
+
+	it('tells a caller to call back rather than reply', () => {
+		const text = renderResponseText(
+			composeAgentResponse(
+				{ kind: 'booking_status', bookings: [BOOKING_A], more: false, offeredSlots: [] },
+				context({ medium: 'voice' }),
+			),
+		);
+		expect(text).toContain('If you need to change or cancel, just call back anytime.');
+		expect(text).not.toContain('reply');
+	});
+
+	it('spells out the year on a booking that falls outside this one', () => {
+		const text = renderResponseText(
+			composeAgentResponse(
+				{
+					kind: 'booking_status',
+					bookings: [{ ...BOOKING_A, startAt: '2027-01-04T17:00:00.000Z' }],
+					more: false,
+					offeredSlots: [],
+				},
+				context(),
+			),
+		);
+		expect(text).toContain('Monday, January 4, 2027 at 9:00 AM');
+	});
+});
+
+describe('composeAgentResponse — nothing on the calendar for them', () => {
+	it('says plainly that nothing is booked, then offers what is open', () => {
+		const response = composeAgentResponse({ kind: 'no_booking', alternatives: SLOTS }, context());
+		const text = renderResponseText(response);
+		expect(text).toContain("I don't see anything booked for you with Cascade Plumbing right now.");
+		expect(text).toContain('Here is what we do have open:');
+		expect(text).toContain('1. Tuesday, July 7 at 9:00 AM');
+		expect(text).toContain('Reply with the number that works for you');
+	});
+
+	it('asks for times when there is nothing booked and nothing open either', () => {
+		const text = renderResponseText(
+			composeAgentResponse({ kind: 'no_booking', alternatives: [] }, context()),
+		);
+		expect(text).toContain("I don't see anything booked for you with Cascade Plumbing right now.");
+		expect(text).toContain("I couldn't find an opening in the next two weeks either.");
+		expect(text).toContain(
+			"Reply with a few times that work for you and I'll check them against the calendar.",
+		);
 	});
 });
 

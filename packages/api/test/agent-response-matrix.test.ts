@@ -30,6 +30,8 @@ const ANSWER = "We're open Monday through Friday, 9:00 AM to 5:00 PM.";
 
 /** Midnight Pacific on Tuesday July 7th — a whole day, as the engine names one. */
 const DAY_START = '2026-07-07T07:00:00.000Z';
+/** An appointment the contact already has, as a status answer names it. */
+const BOOKING = { title: 'Water heater install', startAt: SLOT_A.startAt, durationMinutes: 60 };
 
 const DECISIONS: AgentDecision[] = [
 	{ kind: 'send_signup_link' },
@@ -62,6 +64,13 @@ const DECISIONS: AgentDecision[] = [
 	{ kind: 'answer_question', answer: ANSWER, offeredSlots: SLOTS, customerKnown: true },
 	{ kind: 'answer_question', answer: ANSWER, offeredSlots: [], customerKnown: false },
 	{ kind: 'hold_for_team' },
+	// The booking-status capability's kinds: a booking reported on its own, one
+	// reported over a standing offer (which the reply has to restate), and the two
+	// shapes of having nothing booked — with openings to give, and without.
+	{ kind: 'booking_status', bookings: [BOOKING], more: false, offeredSlots: [] },
+	{ kind: 'booking_status', bookings: [BOOKING], more: true, offeredSlots: SLOTS },
+	{ kind: 'no_booking', alternatives: SLOTS },
+	{ kind: 'no_booking', alternatives: [] },
 ];
 
 /** A distinct test name per decision, so the variants of one kind don't collide. */
@@ -75,6 +84,12 @@ function decisionLabel(decision: AgentDecision): string {
 	if (decision.kind === 'answer_question') {
 		const offer = decision.offeredSlots.length > 0 ? 'offer' : 'none';
 		return `${decision.kind}:${offer}:${decision.customerKnown ? 'known' : 'unknown'}`;
+	}
+	if (decision.kind === 'booking_status') {
+		return `${decision.kind}:${decision.offeredSlots.length > 0 ? 'offer' : 'none'}`;
+	}
+	if (decision.kind === 'no_booking') {
+		return `${decision.kind}:${decision.alternatives.length > 0 ? 'alt' : 'none'}`;
 	}
 	return decision.kind;
 }

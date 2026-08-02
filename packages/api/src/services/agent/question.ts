@@ -1,9 +1,10 @@
 /**
- * Deterministic reading of whether a customer's message asks *about the
- * business* rather than *about the calendar*. No model in the loop — same
- * philosophy as `parse.ts`: the knowledge capability decides whether to claim a
- * turn with this, so it has to be exhaustively unit-testable and impossible to
- * surprise in production.
+ * Deterministic reading of what a customer's message is asking about: the
+ * *business* ({@link isInformationalQuestion}), *their own place on the
+ * calendar* ({@link namesBookingStatusQuestion}), or neither — in which case it
+ * is the scheduling engine's. No model in the loop — same philosophy as
+ * `parse.ts`: a capability decides whether to claim a turn with these, so they
+ * have to be exhaustively unit-testable and impossible to surprise in production.
  *
  * The two error directions are not symmetric, and the rules below are tuned for
  * that. A false negative costs one unanswered FAQ — the scheduling engine still
@@ -165,4 +166,90 @@ export function isInformationalQuestion(text: string): boolean {
 		return false;
 	}
 	return normalized.includes('?') || INTERROGATIVE.test(normalized);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// "What appointment do I have coming up?" — asking about a booking they already
+// have, which is neither a question about the business nor a request for a new
+// time. Every guard below is about telling those three apart.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Asking for a NEW visit. Absolute, and checked first: a request carries the
+// same nouns a status question does ("can I get an appointment?"), and reading
+// one as a status question would answer somebody who wants to be scheduled with
+// a booking they may not even have. `your appointment`/`your openings` is here
+// too — a slot named as the *account's* is one being asked for, not one held.
+const NEW_BOOKING_REQUEST =
+	/\b(?:can|could|may|would) (?:i|we) (?:get|book|have|schedule|set ?up|come in|bring)\b|\b(?:i|we) (?:need|want|would like|d like|m looking for|am looking for|re looking for|are looking for)\b|\b(?:book|schedule|set ?up|arrange) (?:me|us|an|a|another|the)\b|\bmake (?:an|a) (?:appointment|booking)\b|\bdo you have\b|\bwhat (?:times|slots|openings|days|availability)\b|\bwhat (?:time|day) (?:do|does|can|could|would|works?|is (?:good|best))\b|\bare you (?:free|available)\b|\b(?:how about|what about|what else|what other|anything else|any other)\b|\b(?:availab[a-z]*|openings?)\b|\b(?:another|second|new|different|next available) (?:appointment|booking|visit|time|slot)\b|\byour (?:next |first |soonest )?(?:appointments?|bookings?|slots?)\b|\b(?:earliest|soonest|how soon)\b|\b(?:can|could|able to)\b[^?.!]*\b(?:come|make it|be out|swing by|stop by|fit (?:me|us) in)\b/;
+
+// Changing a booking — a move or a cancellation. Neither is a status question,
+// and both keep exactly the behavior they have today (the scheduling engine's,
+// until a capability owns them), so this one can never half-answer either.
+const CHANGE_REQUEST =
+	/\b(?:reschedul[a-z]*|cancel[a-z]*|postpone|push (?:back|it|this|my|our)|move (?:it|this|my|our|the)|switch|swap|change (?:it|this|my|our|the))\b/;
+
+// What a status question actually asks: WHEN the visit is, or WHETHER one
+// exists. This is the guard that keeps the capability out of knowledge's
+// territory — "how much is my appointment?" and "do I have to be home for my
+// appointment?" name the same booking but ask something an FAQ answers, so
+// neither carries a signal here. `have` is scoped away from "have to" for
+// precisely that reason.
+const STATUS_ASK =
+	/\bwhens?\b|\bwhat (?:time|day|date)\b|\bwhich day\b|\bwhat appointments?\b|\b(?:do|did|does) (?:i|we) (?:still )?have\b(?! to\b)|\bhave (?:i|we)\b|\bam i\b|\bare we\b|\bstill (?:on|coming|scheduled|booked|set|happening|good|planned)\b|\bwhat do (?:i|we) have\b|\bwhat(?:s| is) (?:my|our)\b|\bconfirm(?:ed|ing|ation)?\b|\bremind me\b|\b(?:just |double ?)?check(?:ing)? (?:on|in on|about)\b|\bmak(?:e|ing) sure\b/;
+
+// The booking has to be THEIRS. Without this, "what times are booked?" — a
+// question about the account's calendar, not the contact's — would read as one.
+const OWN_BOOKING =
+	/\b(?:my|our) (?:(?:next|upcoming|scheduled|booked|existing|current|first) )?(?:appointments?|appts?|bookings?|visits?|service call|service|slot)\b/;
+// The same thing named without a possessive, for the frames that supply the
+// ownership themselves ("do I have anything booked?", "what do I have coming up?").
+const BOOKING_REFERENCE =
+	/\b(?:appointments?|appts?|bookings?|visits?|service call|slot)\b|\b(?:booked|scheduled|penciled in)\b|\bon the (?:books|calendar|schedule)\b|\bcoming up\b/;
+const FIRST_PERSON = /\b(?:i|im|ive|me|my|we|weve|were|us|our)\b/;
+
+// "When are you coming?", "what time will the tech be here?", "are you still
+// coming today?" — the most common way a booked customer asks never says
+// "appointment" at all. It supplies its own ownership (they are asking about a
+// visit to *them*), so it needs no first-person word.
+const ARRIVAL_SUBJECT =
+	/\b(?:you|u|yall|they|he|she|someone|somebody|the (?:tech|technician|plumber|electrician|crew|team|guy|driver))\b/;
+const ARRIVAL =
+	/\b(?:coming|come|arriving|arrive|be here|get(?:ting)? here|be there|show(?:ing)? up|be out|on (?:your|the) way)\b/;
+
+/**
+ * Whether a message asks about a booking the contact ALREADY has — "what
+ * appointment do I have coming up?", "when are you coming?", "is my appointment
+ * still on?" — rather than asking for a new one or asking about the business.
+ *
+ * The failure this exists for is the agent answering that question with three
+ * fresh openings, which both ignores what was asked and invites a customer who
+ * is already on the calendar to book a second visit.
+ *
+ * Its error directions are the mirror image of {@link isInformationalQuestion}'s
+ * and are guarded in the same order. A false negative costs one unanswered
+ * status question — today's reply stands. A false positive answers somebody who
+ * wanted a *new* time with the one they already have, so every request-shaped
+ * and change-shaped phrasing wins, absolutely, before any status signal is read.
+ */
+export function namesBookingStatusQuestion(text: string): boolean {
+	const normalized = text.toLowerCase().replace(/['’]/g, '').replace(/\s+/g, ' ').trim();
+	if (!/[a-z]/.test(normalized)) {
+		return false;
+	}
+	if (NEW_BOOKING_REQUEST.test(normalized) || CHANGE_REQUEST.test(normalized)) {
+		return false;
+	}
+	// Something on the calendar is named, but nothing about it is being asked:
+	// "my appointment needs a bigger van" is a message for the team, not a
+	// question this can answer with a time.
+	if (!STATUS_ASK.test(normalized)) {
+		return false;
+	}
+	if (ARRIVAL_SUBJECT.test(normalized) && ARRIVAL.test(normalized)) {
+		return true;
+	}
+	return (
+		FIRST_PERSON.test(normalized) &&
+		(OWN_BOOKING.test(normalized) || BOOKING_REFERENCE.test(normalized))
+	);
 }
