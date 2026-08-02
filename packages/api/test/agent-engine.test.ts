@@ -141,6 +141,12 @@ describe('decideScheduling — picking an offered slot by its time', () => {
 		}
 	});
 
+	it('re-offers instead of booking a time the reply moved to another week', () => {
+		// "1pm next week" hour-matches the offered Thursday 1:00 PM, but it is not
+		// the week being asked about — the safe answer is a fresh set of options.
+		expect(decide({ text: '1pm next week', offeredSlots: THURSDAY }).kind).toBe('offer_slots');
+	});
+
 	it('re-offers instead of guessing which day a bare time meant', () => {
 		// The same hour on two days: nothing in the reply says which one.
 		const twoMornings: AgentSlot[] = [

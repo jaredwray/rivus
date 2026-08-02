@@ -97,6 +97,20 @@ function refusesPick(normalized: string): boolean {
 const EXPLICIT_DATE =
 	/\b\d{1,2}(?:st|nd|rd|th)\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b/;
 
+// A window shifted off the one the offers live in — "next week", "a week from
+// thursday", "in two weeks", "the following thursday", "this afternoon", or a
+// bare "later"/"sooner". Like {@link EXPLICIT_DATE} each names a stretch of
+// calendar the offer matcher cannot check the offers against: "1pm next week"
+// hour-matches THIS week's 1:00 PM offer and would book the wrong week. So the
+// matcher refuses and the reply falls to the day/time parsers, or to a fresh
+// offer — the safe failure is restating the options, never a booking nobody
+// asked for. Determiners deliberately pair only with week/month/weekend and the
+// parts of a day, never with a weekday: "next thursday at 2pm" is how people
+// write the coming Thursday and must keep matching. Minute and hour units are
+// just as deliberately absent, so "in 20 mins can we do 1pm?" still books.
+const SHIFTED_WINDOW =
+	/\b(?:next|this|other|another|different|following|that)\s+(?:week|month|weekend)\b|\b(?:this|next)\s+(?:morning|afternoon|evening)\b|\b(?:week|weekend|month)\s+after\b|\b(?:in|after|within)\s+(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d{1,2})\s+(?:weeks?|months?|days?)\b|\b(?:weeks?|months?|days?)\s+(?:from|out|ahead)\b|\bfollowing\s+(?:sun|mon|tue|wed|thu|fri|sat)[a-z]*\b|\bafter\s+next\b|\b(?:later|sooner)\b/;
+
 // A day named relative to today. Like {@link EXPLICIT_DATE} it points at one
 // calendar day the offer matcher cannot check the offers against, so a time
 // standing next to it ("tomorrow at 2pm") must never pick the 2 PM on some
@@ -226,7 +240,9 @@ export function parseSlotChoice(text: string, offeredCount: number): number | nu
  * "the 10am on Tuesday", "lets do 1pm" — or null unless exactly one offered
  * slot matches everything the reply pinned down. Ambiguity is never guessed:
  * two Tuesday offers and "Tuesday works" → null, two 9:00 AM offers on
- * different days and "9am" → null, and the engine restates the options.
+ * different days and "9am" → null, and a reply that shifts the window it is
+ * talking about ("1pm next week", "anything sooner?") → null. In every one of
+ * them the engine restates the options instead.
  *
  * A time with no day behind it only counts when it is unmistakably a clock
  * ("1pm", "13:00"); a bare digit stays a candidate pick of option 1, never a
@@ -243,7 +259,11 @@ export function matchOfferedSlot(
 		return null;
 	}
 	const normalized = text.toLowerCase();
-	if (refusesPick(normalized) || EXPLICIT_DATE.test(normalized)) {
+	if (
+		refusesPick(normalized) ||
+		EXPLICIT_DATE.test(normalized) ||
+		SHIFTED_WINDOW.test(normalized)
+	) {
 		return null;
 	}
 	const weekdayMatch = normalized.match(/\b(sun|mon|tue|wed|thu|fri|sat)[a-z]*\b/);

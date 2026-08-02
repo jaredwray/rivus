@@ -246,6 +246,31 @@ describe('matchOfferedSlot — guards', () => {
 		// is the 9th, and its 2 PM is not the 2 PM being asked for.
 		expect(matchOfferedSlot('tomorrow at 2pm', offered, PACIFIC)).toBeNull();
 	});
+
+	it.each([
+		// The hour is on offer, but not in the week the reply is talking about.
+		'next week at 2pm',
+		'tuesday next week at 9am',
+		'a week from thursday at 2pm',
+		'in two weeks at 9am',
+		'the following thursday at 2pm',
+		// "this afternoon" is today; the offers are next week.
+		'2pm this afternoon',
+		// A reply asking to move the window names no window this matcher can check.
+		'can we do it later?',
+		'anything sooner? 9am',
+	])('refuses to match %j, which shifts the window off the offers', (text) => {
+		expect(matchOfferedSlot(text, offered, PACIFIC)).toBeNull();
+	});
+
+	it('still matches the ordinary "next"/"this" weekday forms', () => {
+		// A determiner on a weekday is just how people write the coming one — only a
+		// determiner on a week, month or part of a day shifts the window.
+		expect(matchOfferedSlot('next thursday at 2pm', offered, PACIFIC)).toBe(1);
+		expect(matchOfferedSlot('this tuesday at 9am', offered, PACIFIC)).toBe(0);
+		// Minutes and hours are not shifted windows either.
+		expect(matchOfferedSlot('in 20 mins can we do 2pm?', offered, PACIFIC)).toBe(1);
+	});
 });
 
 describe('parseSlotChoice — ordinals need to name an offer', () => {
