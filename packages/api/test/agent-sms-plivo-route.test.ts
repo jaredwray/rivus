@@ -131,6 +131,61 @@ describe('POST /v1/channels/sms/plivo/inbound', () => {
 		expect(thread).not.toBeNull();
 	});
 
+	it('answers a knowledge-base question over SMS instead of offering slots', async () => {
+		const { app: built, repos, accountId } = await setup();
+		app = built;
+		await repos.customers.create(accountId, {
+			name: 'Dana Fox',
+			email: '',
+			phone: '(555) 999-0000',
+			address: '12 Pine St',
+			lifetimeValue: 0,
+			balance: 0,
+			notes: '',
+		});
+		const answer = "We're open Monday through Friday, 9:00 AM to 5:00 PM.";
+		await repos.faqs.create(accountId, {
+			question: 'What are your business hours?',
+			answer,
+			category: 'General',
+			status: 'published',
+		});
+
+		const res = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: inbound({ Text: 'whats your hours of operation?', MessageUUID: 'plivo-sms-faq' }),
+		});
+		expect(res.json()).toEqual({ handled: true, outcome: 'answer_question' });
+		const sent = sender(app).messages.at(-1);
+		expect(sent?.to).toBe(SENDER);
+		expect(sent?.text).toContain(answer);
+		// The question was answered, not converted into a booking.
+		expect(sent?.text).not.toContain('1. ');
+		expect((await repos.jobs.list({ accountId, page: 1, pageSize: 10 })).total).toBe(0);
+	});
+
+	it('greets a recognized customer who only says hello', async () => {
+		const { app: built, repos, accountId } = await setup();
+		app = built;
+		await repos.customers.create(accountId, {
+			name: 'Dana Fox',
+			email: '',
+			phone: '(555) 999-0000',
+			address: '12 Pine St',
+			lifetimeValue: 0,
+			balance: 0,
+			notes: '',
+		});
+		const res = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: inbound({ Text: 'Hello', MessageUUID: 'plivo-sms-hello' }),
+		});
+		expect(res.json()).toEqual({ handled: true, outcome: 'greet' });
+		expect(sender(app).messages.at(-1)?.text).not.toContain('1. ');
+	});
+
 	it('accepts the form-encoded variant', async () => {
 		const built = await setup();
 		app = built.app;

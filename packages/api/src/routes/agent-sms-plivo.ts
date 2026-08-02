@@ -36,6 +36,8 @@ export const agentSmsPlivoRoutes: FastifyPluginAsync = async (fastify) => {
 		notifier,
 		smsSender,
 		jobs,
+		faqs,
+		faqAnswer,
 	} = app.deps;
 
 	const adapter = createSmsChannelAdapter({ customers, sender: smsSender });
@@ -48,6 +50,8 @@ export const agentSmsPlivoRoutes: FastifyPluginAsync = async (fastify) => {
 		memberships,
 		notifier,
 		jobs,
+		faqs,
+		faqAnswer,
 	};
 
 	app.addContentTypeParser(

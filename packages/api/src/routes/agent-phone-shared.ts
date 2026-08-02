@@ -29,7 +29,15 @@ export type PhoneChannel = 'whatsapp' | 'sms';
 /** What the webhook routes need from {@link AppDeps} to dispatch an event. */
 export type PhoneWebhookDeps = Pick<
 	AppDeps,
-	'config' | 'accounts' | 'conversations' | 'agentThreads' | 'memberships' | 'notifier' | 'jobs'
+	| 'config'
+	| 'accounts'
+	| 'conversations'
+	| 'agentThreads'
+	| 'memberships'
+	| 'notifier'
+	| 'jobs'
+	| 'faqs'
+	| 'faqAnswer'
 >;
 
 /** The 200 body every channel webhook answers with (one shared OpenAPI id). */
@@ -55,7 +63,17 @@ export async function dispatchPhoneChannelEvent(options: {
 	logger: FastifyBaseLogger;
 }): Promise<InboundHandleResult> {
 	const { deps, channel, adapter, capabilities, event, logger } = options;
-	const { accounts, conversations, agentThreads, memberships, notifier, config, jobs } = deps;
+	const {
+		accounts,
+		conversations,
+		agentThreads,
+		memberships,
+		notifier,
+		config,
+		jobs,
+		faqs,
+		faqAnswer,
+	} = deps;
 
 	// Delivery failure: a message Rivus sent never reached the customer.
 	if (event.type === WHATSAPP_FAILED_EVENT) {
@@ -111,7 +129,7 @@ export async function dispatchPhoneChannelEvent(options: {
 		externalMessageId: event.data.messageId,
 	};
 	return handleInboundAgentMessage({
-		deps: { config, jobs, conversations, agentThreads },
+		deps: { config, jobs, conversations, agentThreads, faqs, faqAnswer, memberships, notifier },
 		adapter,
 		capabilities,
 		account,

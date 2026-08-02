@@ -9,9 +9,13 @@ import type {
 } from '@rivus/core';
 import type { UpdateAgentThread } from '../../repositories/types';
 import type { AppDeps } from '../../types';
+import { decideRivusReply } from '../inbox';
+import { answerFromKnowledge } from '../knowledge';
 import type { ChannelCapabilities, InboundAgentMessage } from './channel';
 import { type AgentDecision, decideScheduling } from './engine';
-import { type AgentResponse, composeAgentResponse } from './response';
+import { isAcknowledgement, matchOfferedSlot, parseProposedTime, parseSlotChoice } from './parse';
+import { isInformationalQuestion } from './question';
+import { type AgentReplyContext, type AgentResponse, composeAgentResponse } from './response';
 import { BOOKING_HORIZON_DAYS, type BusyInterval, formatSlotLabel, zonedParts } from './slots';
 
 /**
@@ -32,7 +36,20 @@ export class RetryDeliveryError extends Error {
 }
 
 /** The repositories + config a capability (and the orchestrator) may read. */
-export type OrchestratorDeps = Pick<AppDeps, 'config' | 'jobs' | 'conversations' | 'agentThreads'>;
+export type OrchestratorDeps = Pick<
+	AppDeps,
+	| 'config'
+	| 'jobs'
+	| 'conversations'
+	| 'agentThreads'
+	// Knowledge-base answering: the account's FAQs and the service that grounds an
+	// answer in them.
+	| 'faqs'
+	| 'faqAnswer'
+	// Handing a turn to a human: who to alert, and how.
+	| 'memberships'
+	| 'notifier'
+>;
 
 /** Everything a capability may read to decide and act on one customer turn. */
 export interface TurnContext {
@@ -57,6 +74,14 @@ export interface CapabilitySideEffects {
 		/** The inline transcript note recorded after a successful send. */
 		note: string;
 	};
+	/**
+	 * Flag the thread's conversation for human review and alert the team. Run
+	 * AFTER a successful send, unlike `bookJob`: nothing about the reply depends
+	 * on the flag existing first, and flagging afterwards means a failed delivery
+	 * leaves no orphaned `needs_attention` behind for a turn the customer never
+	 * saw. `pendingReply` may be empty — that is a question with no draft at all.
+	 */
+	flagForReview?: { pendingReply: string; flagReason: string };
 }
 
 export interface CapabilityOutcome {
@@ -118,7 +143,7 @@ export async function loadBusyIntervals(
 	return busy;
 }
 
-/** How each scheduling decision advances the thread's machine state (`bookedJobId` filled later). */
+/** How each decision advances the thread's machine state (`bookedJobId` filled later). */
 export function threadPatchFor(decision: AgentDecision): UpdateAgentThread {
 	switch (decision.kind) {
 		case 'send_signup_link':
@@ -134,9 +159,37 @@ export function threadPatchFor(decision: AgentDecision): UpdateAgentThread {
 				: { state: 'new', offeredSlots: [] };
 		case 'no_availability':
 			return { state: 'new', offeredSlots: [] };
+		case 'greet':
+			// Saying hello back moves nothing: the contact's next message starts from
+			// wherever the thread already stood.
+			return {};
 		case 'book':
 			return { state: 'booked', offeredSlots: [] };
+		case 'answer_question':
+			// Answering a question must leave scheduling exactly where it stood: a
+			// standing offer keeps its slots (the reply re-listed them, so the numbers
+			// must still resolve) and a booked thread stays booked. The single
+			// exception is a contact the CRM doesn't know — the same reply pointed them
+			// at self-signup, so the thread waits for that just as `send_signup_link`
+			// leaves it. This is the ONE place that patch is decided.
+			return decision.customerKnown ? {} : { state: 'awaiting_signup', offeredSlots: [] };
+		case 'hold_for_team':
+			// A human owns the answer now; the scheduling state is not theirs to move.
+			return {};
 	}
+}
+
+/** Everything the channel-neutral composer needs, read off the turn. */
+function replyContextFor(ctx: TurnContext): AgentReplyContext {
+	return {
+		accountName: ctx.account.name,
+		customerName: ctx.customer?.name ?? ctx.message.sender.name,
+		timeZone: ctx.timeZone,
+		signupUrl: ctx.signupUrl,
+		jobTitle: ctx.jobTitle,
+		now: ctx.now,
+		medium: ctx.caps.medium,
+	};
 }
 
 /** Human-readable channel name for the "Booked by Rivus over …" job note. */
@@ -154,11 +207,13 @@ function channelLabel(channel: ConversationChannel): string {
 }
 
 /**
- * The v1 capability: scheduling. Wraps the pure {@link decideScheduling} engine,
+ * The scheduling capability. Wraps the pure {@link decideScheduling} engine,
  * composes its decision into a neutral response, and declares a booking as a
- * side effect. `matches` is the always-on fallback (it must be last in the
- * registry). A future `cancelCapability`/`rescheduleCapability` slots in ahead of
- * it and instantly works on every channel.
+ * side effect. `matches` is the always-on fallback, so it MUST stay last in the
+ * registry: every turn no earlier capability claims lands here, which is what
+ * keeps the agent from ever going silent. A future
+ * `cancelCapability`/`rescheduleCapability` slots in ahead of it and instantly
+ * works on every channel.
  */
 export const schedulingCapability: AgentCapability = {
 	id: 'scheduling',
@@ -190,15 +245,7 @@ export const schedulingCapability: AgentCapability = {
 			bookedSlot,
 		});
 
-		const response = composeAgentResponse(decision, {
-			accountName: account.name,
-			customerName: customer?.name ?? message.sender.name,
-			timeZone,
-			signupUrl: ctx.signupUrl,
-			jobTitle: ctx.jobTitle,
-			now,
-			medium: caps.medium,
-		});
+		const response = composeAgentResponse(decision, replyContextFor(ctx));
 
 		const outcome: CapabilityOutcome = {
 			response,
@@ -227,7 +274,94 @@ export const schedulingCapability: AgentCapability = {
 	},
 };
 
-/** The v1 capability registry. Adding a feature = adding an entry here. */
+/**
+ * The knowledge capability: answer what the contact actually asked, from the
+ * account's published FAQs, instead of pushing every message toward a booking.
+ *
+ * It sits AHEAD of scheduling in the registry, so its `matches` carries the
+ * whole safety property: a turn the scheduling engine can already read is never
+ * claimed here, no matter how much it looks like a question. Everything else
+ * flows through the same two shared policies the inbox uses — one published-only
+ * knowledge lookup ({@link answerFromKnowledge}) and one caution rule
+ * ({@link decideRivusReply}) — so the agent and the "Let Rivus draft a reply"
+ * button can never disagree about what is safe to send.
+ */
+export const knowledgeCapability: AgentCapability = {
+	id: 'knowledge',
+	matches(ctx: TurnContext): boolean {
+		const { thread, message, timeZone, now } = ctx;
+		// Exactly the inputs the engine would get, so "can scheduling read this?" is
+		// answered by the same parsers that would then read it — the two can't drift.
+		const offered = thread.state === 'slots_offered' ? thread.offeredSlots : [];
+		if (
+			parseSlotChoice(message.text, offered.length) !== null ||
+			matchOfferedSlot(message.text, offered, timeZone) !== null ||
+			parseProposedTime(message.text, { timeZone, now }) !== null ||
+			isAcknowledgement(message.text)
+		) {
+			return false;
+		}
+		return isInformationalQuestion(message.text);
+	},
+	async handle(ctx: TurnContext): Promise<CapabilityOutcome> {
+		const { account, customer, thread, message, deps } = ctx;
+		const knowledge = await answerFromKnowledge(
+			{ faqs: deps.faqs, faqAnswer: deps.faqAnswer },
+			account.id,
+			message.text,
+		);
+		// The inbox's caution policy, unchanged: a money question pauses even when
+		// the knowledge base answered it, and an unanswerable one pauses with no draft.
+		const held = decideRivusReply({
+			customerMessage: message.text,
+			answer: {
+				answered: knowledge.answered,
+				answer: knowledge.answer,
+				sources: knowledge.sources.map((source) => source.id),
+			},
+		});
+		const customerKnown = customer !== null;
+
+		// A contact with no CRM record gets today's behavior when the answer can't
+		// simply be sent (unanswerable, or money-sensitive): the signup link. Paging
+		// the team about an unregistered number would turn every wrong-number text
+		// into a notification, and there is no customer for them to follow up with.
+		if (held.pause && !customerKnown) {
+			return schedulingCapability.handle(ctx);
+		}
+
+		if (held.pause) {
+			const decision: AgentDecision = { kind: 'hold_for_team' };
+			return {
+				response: composeAgentResponse(decision, replyContextFor(ctx)),
+				outcome: decision.kind,
+				threadPatch: threadPatchFor(decision),
+				sideEffects: {
+					flagForReview: { pendingReply: held.draft, flagReason: held.reason },
+				},
+			};
+		}
+
+		const decision: AgentDecision = {
+			kind: 'answer_question',
+			answer: held.draft,
+			offeredSlots: thread.state === 'slots_offered' ? thread.offeredSlots : [],
+			customerKnown,
+		};
+		return {
+			response: composeAgentResponse(decision, replyContextFor(ctx)),
+			outcome: decision.kind,
+			threadPatch: threadPatchFor(decision),
+		};
+	},
+};
+
+/**
+ * The capability registry. Adding a feature = adding an entry here. Order is
+ * priority: the knowledge capability gets first refusal (it declines any turn
+ * scheduling can read), and scheduling stays last as the always-matching
+ * fallback.
+ */
 export function defaultCapabilities(): AgentCapability[] {
-	return [schedulingCapability];
+	return [knowledgeCapability, schedulingCapability];
 }

@@ -114,8 +114,28 @@ export const agentTesterRoutes: FastifyPluginAsync = async (fastify) => {
 	if (!isSeedingEnabled(app.deps.config)) {
 		return;
 	}
-	const { accounts, agentThreads, conversations, customers, config, jobs } = app.deps;
-	const orchestratorDeps = { config, jobs, conversations, agentThreads };
+	const {
+		accounts,
+		agentThreads,
+		conversations,
+		customers,
+		config,
+		jobs,
+		faqs,
+		faqAnswer,
+		memberships,
+		notifier,
+	} = app.deps;
+	const orchestratorDeps = {
+		config,
+		jobs,
+		conversations,
+		agentThreads,
+		faqs,
+		faqAnswer,
+		memberships,
+		notifier,
+	};
 	// Built once, like every channel route does: the registry is the agent's
 	// feature set, identical to the one a real inbound message dispatches through.
 	const capabilities = defaultCapabilities();

@@ -498,6 +498,10 @@ describe('runVoiceTurn', () => {
 				jobs: repos.jobs,
 				conversations: repos.conversations,
 				agentThreads: repos.agentThreads,
+				faqs: repos.faqs,
+				faqAnswer: app.deps.faqAnswer,
+				memberships: repos.memberships,
+				notifier: app.deps.notifier,
 			},
 			customers: repos.customers,
 			// A capability whose reply renders to empty speech — there is nothing

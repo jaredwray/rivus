@@ -106,6 +106,25 @@ function pickAnOption(medium: ChannelMedium): string {
 		: 'Reply with the number that works for you, or suggest another time.';
 }
 
+/**
+ * The self-signup invitation for a contact the CRM doesn't know. Shared by
+ * `send_signup_link` and by an answer to an unregistered contact, so the two
+ * can't drift into telling the same person two different things.
+ */
+function signupInvitation(context: AgentReplyContext): string {
+	return (
+		`I don't see this ${context.medium === 'email' ? 'email address' : 'phone number'} in ${context.accountName}'s customer list yet. ` +
+		(context.medium === 'voice'
+			? `Add yourself in a minute at the web link I'll read out, then call back and I'll get you booked in.`
+			: `Add yourself in a minute at the link below, then ${replyHere(context.medium)} and I'll get you booked in.`)
+	);
+}
+
+/** The call-to-action that carries the prefilled self-signup link. */
+function signupAction(context: AgentReplyContext): { label: string; url: string } {
+	return { label: `Join ${context.accountName} as a customer`, url: context.signupUrl };
+}
+
 /** The intermediate shape of a decision's content, before it becomes blocks. */
 interface DecisionContent {
 	lead: string[];
@@ -123,13 +142,10 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 			return {
 				lead: [
 					`Thanks for reaching out to ${context.accountName}! I'm Rivus, their scheduling assistant.`,
-					`I don't see this ${context.medium === 'email' ? 'email address' : 'phone number'} in ${context.accountName}'s customer list yet. ` +
-						(context.medium === 'voice'
-							? `Add yourself in a minute at the web link I'll read out, then call back and I'll get you booked in.`
-							: `Add yourself in a minute at the link below, then ${replyHere(context.medium)} and I'll get you booked in.`),
+					signupInvitation(context),
 				],
 				slots: [],
-				action: { label: `Join ${context.accountName} as a customer`, url: context.signupUrl },
+				action: signupAction(context),
 				trail: [],
 			};
 		case 'offer_slots':
@@ -195,6 +211,65 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 						? "Tell me a few times that work for you and I'll check them against the calendar."
 						: "Reply with a few times that work for you and I'll check them against the calendar.",
 				],
+			};
+		case 'greet':
+			// Deliberately slot-free: the contact said hello and nothing else, so the
+			// reply names what the agent can do and hands the turn straight back.
+			return {
+				lead: [
+					`Thanks for reaching out to ${context.accountName}! I'm Rivus, their assistant — I can book you an appointment or answer questions about ${context.accountName}.`,
+				],
+				...none,
+				trail: [
+					context.medium === 'voice'
+						? 'Just tell me what you need.'
+						: `Just ${replyHere(context.medium)} with what you need.`,
+				],
+			};
+		case 'answer_question': {
+			// A question asked mid-offer must not cost the contact their options, so
+			// the standing offer is restated verbatim — same slots, same order, so the
+			// numbers they were given still mean the same windows.
+			if (decision.offeredSlots.length > 0) {
+				return {
+					lead: [decision.answer, 'The times I offered are still open:'],
+					slots: decision.offeredSlots,
+					action: null,
+					trail: [pickAnOption(context.medium)],
+				};
+			}
+			// An unrecognized contact gets the answer *and* the way to become a
+			// customer — answering a stranger's question is free, booking for them is not.
+			if (!decision.customerKnown) {
+				return {
+					lead: [decision.answer, signupInvitation(context)],
+					slots: [],
+					action: signupAction(context),
+					trail: [],
+				};
+			}
+			return {
+				lead: [decision.answer],
+				...none,
+				trail: [
+					// A caller is still on the line, so "call back" (what `replyHere`
+					// says for voice) would be the wrong instruction here.
+					context.medium === 'voice'
+						? "Want to book a time? Just say the word and I'll find you an opening."
+						: `Want to book a time? Just ${replyHere(context.medium)} and I'll find you an opening.`,
+				],
+			};
+		}
+		case 'hold_for_team':
+			// No slots here on purpose: the contact asked a question, and answering it
+			// with appointment times is the very thing that goes wrong when the agent
+			// treats every unparseable message as a booking request.
+			return {
+				lead: [
+					`Good question — I don't have that in front of me, so I've passed it to the ${context.accountName} team. They'll follow up with you shortly.`,
+				],
+				...none,
+				trail: [`If there's anything else in the meantime, just ${replyHere(context.medium)}.`],
 			};
 	}
 }

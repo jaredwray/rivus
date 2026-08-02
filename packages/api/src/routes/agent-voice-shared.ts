@@ -1,10 +1,9 @@
 import type { Account } from '@rivus/core';
 import type { FastifyBaseLogger } from 'fastify';
 import type { AccountRepository, CustomerRepository } from '../repositories/types';
-import type { AgentCapability } from '../services/agent/capabilities';
+import type { AgentCapability, OrchestratorDeps } from '../services/agent/capabilities';
 import { handleInboundAgentMessage } from '../services/agent/orchestrator';
 import { createVoiceChannelAdapter } from '../services/agent/voice/adapter';
-import type { AppDeps } from '../types';
 
 /**
  * The provider-agnostic core shared by the voice webhook routes (Plivo,
@@ -124,7 +123,7 @@ export interface VoiceTurnResult {
  * conversation, booking — and decide the call flow from the outcome.
  */
 export async function runVoiceTurn(options: {
-	deps: Pick<AppDeps, 'config' | 'jobs' | 'conversations' | 'agentThreads'>;
+	deps: OrchestratorDeps;
 	customers: CustomerRepository;
 	capabilities: AgentCapability[];
 	account: Account;

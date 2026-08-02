@@ -35,6 +35,8 @@ export const agentWhatsappPlivoRoutes: FastifyPluginAsync = async (fastify) => {
 		notifier,
 		whatsappSender,
 		jobs,
+		faqs,
+		faqAnswer,
 	} = app.deps;
 
 	const adapter = createWhatsappChannelAdapter({ customers, sender: whatsappSender });
@@ -47,6 +49,8 @@ export const agentWhatsappPlivoRoutes: FastifyPluginAsync = async (fastify) => {
 		memberships,
 		notifier,
 		jobs,
+		faqs,
+		faqAnswer,
 	};
 
 	app.addContentTypeParser(
