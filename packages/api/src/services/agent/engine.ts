@@ -77,7 +77,41 @@ export type AgentDecision =
 	 * can't answer this (or the caution policy says a human should), so the agent
 	 * says so and the conversation is flagged for the team.
 	 */
-	| { kind: 'hold_for_team' };
+	| { kind: 'hold_for_team' }
+	/**
+	 * Not from this engine — the booking-status capability's move: the contact
+	 * asked what they have booked, and these are the appointments the account's
+	 * calendar holds for them, soonest first. `more` is true when they have
+	 * further bookings past the ones listed, so the reply can say so instead of
+	 * implying the list is everything. `offeredSlots` carries a standing offer the
+	 * question interrupted (empty when there is none), restated unchanged so the
+	 * numbering the contact was given still picks the same window.
+	 */
+	| {
+			kind: 'booking_status';
+			bookings: BookedAppointment[];
+			more: boolean;
+			offeredSlots: AgentSlot[];
+	  }
+	/**
+	 * Not from this engine — the booking-status capability's move: they asked
+	 * what they have booked and the calendar holds nothing for them, so the agent
+	 * says exactly that and puts what IS open in front of them (`alternatives`,
+	 * empty when nothing is).
+	 */
+	| { kind: 'no_booking'; alternatives: AgentSlot[] };
+
+/**
+ * One appointment on the calendar as a status answer names it: the service, when
+ * it starts, and how long it runs. A projection of a job rather than the job
+ * itself — the composer has no business reading a repository row.
+ */
+export interface BookedAppointment {
+	/** The job's service title ("Water heater install"). */
+	title: string;
+	startAt: IsoDateString;
+	durationMinutes: number;
+}
 
 export interface SchedulingDecisionInput {
 	/** Whether the sender resolved to a CRM customer. */

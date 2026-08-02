@@ -121,6 +121,28 @@ function noAlternativesTrail(context: AgentReplyContext): string {
 		: `I couldn't find another opening in the next two weeks — reply with a few times that work for you and I'll check them against ${context.accountName}'s calendar.`;
 }
 
+/**
+ * The closing line when the agent has openings to ask for rather than to give.
+ * Shared by `no_availability` and by a status answer that found neither a
+ * booking nor an opening, so the two can't drift.
+ */
+function proposeTimesTrail(context: AgentReplyContext): string {
+	return context.medium === 'voice'
+		? "Tell me a few times that work for you and I'll check them against the calendar."
+		: "Reply with a few times that work for you and I'll check them against the calendar.";
+}
+
+/**
+ * The closing line on a reply that leaves a standing booking alone. Shared by
+ * `confirm_existing` and `booking_status`: both hand back a booking the contact
+ * already has, and they must offer the same way out of it.
+ */
+function changeOrCancelTrail(context: AgentReplyContext): string {
+	return context.medium === 'voice'
+		? 'If you need to change or cancel, just call back anytime.'
+		: 'If you need to change or cancel, just reply and let me know.';
+}
+
 /** How a contact is told to reply, worded for the medium. */
 function replyHere(medium: ChannelMedium): string {
 	if (medium === 'email') {
@@ -210,11 +232,7 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 					`You're all set — you're already booked for ${formatSlotLabel(decision.slot.startAt, context.timeZone, year)}.`,
 				],
 				...none,
-				trail: [
-					context.medium === 'voice'
-						? 'If you need to change or cancel, just call back anytime.'
-						: 'If you need to change or cancel, just reply and let me know.',
-				],
+				trail: [changeOrCancelTrail(context)],
 			};
 		case 'propose_unavailable': {
 			const requestedLabel = formatSlotLabel(decision.requestedStartAt, context.timeZone, year);
@@ -256,11 +274,7 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 					`Thanks for reaching out! ${context.accountName}'s calendar is fully booked for the next two weeks.`,
 				],
 				...none,
-				trail: [
-					context.medium === 'voice'
-						? "Tell me a few times that work for you and I'll check them against the calendar."
-						: "Reply with a few times that work for you and I'll check them against the calendar.",
-				],
+				trail: [proposeTimesTrail(context)],
 			};
 		case 'greet':
 			// Deliberately slot-free: the contact said hello and nothing else, so the
@@ -320,6 +334,59 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 				],
 				...none,
 				trail: [`If there's anything else in the meantime, just ${replyHere(context.medium)}.`],
+			};
+		case 'booking_status': {
+			// The whole answer is the appointment itself, written the same way a fresh
+			// booking is confirmed ("Water heater install — Tuesday, July 7 at 9:00 AM
+			// (60 minutes)."), so a customer reading both sees one agent.
+			const lead = [
+				`Here's what you have coming up with ${context.accountName}:`,
+				...decision.bookings.map(
+					(booking) =>
+						`${booking.title} — ${formatSlotLabel(booking.startAt, context.timeZone, year)} (${booking.durationMinutes} minutes).`,
+				),
+			];
+			// A capped list must say it is capped: "that's everything" is the one thing
+			// this reply must never imply when the calendar holds more.
+			if (decision.more) {
+				lead.push(
+					`Those are the next ${decision.bookings.length} — ${replyHere(context.medium)} if you'd like the rest.`,
+				);
+			}
+			// Answering mid-offer must not cost the contact their options, exactly as
+			// `answer_question` restates them: same slots, same order, same numbers.
+			if (decision.offeredSlots.length > 0) {
+				return {
+					lead: [...lead, 'The times I offered are still open:'],
+					slots: decision.offeredSlots,
+					action: null,
+					trail: [pickAnOption(context.medium)],
+				};
+			}
+			return { lead, ...none, trail: [changeOrCancelTrail(context)] };
+		}
+		case 'no_booking':
+			// Saying plainly that nothing is booked is the point: a contact who asked
+			// what they have and got only a list of openings can't tell whether the
+			// agent looked. The openings still follow, so the turn stays useful.
+			if (decision.alternatives.length === 0) {
+				return {
+					lead: [
+						`I don't see anything booked for you with ${context.accountName} right now.`,
+						"I couldn't find an opening in the next two weeks either.",
+					],
+					...none,
+					trail: [proposeTimesTrail(context)],
+				};
+			}
+			return {
+				lead: [
+					`I don't see anything booked for you with ${context.accountName} right now.`,
+					'Here is what we do have open:',
+				],
+				slots: decision.alternatives,
+				action: null,
+				trail: [pickAnOption(context.medium)],
 			};
 	}
 }
