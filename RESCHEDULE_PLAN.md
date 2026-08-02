@@ -553,12 +553,18 @@ one survivor; and only if `listedInstants` found **zero** complete instants (d) 
 day-only / time-only resolution, applying `parseRequestedDay` to the text **after** the destination
 preposition rather than to the whole clause.
 
-**Why.** §1.2(c). Day elimination is equally load-bearing: for "move my thursday 1pm to friday 2pm"
-the single complete instant is the anchor and gets dropped, control reaches the day/time path, and
-`parseRequestedDay` returns the *first* weekday (thursday, resolved to the anchor's own Thursday by
-its 1..7 scan at `parse.ts:838`) while time elimination correctly yields 2:00 PM — booking Thursday
-2:00 PM for a customer who said Friday. Elimination is word-order-independent and therefore robust
-to phrasings nobody enumerated; the pivot rules are the tiebreak, not the mechanism.
+**Why.** §1.2(c). Day elimination is equally load-bearing, and path (d) is where it bites: for
+"move my thursday 1pm to friday" the *only* complete instant is the anchor, so eliminating it leaves
+nothing and control falls through to the day/time path. There `parseRequestedDay` reads the **first**
+weekday in the message — thursday, resolved to the anchor's own Thursday by its 1..7 scan at
+`parse.ts:838` — and a customer who said Friday is answered about the day they are already booked
+on. Reading the day from the text *after* the destination preposition ("to friday") is what fixes
+it.
+
+Contrast "move my thursday 1pm to friday 2pm", which never reaches (d) at all: `listedInstants`
+finds **both** instants, the anchor is dropped, and Friday 2:00 PM is the single survivor. That is
+the point of ordering (c) before (d) — the elimination is word-order-independent and therefore
+robust to phrasings nobody enumerated, and the pivot rules are the tiebreak, not the mechanism.
 
 **Rejected.** Taking the last clock in the message — reads "move my 1pm to 4pm" correctly and "4pm
 instead of 1pm" backwards, into the time the customer just rejected. Also rejected: loosening
@@ -670,7 +676,13 @@ character that flips an SMS body to the 737-character Unicode budget.
 
 ### 6.10 The anchor is resolved from the CRM when the thread has none; ambiguity hands off
 
-**Decision.** When `liveJob(thread.bookedJobId)` is null, `handle` calls
+**Decision.** `TurnContext.customer` is `Customer | null` (`capabilities.ts:63`), so the lookup is
+guarded before it runs: a contact the CRM does not know resolves to `send_signup_link` — the first
+branch of `decideReschedule`, exactly as `decideScheduling` does at `engine.ts:124-126` — and never
+reaches a CRM query. There is no customer to look jobs up by, and the same asymmetry as everywhere
+else applies: scheduling only ever moves a booking that belongs to a real CRM customer.
+
+With a known customer, when `liveJob(thread.bookedJobId)` is null `handle` calls
 `jobs.list({ accountId, customerId: customer.id, from: now, to: horizon, page: 1, pageSize: 5 })` —
 `ListJobsOptions.customerId` already exists (`repositories/types.ts:365`) and results are ordered by
 `startAt`. Exactly one live non-canceled upcoming job → that is the anchor, and a successful move
@@ -915,7 +927,8 @@ The CRM lookup and the ambiguity hand-off (§6.10).
 **Acceptance:** a customer who booked over email and texts "can you move it to 4pm?" as the same CRM
 customer has the **same** job moved; afterwards the SMS thread's `bookedJobId` names it. Two upcoming
 jobs → `hold_for_team`, exactly one `needs_attention`, neither job moves. The extra `jobs.list` call
-happens **only** when the thread's own anchor is absent or dead.
+happens **only** when the thread's own anchor is absent or dead — and **never** for a contact the CRM
+does not know, who gets `send_signup_link` with no lookup at all.
 
 ### Phase 7 — Interference, parity, and observability
 
