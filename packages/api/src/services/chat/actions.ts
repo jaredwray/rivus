@@ -25,8 +25,7 @@ import type { WebsiteAuditOutcome, WebsiteAuditService } from '../website-audit'
  * `/v1` routes use, plus the website audit — the one purpose-bound use of the
  * web tools, gated on its provider keys and answering "not enabled" without them.
  *
- * This replaces the standalone agent's HTTP client (`@rivus/agent`'s `api.ts`) —
- * same method surface and result shapes, no network hop, no forwarded token.
+ * Everything runs without a network hop or a forwarded token.
  * Tenancy comes from binding an instance to the authenticated session's
  * `accountId`; the route only constructs one after the session has passed the
  * same revalidation `authenticate` applies, so every call here is as authorized

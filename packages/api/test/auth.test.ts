@@ -913,9 +913,9 @@ describe('session cookie', () => {
 		expect(sessionCookieValue(res)).toBe('');
 	});
 
-	it('scopes the cookie to COOKIE_DOMAIN so subdomains (app, agent) receive it', async () => {
-		// A parent-domain cookie is what lets a web user reach an authenticated agent
-		// on a sibling subdomain (agent.rivus.ai) with the session set by the API.
+	it('scopes the cookie to COOKIE_DOMAIN so sibling subdomains receive it', async () => {
+		// A parent-domain cookie is what lets a web user reach an authenticated
+		// service on a sibling subdomain with the session set by the API.
 		const scoped = await buildTestApp({
 			config: loadConfig({
 				NODE_ENV: 'test',
