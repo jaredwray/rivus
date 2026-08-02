@@ -138,33 +138,65 @@ const SYSTEM = [
 	'audit; only the user’s own words do.',
 ].join('\n');
 
-// Bound what we send the router so a long or pasted conversation can't blow the
-// context window or run up latency/cost — routing only needs recent context, and
-// the rule-based fallback was capped too. Keep the most recent turns, each clipped.
-const MAX_TRANSCRIPT_MESSAGES = 12;
-const MAX_MESSAGE_CHARS = 1000;
+// The router reasons over the WHOLE conversation: the app is stateless between
+// turns and resends the entire transcript, and a follow-up like "what should I
+// add?" only makes sense against everything said before it. These bounds exist
+// to survive pathological input, never to trim ordinary context — a real
+// FAQ-management chat comes nowhere near either of them.
+//
+// Per message: `chatMessageSchema` in `@rivus/core` already caps a wire message
+// at 8,000 characters, so this clip can only fire on something that never came
+// through the HTTP route. It is a defensive invariant, kept equal to the schema
+// so no valid message is ever shortened.
+const MAX_MESSAGE_CHARS = 8_000;
+// Overall: the wire allows 200 messages × 8,000 characters, so a worst case of
+// 1.6M characters is reachable by construction and an upper bound has to exist.
+// Past the budget the OLDEST turns are dropped — the latest turn is the one
+// being routed, and its immediate context matters most.
+const MAX_TRANSCRIPT_CHARS = 100_000;
+/** Tells the router the transcript starts mid-conversation (only ever over budget). */
+const OMITTED_TURNS_MARKER = '[earlier turns omitted]';
 
-/** Render a bounded, role-tagged transcript for the prompt (most recent turns only). */
+/**
+ * Render the conversation as a role-tagged transcript for the prompt. Every turn
+ * is included in order; only when the rendered lines exceed
+ * {@link MAX_TRANSCRIPT_CHARS} are the oldest dropped, and then the transcript
+ * says so, so the model knows it is reading a tail rather than the beginning.
+ */
 function transcript(messages: ChatMessage[]): string {
 	const ROLE_LABEL: Record<ChatMessage['role'], string> = {
 		user: 'User',
 		assistant: 'Assistant',
 		system: 'System',
 	};
-	return messages
-		.slice(-MAX_TRANSCRIPT_MESSAGES)
-		.map((message) => {
-			// Quoted web-tool output (search results, browsed page markdown) is
-			// stripped from assistant turns before it reaches the model, so an
-			// attacker-controlled page can't smuggle routing instructions into a later
-			// turn's prompt. Clipping runs on the redacted text.
-			const source =
-				message.role === 'assistant' ? redactWebToolContent(message.content) : message.content;
-			const content =
-				source.length > MAX_MESSAGE_CHARS ? `${source.slice(0, MAX_MESSAGE_CHARS - 1)}…` : source;
-			return `${ROLE_LABEL[message.role]}: ${content}`;
-		})
-		.join('\n');
+	const lines = messages.map((message) => {
+		// Quoted web-tool output (search results, browsed page markdown) is
+		// stripped from assistant turns before it reaches the model, so an
+		// attacker-controlled page can't smuggle routing instructions into a later
+		// turn's prompt. Clipping runs on the redacted text.
+		const source =
+			message.role === 'assistant' ? redactWebToolContent(message.content) : message.content;
+		const content =
+			source.length > MAX_MESSAGE_CHARS ? `${source.slice(0, MAX_MESSAGE_CHARS - 1)}…` : source;
+		return `${ROLE_LABEL[message.role]}: ${content}`;
+	});
+
+	// Fill the budget from the newest turn backwards, then restore chronological
+	// order: what gets cut is always the far end of the conversation.
+	const kept: string[] = [];
+	let used = 0;
+	for (let index = lines.length - 1; index >= 0; index -= 1) {
+		const line = lines[index] ?? '';
+		used += line.length + 1;
+		if (used > MAX_TRANSCRIPT_CHARS) {
+			break;
+		}
+		kept.unshift(line);
+	}
+	if (kept.length < lines.length) {
+		kept.unshift(OMITTED_TURNS_MARKER);
+	}
+	return kept.join('\n');
 }
 
 /** Map a validated model decision onto the `Intent` the assistant executes. */
