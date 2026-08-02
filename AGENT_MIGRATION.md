@@ -1,6 +1,6 @@
 # Migration plan: retire the Cloudflare Agents SDK — chat agent moves into `@rivus/api` on the AI SDK
 
-Status: **in progress — code landed (PR #126); operational retirement pending** ·
+Status: **complete — `packages/agent` is deleted; kept as the decision record** ·
 Scope: `@rivus/agent` → `@rivus/api`, plus the app's agent client, CI, and docs
 
 **Implemented:** chat wire schemas in `@rivus/core`; the ported chat services
@@ -9,10 +9,15 @@ Scope: `@rivus/agent` → `@rivus/api`, plus the app's agent client, CI, and doc
 hermetic test suite; the app now chats through the API client
 (`packages/app/src/agent/` deleted, `EXPO_PUBLIC_AGENT_URL` gone); the
 `deploy-agent` CI jobs are removed and `deploy-api` now syncs an optional
-`ANTHROPIC_API_KEY`; docs updated. **Remaining (ops):** create the
-`DEV/PROD_ANTHROPIC_API_KEY` GitHub secrets (copy the value the agent Workers
-used); run the adoption window; then Phase 3 steps 2–3 below (retire the frozen
-Workers/domains, narrow `COOKIE_DOMAIN`, delete `packages/agent`).
+`ANTHROPIC_API_KEY`; `packages/agent` is deleted from the repo and every
+reference to it swept from the docs, workflows, and comments.
+
+**Ops checklist that outlives this repo change** — these act on Cloudflare, not
+on the codebase, so confirm them out-of-band: the `rivus-agent` /
+`rivus-agent-dev` Workers, their Durable Object namespace, and the
+`dev-agent.rivus.ai` / `agent.rivus.ai` custom domains must be deleted, and
+`COOKIE_DOMAIN=.rivus.ai` can be dropped from `packages/api/wrangler.jsonc`
+once no sibling subdomain needs the session cookie (see Phase 3 step 2).
 
 ## 1. Context and decision
 
@@ -165,16 +170,17 @@ app: RivusChat.tsx → existing API client (src/api/client.ts, + chat method)
    env blocks in `.github/workflows/deploy-{development,production}.yaml`
    (base URL is the existing `EXPO_PUBLIC_API_URL`).
 
-### Phase 3 — Retire the agent service (step 1 ✅; steps 2–3 are ops follow-ups)
+### Phase 3 — Retire the agent service (steps 1 and 3 ✅; step 2 is an ops follow-up)
 
 1. ✅ Remove the `deploy-agent` jobs (and their `wrangler secret put JWT_SECRET`
    sync steps) from both deploy workflows; drop `deploy-agent` from the
    `record-deployment` `needs` lists. The deployed Workers freeze but keep
    serving old native builds during the adoption window. **Caveat:** the sync
    step was what kept the agent's `JWT_SECRET` matching the API's — if the
-   secret rotates during the window, push it to the frozen Workers by hand
-   (`wrangler secret put JWT_SECRET --env <environment>` in `packages/agent`),
-   or authenticated chat on old builds silently degrades to signed-out replies.
+   secret rotates while those Workers are still up, it must be pushed to them
+   by hand or authenticated chat on old builds silently degrades to signed-out
+   replies. Step 3 removed the `packages/agent` working copy that command used
+   to run from; see the recovery path there.
 2. After native adoption is confirmed (or immediately, if chat has only ever
    shipped on web): delete the `rivus-agent` / `rivus-agent-dev` Workers, the
    Durable Object namespace (only vestigial state inside), and the
@@ -184,9 +190,31 @@ app: RivusChat.tsx → existing API client (src/api/client.ts, + chat method)
    expire the old domain-scoped cookie at sign-in so stale copies don't linger
    until natural expiry. Rollback before this point is trivial: the old service
    is untouched and the app can be re-pointed by env var.
-3. Delete `packages/agent` from the repo (kept in-tree until step 2 completes,
-   solely so the frozen Workers can be redeployed in an emergency); final docs
-   sweep removes the legacy notes added in this phase.
+3. ✅ Delete `packages/agent` from the repo; final docs sweep removes the legacy
+   notes added in this phase (README package table, DEPLOYMENT's frozen-Worker
+   paragraph, AGENTS.md layout + package notes, the deploy-workflow comments,
+   and the `@rivus/agent` mentions left in `routes/chat.ts` and
+   `services/chat/actions.ts`).
+
+   **Recovering the package** — needed only while the frozen Workers are still
+   up (i.e. until step 2 lands), and only to push a rotated `JWT_SECRET` to them
+   or to redeploy one in an emergency. The sources are one command away in git
+   history — the restore lands them untracked, so the deletion stays intact on
+   whatever branch you are on:
+
+   ```bash
+   # The parent of the commit that deleted it is the last tree containing it.
+   git restore --source="$(git rev-list -1 HEAD -- packages/agent)^" -- packages/agent
+   pnpm install   # repopulates the agent's deps, which left the lockfile in step 3
+   pnpm --filter @rivus/agent exec wrangler secret put JWT_SECRET --env <environment>
+   git clean -fd packages/agent   # discard when done (the files are untracked)
+   ```
+
+   `pnpm install` will rewrite `pnpm-lock.yaml` to re-add the agent's importer —
+   check that out again along with the directory when you are finished.
+
+   Once step 2 retires the Workers and domains, this path stops mattering
+   entirely and the history is the only copy anyone needs.
 
 ### Phase 4 (optional, when wanted) — Grow the agent with the AI SDK
 

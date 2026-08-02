@@ -28,12 +28,6 @@ jobs:
       - run: pnpm test:coverage
       - run: pnpm build
 
-  # The standalone agent Worker is no longer deployed: chat moved into the API
-  # (`POST /v1/chat`). The already-deployed `rivus-agent-dev` Worker is left
-  # frozen for old native builds until it is retired (see AGENT_MIGRATION.md);
-  # if JWT_SECRET rotates during that window, update the frozen Worker by hand
-  # (`wrangler secret put JWT_SECRET --env development` in packages/agent).
-
   # Every deploy job binds `environment: development` so it can read that
   # environment's secrets and so the environment's protection rules gate the
   # deploy itself. Without the binding, `secrets.*` below resolve only against
@@ -76,7 +70,7 @@ jobs:
       # account seeder in Settings (the API enforces the same gate server-side).
       EXPO_PUBLIC_RIVUS_ENV: development
       # Baked into the Expo web bundle at export time. Chat (`/v1/chat`) rides
-      # on the same API base URL — there is no separate agent service anymore.
+      # on the same API base URL — there is no separate agent service.
       EXPO_PUBLIC_API_URL: https://dev-api.rivus.ai
       # Optional: address-autocomplete key (referrer-restricted). Unset → plain field.
       EXPO_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY }}

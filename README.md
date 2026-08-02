@@ -19,7 +19,6 @@ app — all sharing one core library and one toolchain.
 | [`@rivus/core`](./packages/core)     | TypeScript, Zod                         | Shared domain types, schemas, and utilities                          |
 | [`@rivus/api`](./packages/api)       | Fastify, Mongoose (MongoDB Atlas), JWT  | REST API with an OpenAPI document generated from its route schemas   |
 | [`@rivus/website`](./packages/website) | Next.js 16 (App Router), React 19     | Marketing site                                                       |
-| [`@rivus/agent`](./packages/agent)   | Cloudflare Agents (Durable Objects)     | Legacy chat Worker, frozen — chat now lives in the API (`/v1/chat`) |
 | [`@rivus/docs`](./packages/docs)     | Docula                                  | Docs, changelog, and the API reference                              |
 | [`@rivus/app`](./packages/app)       | Expo (iOS / Android / Web)              | Cross-platform client application                                   |
 
@@ -33,15 +32,15 @@ app — all sharing one core library and one toolchain.
 | Tests & coverage   | [Vitest](https://vitest.dev) + v8         |
 | Test data          | [`@faker-js/faker`](https://fakerjs.dev)  |
 | Library bundling   | [tsdown](https://tsdown.dev)              |
-| Local services     | Docker Compose (MongoDB)                  |
+| Local services     | Docker Compose (MongoDB + Mongo Express)  |
 
 ## Getting started
 
-Requirements: **Node.js 22+**, **pnpm 10** (`corepack enable`), and **Docker**.
+Requirements: **Node.js 24+**, **pnpm 11** (`corepack enable`), and **Docker**.
 
 ```bash
 pnpm install        # install every workspace
-pnpm services:up    # start MongoDB (single-node replica set) via docker compose
+pnpm services:up    # MongoDB (single-node replica set) + Mongo Express on :8081
 pnpm dev            # run every package in dev mode
 cp .env.example .env
 ```
@@ -62,8 +61,9 @@ pnpm --filter @rivus/website dev
 | `pnpm test`          | Run every Vitest suite                               |
 | `pnpm test:coverage` | Run tests with coverage thresholds enforced          |
 | `pnpm build`         | Build every package that has a build                 |
-| `pnpm services:up`   | Start local MongoDB                                  |
-| `pnpm services:down` | Stop local services                                  |
+| `pnpm services:up`   | Start the Docker Compose services (MongoDB + Mongo Express) in the background |
+| `pnpm services:down` | Stop and remove those containers                     |
+| `pnpm services:logs` | Follow their logs                                    |
 
 ## How it fits together
 
@@ -75,8 +75,7 @@ pnpm --filter @rivus/website dev
 - The **website** and **app** both read `*_PUBLIC_API_URL` to talk to the API.
 - The **Rivus chat** (the app's floating launcher) is an API endpoint
   (`POST /v1/chat`) — optionally authenticated, answering from the account's
-  company record and knowledge base. The old standalone agent Worker is frozen
-  pending retirement (see [AGENT_MIGRATION.md](./AGENT_MIGRATION.md)).
+  company record and knowledge base.
 
 ## Supply chain & CI
 
@@ -84,7 +83,7 @@ Following the practices in the companion [`agentic`](https://github.com/jaredwra
 playbooks:
 
 - A strict 7-day `minimumReleaseAge` gate blocks freshly published versions.
-- Dependency install scripts are denied by default (`onlyBuiltDependencies`).
+- Dependency install scripts are denied by default (`allowBuilds`).
 - CI installs with `--frozen-lockfile`, defaults to `permissions: contents: read`,
   and pins every GitHub Action to a full commit SHA.
 - CodeQL and a CODEOWNERS-gated review run on every PR; Socket Security scans
