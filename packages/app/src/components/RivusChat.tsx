@@ -34,9 +34,9 @@ interface DisplayMessage extends ChatMessage {
 }
 
 /**
- * The Rivus chat. It talks to the API's `POST /v1/chat` (the in-process
- * successor to the standalone agent service); on first open it greets you — the
- * end-to-end proof that the app can reach Rivus and get a reply back.
+ * The Rivus chat. It talks to the API's `POST /v1/chat`; on first open it
+ * greets you — the end-to-end proof that the app can reach Rivus and get a
+ * reply back.
  *
  * Two presentations share the same conversation logic:
  *
@@ -281,7 +281,7 @@ function ChatConversation({
 				) : null}
 				{status === 'error' ? (
 					<Txt style={styles.errorTxt}>
-						Couldn't reach Rivus. Check that the agent is running, then try again.
+						Couldn't reach Rivus. Check that the API is running, then try again.
 					</Txt>
 				) : null}
 			</ScrollView>

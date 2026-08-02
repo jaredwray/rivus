@@ -19,13 +19,7 @@ validate the monorepo, then deploy all four packages in parallel:
 | `@rivus/docs`    | Worker **Static Assets** (Docula build)    | `dev-docs.rivus.ai`         | `docs.rivus.ai`   |
 
 The Rivus chat is served by the API (`POST /v1/chat`) — there is no separate
-agent service anymore. The legacy `@rivus/agent` Workers (`dev-agent.rivus.ai` /
-`agent.rivus.ai`) are **frozen, not deployed by CI**: they keep serving app
-builds that still have the old URL baked in, until they're retired per
-[AGENT_MIGRATION.md](./AGENT_MIGRATION.md). If `JWT_SECRET` rotates during that
-window, push it to the frozen Workers by hand (`wrangler secret put JWT_SECRET
---env <environment>` in `packages/agent`), or authenticated chat on old builds
-silently degrades to signed-out replies.
+agent service.
 
 Each package owns a `wrangler.jsonc` with `development` and `production` named
 environments (`wrangler deploy --env <name>`). Development names are suffixed

@@ -7,9 +7,8 @@ import { GREETING } from '../services/chat/conversation';
 import { type ChatSession, respond } from '../services/chat/respond';
 
 /**
- * The Rivus chat endpoint — the in-process successor to the standalone
- * `@rivus/agent` Worker. The wire contract is unchanged: the app posts the
- * conversation (`{ messages }`) and gets a single `{ reply }` back.
+ * The Rivus chat endpoint: the app posts the conversation (`{ messages }`) and
+ * gets a single `{ reply }` back.
  *
  * Authentication is deliberately *optional* and never a 401 from this route:
  * anonymous visitors get the greeting, help, and friendly sign-in nudges, and a
@@ -22,8 +21,7 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
 	const app = fastify.withTypeProvider<ZodTypeProvider>();
 	const deps = app.deps;
 
-	// A friendly smoke test you can hit straight from a browser (no auth), kept
-	// from the standalone agent endpoint.
+	// A friendly smoke test you can hit straight from a browser (no auth).
 	app.get(
 		'/',
 		{
@@ -53,7 +51,7 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
 		},
 		async (request) => {
 			const session = await resolveChatSession(app, request);
-			// The `message` shorthand wins over `messages`, as it did on the agent.
+			// The `message` shorthand wins over `messages`.
 			const messages: ChatMessage[] =
 				request.body.message !== undefined
 					? [{ role: 'user', content: request.body.message }]
