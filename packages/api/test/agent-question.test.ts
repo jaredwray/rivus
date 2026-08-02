@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isInformationalQuestion, isPureGreeting } from '../src/services/agent/question';
+import {
+	isInformationalQuestion,
+	isPureGreeting,
+	namesBookingStatusQuestion,
+} from '../src/services/agent/question';
 
 /**
  * The gate that decides whether the knowledge capability may claim a turn. Its
@@ -147,5 +151,104 @@ describe('isPureGreeting', () => {
 		['an acknowledgement', 'thanks!'],
 	])('reads %s as more than a greeting', (_label, text) => {
 		expect(isPureGreeting(text)).toBe(false);
+	});
+});
+
+/**
+ * The gate that decides whether the booking-status capability may claim a turn.
+ * Its error directions mirror `isInformationalQuestion`'s: a missed status
+ * question just leaves today's reply in place, while a wrongly-claimed request
+ * answers somebody who wants a NEW time with one they already have — so the
+ * inventory below is heaviest on the phrasings it must refuse.
+ */
+describe('namesBookingStatusQuestion — asking about a booking they already have', () => {
+	it.each([
+		// The reported transcript, verbatim.
+		'What appointment do I have coming up?',
+		// The same question, in the shapes a real inbox gets it.
+		'when is my appointment?',
+		'whens my appointment',
+		'what time is my appointment?',
+		'what day is my visit again?',
+		'do I have an appointment booked?',
+		'do we have anything scheduled with you?',
+		'what do I have coming up?',
+		'am I still on the schedule for this week?',
+		'is my appointment still on?',
+		'is my appointment confirmed?',
+		'can you confirm my appointment please',
+		'just checking on my appointment',
+		'remind me when my service call is',
+		"what's my appointment time again",
+		// A booked customer asking about the visit rarely says "appointment" at all.
+		'when are you coming?',
+		'what time will the tech be here?',
+		'are you still coming today?',
+		'when is someone getting here',
+		'what time are they arriving',
+	])('claims %j', (text) => {
+		expect(namesBookingStatusQuestion(text)).toBe(true);
+	});
+
+	it('is case- and whitespace-insensitive', () => {
+		expect(namesBookingStatusQuestion('  WHEN IS   MY APPOINTMENT?  ')).toBe(true);
+	});
+});
+
+describe('namesBookingStatusQuestion — turns it must never claim', () => {
+	it.each([
+		// Asking for a NEW visit. These carry the same nouns a status question
+		// does, and claiming one would answer a customer who wants to be scheduled
+		// with a booking they may not even have.
+		'can I book an appointment?',
+		'can I get an appointment this week?',
+		'I need an appointment',
+		'we would like to book a visit',
+		'can you schedule me an appointment?',
+		'do you have any openings?',
+		'what times do you have?',
+		'are you free Friday?',
+		'when can you come out?',
+		'how soon can you get here?',
+		"what's the earliest you can come?",
+		'can I get a second appointment for the upstairs bath?',
+		'when is your next appointment slot?',
+		'what else is open?',
+		// Changing one. Both stay exactly where they are today.
+		'can I move my appointment to Friday?',
+		'I need to reschedule my appointment',
+		'what time is my appointment — I have to cancel it',
+		// Questions ABOUT the appointment that an FAQ answers, not a time.
+		'do I have to be home for my appointment?',
+		'how much is my appointment going to cost?',
+		'how long does my appointment take?',
+		'what should I do before my appointment?',
+		// A question about the account's calendar, not the contact's.
+		'what times are booked up?',
+		// Naming a booking without asking anything about it.
+		'my appointment needs a bigger van',
+		'see you at my appointment',
+		// Nothing to read at all.
+		'',
+		'   ',
+		'?',
+		'👍',
+	])('refuses %j', (text) => {
+		expect(namesBookingStatusQuestion(text)).toBe(false);
+	});
+
+	it('lets one request-shaped phrase disqualify an otherwise status-shaped message', () => {
+		// The guards are absolute: the same sentence flips the moment it asks for
+		// something new rather than about what stands.
+		expect(namesBookingStatusQuestion('when is my appointment?')).toBe(true);
+		expect(namesBookingStatusQuestion('when is my appointment — can I move it?')).toBe(false);
+		expect(
+			namesBookingStatusQuestion('when is my appointment, and do you have anything sooner?'),
+		).toBe(false);
+	});
+
+	it('reads a status question buried in a long message', () => {
+		const rambling = `${'the leak under the sink started again last night and I mopped up twice. '.repeat(20)}anyway when is my appointment`;
+		expect(namesBookingStatusQuestion(rambling)).toBe(true);
 	});
 });

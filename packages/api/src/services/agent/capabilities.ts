@@ -5,14 +5,16 @@ import type {
 	ConversationChannel,
 	CreateJobInput,
 	Customer,
+	CustomerId,
 	JobId,
+	JobStatus,
 } from '@rivus/core';
 import type { UpdateAgentThread } from '../../repositories/types';
 import type { AppDeps } from '../../types';
 import { decideRivusReply } from '../inbox';
 import { answerFromKnowledge } from '../knowledge';
 import type { ChannelCapabilities, InboundAgentMessage } from './channel';
-import { type AgentDecision, decideScheduling } from './engine';
+import { type AgentDecision, type BookedAppointment, decideScheduling } from './engine';
 import {
 	isAcknowledgement,
 	matchOfferedSlot,
@@ -20,9 +22,15 @@ import {
 	parseRequestedDay,
 	parseSlotChoice,
 } from './parse';
-import { isInformationalQuestion } from './question';
+import { isInformationalQuestion, namesBookingStatusQuestion } from './question';
 import { type AgentReplyContext, type AgentResponse, composeAgentResponse } from './response';
-import { BOOKING_HORIZON_DAYS, type BusyInterval, formatSlotLabel, zonedParts } from './slots';
+import {
+	BOOKING_HORIZON_DAYS,
+	type BusyInterval,
+	computeOpenSlots,
+	formatSlotLabel,
+	zonedParts,
+} from './slots';
 
 /**
  * The core agent's feature layer. A capability is the ONLY thing a new feature
@@ -185,6 +193,21 @@ export function threadPatchFor(decision: AgentDecision): UpdateAgentThread {
 		case 'hold_for_team':
 			// A human owns the answer now; the scheduling state is not theirs to move.
 			return {};
+		case 'booking_status':
+			// Telling someone what they already have moves nothing. A standing offer
+			// keeps its slots (the reply re-listed them, so the numbers must still
+			// resolve) and a booked thread stays booked. The bookings themselves are
+			// read from the calendar on every turn — deliberately not cached onto the
+			// thread, so a job the team moves or cancels in the app is never reported
+			// from a stale copy.
+			return {};
+		case 'no_booking':
+			// The openings were listed and numbered in the reply, so they become the
+			// standing offer — the same rule the two "that doesn't work" decisions
+			// follow, and what makes a "2" back resolve to the second one.
+			return decision.alternatives.length > 0
+				? { state: 'slots_offered', offeredSlots: decision.alternatives }
+				: { state: 'new', offeredSlots: [] };
 	}
 }
 
@@ -369,12 +392,174 @@ export const knowledgeCapability: AgentCapability = {
 	},
 };
 
+/** The statuses that make a job an appointment worth telling a customer about. */
+const REPORTABLE_JOB_STATUSES: ReadonlySet<JobStatus> = new Set([
+	'scheduled',
+	'confirmed',
+	// A visit under way is still the answer to "when are you coming?" — the
+	// alternative is telling someone with a tech at the door that they have
+	// nothing booked. `completed` and `canceled` are excluded: neither is coming.
+	'in_progress',
+]);
+/** How many appointments one answer lists before it says there are more. */
+const MAX_REPORTED_BOOKINGS = 3;
+/** Page size for the customer's-calendar query; a few pages cover any real customer. */
+const BOOKING_PAGE_SIZE = 25;
+/** Backstop mirroring {@link MAX_BUSY_PAGES}: fail the delivery rather than answer from a partial read. */
+const MAX_BOOKING_PAGES = 100;
+
+/**
+ * The appointments this customer has coming up, soonest first, capped at
+ * {@link MAX_REPORTED_BOOKINGS} (`more` reports whether the cap hid any).
+ *
+ * Read from the CRM rather than from the thread on purpose: a customer books
+ * over the phone, the team enters the job in the app, and the next morning they
+ * text "what appointment do I have coming up?" — that booking was never on this
+ * thread, and answering "nothing" would be both wrong and an invitation to book
+ * a second visit.
+ *
+ * Two bounds are deliberate. The query starts a lookback BEFORE now, because
+ * `from` filters on `startAt` while "still coming" is about the window's end — a
+ * job that started twenty minutes ago and runs another forty is still the
+ * customer's next appointment. And it has no upper bound at all: nothing stops
+ * the team booking six months out, and a horizon here would report that customer
+ * as having nothing. It pages because `ListJobsOptions` carries a single status,
+ * so the liveness filter can only run after the query: a customer with a screen
+ * full of canceled rows (routine after a cancel-and-rebook) must not read as
+ * having no appointment.
+ */
+export async function loadUpcomingBookings(
+	jobs: OrchestratorDeps['jobs'],
+	accountId: AccountId,
+	customerId: CustomerId,
+	now: Date,
+): Promise<{ bookings: BookedAppointment[]; more: boolean }> {
+	const from = new Date(now.getTime() - BUSY_LOOKBACK_MINUTES * 60_000).toISOString();
+	const bookings: BookedAppointment[] = [];
+	for (let page = 1; ; page += 1) {
+		const { jobs: batch, total } = await jobs.list({
+			accountId,
+			customerId,
+			page,
+			pageSize: BOOKING_PAGE_SIZE,
+			from,
+		});
+		for (const job of batch) {
+			if (!REPORTABLE_JOB_STATUSES.has(job.status)) {
+				continue;
+			}
+			if (Date.parse(job.startAt) + job.durationMinutes * 60_000 <= now.getTime()) {
+				continue;
+			}
+			if (bookings.length === MAX_REPORTED_BOOKINGS) {
+				// One past the cap is all it takes to know the list is short — the rest
+				// of the calendar doesn't have to be read to say "and more after that".
+				return { bookings, more: true };
+			}
+			bookings.push({
+				title: job.title,
+				startAt: job.startAt,
+				durationMinutes: job.durationMinutes,
+			});
+		}
+		if (page * BOOKING_PAGE_SIZE >= total || batch.length === 0) {
+			break;
+		}
+		if (page >= MAX_BOOKING_PAGES) {
+			throw new RetryDeliveryError(
+				'Calendar too large to load bookings for this contact; the delivery will be retried.',
+			);
+		}
+	}
+	return { bookings, more: false };
+}
+
+/**
+ * The booking-status capability: answer "what appointment do I have coming up?"
+ * with the appointment, instead of pushing a contact who is already on the
+ * calendar toward booking a second visit.
+ *
+ * It sits FIRST in the registry, and its `matches` carries the whole restraint —
+ * the same shape `knowledgeCapability` uses. Registering it merely ahead of
+ * scheduling would not be enough: "when are you coming?" carries no scheduling
+ * vocabulary at all, so knowledge claims it today and answers it out of the FAQs
+ * (or pages the team). The claim is lexical and state-aware only — whether a
+ * booking actually exists is a repository read, which belongs in `handle`.
+ */
+export const bookingStatusCapability: AgentCapability = {
+	id: 'booking_status',
+	matches(ctx: TurnContext): boolean {
+		const { thread, message, timeZone, now } = ctx;
+		const offered = thread.state === 'slots_offered' ? thread.offeredSlots : [];
+		// Two shapes are scheduling's however they are worded, and both are checked
+		// with the parsers the engine itself would use, so the two can't drift: a
+		// numbered pick of a standing offer, and a complete day + time (a proposal —
+		// "can you do Tuesday at 2?" — which must book, not report).
+		if (
+			parseSlotChoice(message.text, offered.length) !== null ||
+			parseProposedTime(message.text, { timeZone, now }) !== null ||
+			isAcknowledgement(message.text)
+		) {
+			return false;
+		}
+		// `matchOfferedSlot` and `parseRequestedDay` are deliberately NOT guards
+		// here, unlike in `knowledgeCapability`. Both read a bare day ("is my
+		// appointment still on for Friday?"), and letting them win would answer a
+		// question about an existing booking with openings on that day — or, while
+		// an offer stands, silently book one of them off the back of a question.
+		return namesBookingStatusQuestion(message.text);
+	},
+	async handle(ctx: TurnContext): Promise<CapabilityOutcome> {
+		const { account, customer, thread, timeZone, now, deps } = ctx;
+		// A contact the CRM doesn't know has no calendar to read: there is nothing to
+		// look them up by, and no booking could have been made for them. Scheduling's
+		// self-signup invitation is the right answer, so hand the turn over — the same
+		// delegation the knowledge capability makes for a stranger it can't answer.
+		if (!customer) {
+			return schedulingCapability.handle(ctx);
+		}
+
+		const { bookings, more } = await loadUpcomingBookings(deps.jobs, account.id, customer.id, now);
+		// A question asked mid-offer keeps the offer alive, numbers and all.
+		const offeredSlots = thread.state === 'slots_offered' ? thread.offeredSlots : [];
+
+		if (bookings.length > 0) {
+			const decision: AgentDecision = { kind: 'booking_status', bookings, more, offeredSlots };
+			return {
+				response: composeAgentResponse(decision, replyContextFor(ctx)),
+				outcome: decision.kind,
+				threadPatch: threadPatchFor(decision),
+			};
+		}
+
+		// Nothing booked. Say so plainly, then offer — a standing offer is restated
+		// rather than recomputed, so the numbers the contact was already given keep
+		// meaning the same windows.
+		const alternatives =
+			offeredSlots.length > 0
+				? offeredSlots
+				: computeOpenSlots({
+						now,
+						timeZone,
+						busy: await loadBusyIntervals(deps.jobs, account.id, now),
+					});
+		const decision: AgentDecision = { kind: 'no_booking', alternatives };
+		return {
+			response: composeAgentResponse(decision, replyContextFor(ctx)),
+			outcome: decision.kind,
+			threadPatch: threadPatchFor(decision),
+		};
+	},
+};
+
 /**
  * The capability registry. Adding a feature = adding an entry here. Order is
- * priority: the knowledge capability gets first refusal (it declines any turn
- * scheduling can read), and scheduling stays last as the always-matching
- * fallback.
+ * priority, and each entry's `matches` carries its own restraint:
+ * booking-status first (it claims only a question about a booking the contact
+ * already has, and several of those phrasings are ones knowledge would otherwise
+ * answer from the FAQs), knowledge next (it declines any turn scheduling can
+ * read), and scheduling last as the always-matching fallback.
  */
 export function defaultCapabilities(): AgentCapability[] {
-	return [knowledgeCapability, schedulingCapability];
+	return [bookingStatusCapability, knowledgeCapability, schedulingCapability];
 }
