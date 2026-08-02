@@ -84,6 +84,8 @@ interface TesterSession {
 interface TesterTurn {
 	outcome: string;
 	delivery: { text: string; subject?: string; html?: string };
+	/** Voice only: whether the simulated call keeps listening or hangs up. */
+	call?: 'listen' | 'ended';
 	session: TesterSession;
 	messages: Array<{ author: string; body: string }>;
 }
@@ -222,11 +224,11 @@ describe('POST /v1/admin/agent-tester/sessions', () => {
 		});
 	});
 
-	it('normalizes a customer’s free-text phone for sms and whatsapp', async () => {
+	it('normalizes a customer’s free-text phone for every phone-shaped channel', async () => {
 		const built = await setup();
 		app = built.app;
 		const customer = await addCustomer(built.repos, built.accountId, { phone: CUSTOMER_PHONE });
-		for (const channel of ['sms', 'whatsapp'] as const) {
+		for (const channel of ['sms', 'whatsapp', 'phone'] as const) {
 			const session = await openSession(app, built.staff.token, {
 				channel,
 				customerId: customer.id,
@@ -359,14 +361,15 @@ describe('POST /v1/admin/agent-tester/sessions', () => {
 		});
 		expect(unknown.statusCode).toBe(404);
 
-		const phone = await app.inject({
+		const notAChannel = await app.inject({
 			method: 'POST',
 			url: `${BASE}/sessions`,
 			headers: authHeader(built.staff.token),
-			// `phone` is a real conversation channel, but it has no transport to capture.
-			payload: { channel: 'phone', contactAddress: CUSTOMER_E164 },
+			// The agent answers on four channels; the fax machine is not one of them.
+			payload: { channel: 'fax', contactAddress: CUSTOMER_E164 },
 		});
-		expect(phone.statusCode).toBe(400);
+		expect(notAChannel.statusCode).toBe(400);
+		expect(notAChannel.json().message).toContain('email, sms, whatsapp, or phone');
 	});
 
 	it('conflicts on a second session for the same contact, leaving no orphan conversation', async () => {
@@ -468,9 +471,11 @@ describe('POST /v1/admin/agent-tester/sessions/:id/messages', () => {
 		const offer = asked.json<TesterTurn>();
 		expect(offer.outcome).toBe('offer_slots');
 		expect(offer.delivery.text).toContain('1.');
-		// A chat channel carries no subject or HTML.
+		// A chat channel carries no subject or HTML — and no call to leave open or
+		// hang up, so it reports no call flow at all.
 		expect(offer.delivery.subject).toBeUndefined();
 		expect(offer.delivery.html).toBeUndefined();
+		expect(offer.call).toBeUndefined();
 		expect(offer.session.state).toBe('slots_offered');
 		expect(offer.messages.map((message) => message.author)).toEqual(['customer', 'rivus']);
 		expect(offer.messages[0]?.body).toContain('water heater');
@@ -590,41 +595,115 @@ describe('POST /v1/admin/agent-tester/sessions/:id/messages', () => {
 		}
 	});
 
-	it('treats a phone thread as no session at all', async () => {
+	it('serves a phone session like any other — it lists, and the detail route has it', async () => {
 		const built = await setup();
 		app = built.app;
-		// Voice threads exist, but there is no transport to capture, so the tester
-		// can neither list nor drive them.
-		const conversation = await built.repos.conversations.create(built.accountId, {
-			contactName: 'Caller',
+		// A call is a first-class session now: the same thread + conversation pair,
+		// opened on the caller's raw number.
+		const session = await openSession(app, built.staff.token, {
 			channel: 'phone',
-			customerId: '',
-			contactPhone: CUSTOMER_E164,
-			status: 'rivus_handling',
-			tags: [],
-			lastInvoice: '',
+			contactAddress: '(555) 123-4567',
 		});
-		const thread = await built.repos.agentThreads.create({
-			accountId: built.accountId,
+		expect(session).toMatchObject({
 			channel: 'phone',
 			contactAddress: CUSTOMER_E164,
-			conversationId: conversation.id,
-			customerId: '',
+			state: 'new',
+			// A call has no subject to thread under.
 			subject: '',
 		});
 		const detail = await app.inject({
 			method: 'GET',
-			url: `${BASE}/sessions/${thread.id}`,
+			url: `${BASE}/sessions/${session.id}`,
 			headers: authHeader(built.staff.token),
 		});
-		expect(detail.statusCode).toBe(404);
-		expect((await sendAs(app, built.staff.token, thread.id, 'hi')).statusCode).toBe(404);
+		expect(detail.statusCode).toBe(200);
+		expect(detail.json<{ session: TesterSession }>().session.id).toBe(session.id);
 		const listed = await app.inject({
 			method: 'GET',
 			url: `${BASE}/sessions`,
 			headers: authHeader(built.staff.token),
 		});
-		expect(listed.json<{ data: TesterSession[] }>().data).toEqual([]);
+		expect(listed.json<{ data: TesterSession[] }>().data.map((item) => item.id)).toEqual([
+			session.id,
+		]);
+	});
+
+	it('runs a spoken scheduling call, normalizing the pick and ending the call on the booking', async () => {
+		const built = await setup();
+		app = built.app;
+		const customer = await addCustomer(built.repos, built.accountId, { phone: CUSTOMER_PHONE });
+		const session = await openSession(app, built.staff.token, {
+			channel: 'phone',
+			customerId: customer.id,
+		});
+
+		const asked = await sendAs(
+			app,
+			built.staff.token,
+			session.id,
+			'My water heater is leaking, when can someone come out?',
+		);
+		expect(asked.statusCode).toBe(200);
+		const offer = asked.json<TesterTurn>();
+		expect(offer.outcome).toBe('offer_slots');
+		// The call stays open, and the times arrive as the spoken menu — not the
+		// numbered list the chat channels render.
+		expect(offer.call).toBe('listen');
+		expect(offer.delivery.text).toContain('Option 1');
+		expect(offer.session.state).toBe('slots_offered');
+		expect(offer.messages.map((message) => message.author)).toEqual(['customer', 'rivus']);
+
+		// Said aloud, a menu pick comes back in words; the shared voice core is what
+		// turns it into the "1" the engine parses.
+		const picked = await sendAs(app, built.staff.token, session.id, 'option one');
+		expect(picked.statusCode).toBe(200);
+		const booked = picked.json<TesterTurn>();
+		expect(booked.outcome).toBe('book');
+		expect(booked.call).toBe('ended');
+		expect(booked.session.state).toBe('booked');
+		expect(booked.session.bookedJobId).not.toBe('');
+		// The delivery is what the caller HEARS — the confirmation plus the sign-off
+		// the call ends on…
+		expect(booked.delivery.text.endsWith('Thanks for calling. Goodbye!')).toBe(true);
+		// …while the transcript keeps only the utterance the agent composed.
+		const spoken = booked.messages.filter((message) => message.author === 'rivus').at(-1);
+		expect(spoken?.body).not.toContain('Goodbye!');
+		expect(booked.messages.some((message) => message.body === 'option 1')).toBe(true);
+
+		// The booking is a real job on the account's calendar.
+		const { jobs, total } = await built.repos.jobs.list({
+			accountId: built.accountId,
+			page: 1,
+			pageSize: 10,
+		});
+		expect(total).toBe(1);
+		expect(jobs[0]?.id).toBe(booked.session.bookedJobId);
+		expect(jobs[0]?.customerId).toBe(customer.id);
+
+		// A simulated call reaches nobody: no text, no WhatsApp message, no email.
+		expect((app.deps.smsSender as RecordingSmsSender).messages).toHaveLength(0);
+		expect((app.deps.whatsappSender as RecordingWhatsappSender).messages).toHaveLength(0);
+		expect((app.deps.mailer as RecordingMailer).agentEmails).toHaveLength(0);
+	});
+
+	it('sends an unknown caller to signup with a spoken link, then ends the call', async () => {
+		const built = await setup();
+		app = built.app;
+		const session = await openSession(app, built.staff.token, {
+			channel: 'phone',
+			contactAddress: CUSTOMER_E164,
+		});
+		const response = await sendAs(app, built.staff.token, session.id, 'Can I book something?');
+		expect(response.statusCode).toBe(200);
+		const turn = response.json<TesterTurn>();
+		expect(turn.outcome).toBe('send_signup_link');
+		expect(turn.call).toBe('ended');
+		expect(turn.session.state).toBe('awaiting_signup');
+		// Nobody dictates a protocol: the voice renderer reads the address out.
+		expect(turn.delivery.text).toContain(
+			`/customers/join/${encodeURIComponent(built.staff.account.slug)}`,
+		);
+		expect(turn.delivery.text).not.toContain('https://');
 	});
 });
 

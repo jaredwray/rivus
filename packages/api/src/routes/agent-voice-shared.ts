@@ -11,6 +11,11 @@ import { createVoiceChannelAdapter } from '../services/agent/voice/adapter';
  * XML it answers with (Plivo XML vs TwiML) — and hands normalized numbers and
  * transcribed speech here, so account resolution, the guards, the spoken
  * wording, and the turn policy can never drift between providers.
+ *
+ * The staff Agent Tester is a third edge onto {@link runVoiceTurn}: it types
+ * the speech instead of transcribing it and prints the reply instead of
+ * speaking it, which is exactly why it must come through here — a simulated
+ * call that skipped this core would drift from the real one.
  */
 
 /** Outcomes after which the call ends instead of listening for another turn. */
@@ -115,6 +120,13 @@ export async function resolveVoiceAccount(options: {
 export interface VoiceTurnResult {
 	mode: 'listen' | 'terminal';
 	text: string;
+	/**
+	 * What the agent did (`offer_slots`, `book`, …), or `'reprompt'` when the
+	 * caller said nothing to run a turn on. The provider routes ignore it — they
+	 * only need the words and the flow — but the Agent Tester reports it, so
+	 * staff see the same outcome every other channel shows them.
+	 */
+	outcome: string;
 }
 
 /**
@@ -135,7 +147,9 @@ export async function runVoiceTurn(options: {
 }): Promise<VoiceTurnResult> {
 	const normalized = normalizeSpokenNumbers(options.speech);
 	if (normalized === '') {
-		return { mode: 'listen', text: VOICE_LINES.reprompt };
+		// Nothing was said, so no turn ran: there is no orchestrator outcome to
+		// report, only the re-prompt itself.
+		return { mode: 'listen', text: VOICE_LINES.reprompt, outcome: 'reprompt' };
 	}
 	// The capture adapter hands back the rendered utterance to speak — voice is
 	// the one channel whose transport is the webhook's own response.
@@ -159,10 +173,14 @@ export async function runVoiceTurn(options: {
 		logger: options.logger,
 	});
 	if (!result.handled || capture.text === '') {
-		return { mode: 'terminal', text: VOICE_LINES.goodbye };
+		return { mode: 'terminal', text: VOICE_LINES.goodbye, outcome: result.outcome };
 	}
 	if (VOICE_TERMINAL_OUTCOMES.has(result.outcome)) {
-		return { mode: 'terminal', text: `${capture.text} ${VOICE_LINES.goodbye}` };
+		return {
+			mode: 'terminal',
+			text: `${capture.text} ${VOICE_LINES.goodbye}`,
+			outcome: result.outcome,
+		};
 	}
-	return { mode: 'listen', text: capture.text };
+	return { mode: 'listen', text: capture.text, outcome: result.outcome };
 }

@@ -471,9 +471,13 @@ export const seedSummaryResponseSchema = z
 	})
 	.meta({ id: 'SeedSummary' });
 
-/** The channels the development-only Agent Tester can simulate a customer on. */
-export const testerChannelSchema = z.enum(['email', 'sms', 'whatsapp'], {
-	error: 'Choose a channel to test: email, sms, or whatsapp.',
+/**
+ * The channels the development-only Agent Tester can simulate a customer on —
+ * every channel the agent answers on. `phone` is a simulated voice call: staff
+ * type what the caller says and read back the line Rivus would speak.
+ */
+export const testerChannelSchema = z.enum(['email', 'sms', 'whatsapp', 'phone'], {
+	error: 'Choose a channel to test: email, sms, whatsapp, or phone.',
 });
 
 /**
@@ -528,7 +532,9 @@ export const testerSessionDetailResponseSchema = z
 /**
  * What the agent WOULD have delivered for a simulated turn — captured by the
  * tester's transport instead of being sent. `subject`/`html` are present only on
- * the email channel, where the real design-system card is rendered.
+ * the email channel, where the real design-system card is rendered. On `phone`
+ * the text is the full line the caller would hear, sign-off included, which is
+ * why it can run past the utterance recorded in the transcript.
  */
 export const testerDeliveryResponseSchema = z
 	.object({
@@ -544,6 +550,12 @@ export const testerTurnResponseSchema = z
 		/** What the agent did (`offer_slots`, `book`, …) or why it ignored the message. */
 		outcome: z.string(),
 		delivery: testerDeliveryResponseSchema,
+		/**
+		 * Voice only: where the turn left the call — still listening for another
+		 * one, or hung up after speaking. Absent on the messaging channels, which
+		 * have no call to end.
+		 */
+		call: z.enum(['listen', 'ended']).optional(),
 		session: testerSessionResponseSchema,
 		messages: z.array(messageResponseSchema),
 	})

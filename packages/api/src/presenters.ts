@@ -1,5 +1,6 @@
 import {
 	type Account,
+	type AgentThread,
 	type Conversation,
 	gravatarUrl,
 	type Invite,
@@ -8,7 +9,6 @@ import {
 	type User,
 } from '@rivus/core';
 import type { StoredUser } from './repositories/types';
-import type { TesterThread } from './services/agent/tester';
 
 /** A provisioned channel's config as exposed to clients — the provider reference stays server-side. */
 export interface PublicAccountChannelConfig {
@@ -107,7 +107,7 @@ export function toInvite(invite: Invite) {
  * thread from the inbox), in which case its fields fall back to empty and the
  * thread's own `updatedAt` stands in for the last activity.
  */
-export function toTesterSession(thread: TesterThread, conversation: Conversation | null) {
+export function toTesterSession(thread: AgentThread, conversation: Conversation | null) {
 	return {
 		id: thread.id,
 		channel: thread.channel,
