@@ -43,6 +43,22 @@ function sender(app: FastifyInstance): RecordingSmsSender {
 	return app.deps.smsSender as RecordingSmsSender;
 }
 
+/**
+ * The next Tuesday/Wednesday/Thursday at least three days out, as `YYYY-MM-DD`
+ * in the account's zone (a fresh signup keeps UTC). Read off the real clock
+ * because the route runs on it: far enough ahead that every hour of the day
+ * clears the 24-hour notice, so an empty calendar always answers with the full
+ * 9:00 AM / 1:00 PM / 4:00 PM spread.
+ */
+function openWeekday(): string {
+	const today = new Date();
+	let day = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + 3));
+	while (day.getUTCDay() < 2 || day.getUTCDay() > 4) {
+		day = new Date(day.getTime() + 24 * 60 * 60_000);
+	}
+	return day.toISOString().slice(0, 10);
+}
+
 /** Build an app + repos and enable SMS on the signed-up owner's account. */
 async function setup() {
 	const { app, repos } = await buildTestAppWithRepos();
@@ -129,6 +145,40 @@ describe('POST /v1/channels/sms/plivo/inbound', () => {
 		expect(total).toBe(1);
 		const thread = await repos.agentThreads.findByContact(accountId, 'sms', SENDER);
 		expect(thread).not.toBeNull();
+	});
+
+	it('books the option a customer picks by time alone after asking about a day', async () => {
+		const { app: built, repos, accountId } = await setup();
+		app = built;
+		await repos.customers.create(accountId, {
+			name: 'Dana Fox',
+			email: '',
+			phone: '(555) 999-0000',
+			address: '12 Pine St',
+			lifetimeValue: 0,
+			balance: 0,
+			notes: '',
+		});
+		const offer = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: inbound({
+				Text: `anything on ${openWeekday()}?`,
+				MessageUUID: 'plivo-sms-day',
+			}),
+		});
+		expect(offer.json()).toEqual({ handled: true, outcome: 'offer_slots' });
+		expect(sender(app).messages.at(-1)?.text).toContain('1.');
+		// The reported bug over the wire: naming one of those options by its time
+		// re-offered generic slots instead of booking the 1:00 PM window.
+		const book = await app.inject({
+			method: 'POST',
+			url: WEBHOOK_URL,
+			payload: inbound({ Text: 'lets do 1pm', MessageUUID: 'plivo-sms-time-pick' }),
+		});
+		expect(book.json()).toEqual({ handled: true, outcome: 'book' });
+		expect((await repos.jobs.list({ accountId, page: 1, pageSize: 10 })).total).toBe(1);
+		expect(sender(app).messages.at(-1)?.text).toContain('1:00 PM');
 	});
 
 	it('answers a knowledge-base question over SMS instead of offering slots', async () => {

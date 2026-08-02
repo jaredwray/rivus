@@ -97,6 +97,66 @@ function refusesPick(normalized: string): boolean {
 const EXPLICIT_DATE =
 	/\b\d{1,2}(?:st|nd|rd|th)\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b/;
 
+// A day named relative to today. Like {@link EXPLICIT_DATE} it points at one
+// calendar day the offer matcher cannot check the offers against, so a time
+// standing next to it ("tomorrow at 2pm") must never pick the 2 PM on some
+// other offered day; {@link parseProposedTime} reads the day and the time
+// together and books what was actually said.
+const RELATIVE_DAY = /\b(?:today|tonight|tomorrow)\b/;
+
+// The clock time in a reply that also names a weekday: the first number in the
+// message, minutes and meridiem optional. Loose on purpose — the day is already
+// pinned down, so the hour only has to choose between that day's offers
+// ("tuesday at 9 works").
+const DAY_SCOPED_TIME = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/;
+
+// The clock time in a reply that names no day at all, where the time IS the
+// whole pick: digits with a meridiem ("1pm", "1 pm"), or with colon-minutes
+// ("13:00", "1:30pm"). A bare digit is deliberately not a time here — with a
+// numbered list on the table "lets do 1" is indistinguishable from a pick of
+// option 1, the same reasoning that keeps a bare ordinal out of
+// {@link parseRequestedDay}. The whole message is searched rather than only its
+// first number: in "in 20 mins can we do 1pm?" the first number is the
+// meridiem-less 20, and the time the customer named comes after it.
+const STANDALONE_TIME = /\b(\d{1,2}):(\d{2})\s*(am|pm)?\b|\b(\d{1,2})\s*(am|pm)\b/;
+
+/** A clock time a reply pinned down: a 24-hour hour, and minutes when it gave them. */
+interface WantedTime {
+	hour: number;
+	minute: number | null;
+}
+
+function wantedTime(
+	hourText: string,
+	minuteText: string | undefined,
+	meridiem: string | undefined,
+): WantedTime | null {
+	const hour = resolveHour(Number(hourText), meridiem);
+	if (hour === null) {
+		return null;
+	}
+	return { hour, minute: minuteText === undefined ? null : Number(minuteText) };
+}
+
+function dayScopedTime(normalized: string): WantedTime | null {
+	const match = normalized.match(DAY_SCOPED_TIME);
+	return match?.[1] ? wantedTime(match[1], match[2], match[3]) : null;
+}
+
+function standaloneTime(normalized: string): WantedTime | null {
+	if (RELATIVE_DAY.test(normalized)) {
+		return null;
+	}
+	const match = normalized.match(STANDALONE_TIME);
+	if (match?.[1]) {
+		return wantedTime(match[1], match[2], match[3]);
+	}
+	if (match?.[4]) {
+		return wantedTime(match[4], undefined, match[5]);
+	}
+	return null;
+}
+
 /**
  * Which offered slot (1-based → 0-based index) a reply picks, or null when it
  * doesn't clearly pick one. Understands "2", "option 2", "#2", "the second
@@ -162,11 +222,17 @@ export function parseSlotChoice(text: string, offeredCount: number): number | nu
 }
 
 /**
- * Which offered slot a reply names by day — "Tuesday works", "the 10am on
- * Tuesday" — or null unless exactly one offered slot matches everything the
- * reply pinned down (weekday, and the hour when one is given). Ambiguity is
- * never guessed: two Tuesday offers and "Tuesday works" → null, and the
- * engine restates the options.
+ * Which offered slot a reply names by day and/or by time — "Tuesday works",
+ * "the 10am on Tuesday", "lets do 1pm" — or null unless exactly one offered
+ * slot matches everything the reply pinned down. Ambiguity is never guessed:
+ * two Tuesday offers and "Tuesday works" → null, two 9:00 AM offers on
+ * different days and "9am" → null, and the engine restates the options.
+ *
+ * A time with no day behind it only counts when it is unmistakably a clock
+ * ("1pm", "13:00"); a bare digit stays a candidate pick of option 1, never a
+ * time. Minutes, when the reply gives them, must match the slot's — "1:30pm"
+ * never books the 1:00 PM window, because the agent must not book a time
+ * nobody named.
  */
 export function matchOfferedSlot(
 	text: string,
@@ -181,21 +247,27 @@ export function matchOfferedSlot(
 		return null;
 	}
 	const weekdayMatch = normalized.match(/\b(sun|mon|tue|wed|thu|fri|sat)[a-z]*\b/);
-	if (!weekdayMatch?.[1]) {
+	const weekday = weekdayMatch?.[1] ? WEEKDAYS[weekdayMatch[1]] : undefined;
+	const wanted = weekday === undefined ? standaloneTime(normalized) : dayScopedTime(normalized);
+	// A reply that pinned down neither a day nor a clock picks nothing.
+	if (weekday === undefined && wanted === null) {
 		return null;
 	}
-	const weekday = WEEKDAYS[weekdayMatch[1]];
-	const time = normalized.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/);
-	const wantedHour = time?.[1] ? resolveHour(Number(time[1]), time[3]) : null;
 
 	const matches: number[] = [];
 	offeredSlots.forEach((slot, index) => {
 		const parts = zonedParts(new Date(slot.startAt), timeZone);
-		if (parts.weekday !== weekday) {
+		if (weekday !== undefined && parts.weekday !== weekday) {
 			return;
 		}
-		if (wantedHour !== null && parts.hour !== wantedHour) {
-			return;
+		if (wanted) {
+			if (parts.hour !== wanted.hour) {
+				return;
+			}
+			// Minutes only narrow when the reply spelled them out, and then exactly.
+			if (wanted.minute !== null && parts.minute !== wanted.minute) {
+				return;
+			}
 		}
 		matches.push(index);
 	});

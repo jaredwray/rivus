@@ -106,6 +106,51 @@ describe('decideScheduling — picking an offered slot', () => {
 	});
 });
 
+describe('decideScheduling — picking an offered slot by its time', () => {
+	// Thursday July 9th at 9:00 AM, 1:00 PM and 4:00 PM Pacific — the spread a
+	// day-specific ask ("anything Thursday?") is answered with.
+	const THURSDAY: AgentSlot[] = [
+		{ startAt: '2026-07-09T16:00:00.000Z', durationMinutes: 60 },
+		{ startAt: '2026-07-09T20:00:00.000Z', durationMinutes: 60 },
+		{ startAt: '2026-07-09T23:00:00.000Z', durationMinutes: 60 },
+	];
+
+	it('books the 1 PM window when the reply only says "lets do 1pm"', () => {
+		// The reported bug: three options from one day on the table, and a reply
+		// naming one of them by time came back as another generic offer.
+		expect(decide({ text: 'lets do 1pm', offeredSlots: THURSDAY })).toEqual({
+			kind: 'book',
+			slot: THURSDAY[1],
+		});
+	});
+
+	it('books a bare time that matches exactly one offer across days', () => {
+		expect(decide({ text: 'lets do 2pm', offeredSlots: OFFERED })).toEqual({
+			kind: 'book',
+			slot: OFFERED[1],
+		});
+	});
+
+	it('re-checks the calendar before booking a slot picked by time', () => {
+		const busy = [{ startAt: THURSDAY[1]?.startAt ?? '', durationMinutes: 60 }];
+		const decision = decide({ text: 'lets do 1pm', offeredSlots: THURSDAY, busy });
+		expect(decision.kind).toBe('propose_unavailable');
+		if (decision.kind === 'propose_unavailable') {
+			expect(decision.reason).toBe('taken');
+			expect(decision.requestedStartAt).toBe(THURSDAY[1]?.startAt);
+		}
+	});
+
+	it('re-offers instead of guessing which day a bare time meant', () => {
+		// The same hour on two days: nothing in the reply says which one.
+		const twoMornings: AgentSlot[] = [
+			{ startAt: '2026-07-07T16:00:00.000Z', durationMinutes: 60 },
+			{ startAt: '2026-07-08T16:00:00.000Z', durationMinutes: 60 },
+		];
+		expect(decide({ text: '9am', offeredSlots: twoMornings }).kind).toBe('offer_slots');
+	});
+});
+
 describe('decideScheduling — customer proposes their own time', () => {
 	it('books a free, in-hours proposal', () => {
 		const decision = decide({ text: 'Could you do July 10 at 2pm?' });

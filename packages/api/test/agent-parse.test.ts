@@ -87,7 +87,43 @@ describe('matchOfferedSlot', () => {
 		expect(matchOfferedSlot('tuesday at 2pm works', twoTuesdays, PACIFIC)).toBe(1);
 	});
 
-	it('returns null without a weekday, or with nothing offered', () => {
+	it.each([
+		['lets do 2pm', 1],
+		['2 pm works', 1],
+		['9am please', 0],
+		['2:00pm', 1],
+		['14:00', 1],
+		['can we do 2:00 pm?', 1],
+	])('matches %j to slot %i on its time alone', (text, index) => {
+		expect(matchOfferedSlot(text, offered, PACIFIC)).toBe(index);
+	});
+
+	it('never reads a bare digit as a time — it is a candidate pick, not a clock', () => {
+		expect(matchOfferedSlot('lets do 2', offered, PACIFIC)).toBeNull();
+	});
+
+	it('never picks a window the reply did not name', () => {
+		// Minutes were spelled out and no offer is at 2:30, with or without a day.
+		expect(matchOfferedSlot('2:30pm', offered, PACIFIC)).toBeNull();
+		expect(matchOfferedSlot('thursday at 2:30pm', offered, PACIFIC)).toBeNull();
+		// Nothing is on offer at that hour at all.
+		expect(matchOfferedSlot('10am', offered, PACIFIC)).toBeNull();
+		// An impossible hour reads as no clock time at all.
+		expect(matchOfferedSlot('25:00', offered, PACIFIC)).toBeNull();
+	});
+
+	it('returns null when a bare time is ambiguous across days', () => {
+		// Tuesday July 7th and Wednesday July 8th, both at 9:00 AM Pacific.
+		const twoMornings: AgentSlot[] = [
+			{ startAt: '2026-07-07T16:00:00.000Z', durationMinutes: 60 },
+			{ startAt: '2026-07-08T16:00:00.000Z', durationMinutes: 60 },
+		];
+		expect(matchOfferedSlot('9am works', twoMornings, PACIFIC)).toBeNull();
+		// Naming the day still disambiguates.
+		expect(matchOfferedSlot('wednesday at 9am', twoMornings, PACIFIC)).toBe(1);
+	});
+
+	it('returns null when the reply pins nothing down, or with nothing offered', () => {
 		expect(matchOfferedSlot('sounds good', offered, PACIFIC)).toBeNull();
 		expect(matchOfferedSlot('tuesday', [], PACIFIC)).toBeNull();
 	});
@@ -200,8 +236,15 @@ describe('matchOfferedSlot — guards', () => {
 		expect(matchOfferedSlot('tuesday 2026-07-14 works', offered, PACIFIC)).toBeNull();
 	});
 
-	it('refuses to match a negated day', () => {
+	it('refuses to match a negated day or time', () => {
 		expect(matchOfferedSlot("Tuesday doesn't work for me", offered, PACIFIC)).toBeNull();
+		expect(matchOfferedSlot("2pm doesn't work", offered, PACIFIC)).toBeNull();
+	});
+
+	it('leaves a relative day + time to the proposal parser', () => {
+		// It is Wednesday July 1st, so "tomorrow" is the 2nd — the offered Thursday
+		// is the 9th, and its 2 PM is not the 2 PM being asked for.
+		expect(matchOfferedSlot('tomorrow at 2pm', offered, PACIFIC)).toBeNull();
 	});
 });
 
