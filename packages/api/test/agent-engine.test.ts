@@ -147,6 +147,23 @@ describe('decideScheduling — picking an offered slot by its time', () => {
 		expect(decide({ text: '1pm next week', offeredSlots: THURSDAY }).kind).toBe('offer_slots');
 	});
 
+	it('never books the time a reply refuses or bounds', () => {
+		// The hour is on offer, but the reply says no to it…
+		expect(decide({ text: 'no, not 1pm', offeredSlots: THURSDAY }).kind).toBe('offer_slots');
+		// …and here it is the edge of the window being asked about, not a pick.
+		expect(decide({ text: 'anything before 1pm', offeredSlots: THURSDAY }).kind).toBe(
+			'offer_slots',
+		);
+	});
+
+	it('still books the alternative a refusal leads with', () => {
+		// "no" refuses the pick without swallowing the time the same message names.
+		expect(decide({ text: 'no, tuesday at 2pm works' })).toEqual({
+			kind: 'book',
+			slot: { startAt: '2026-07-07T21:00:00.000Z', durationMinutes: 60 },
+		});
+	});
+
 	it('re-offers instead of guessing which day a bare time meant', () => {
 		// The same hour on two days: nothing in the reply says which one.
 		const twoMornings: AgentSlot[] = [

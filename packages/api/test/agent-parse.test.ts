@@ -184,6 +184,15 @@ describe('parseProposedTime', () => {
 		expect(parseProposedTime('tomorrow at 9:75', CTX)).toBeNull();
 	});
 
+	it('rejects an hour no 12-hour clock has, and keeps the two that look like it', () => {
+		// "13am" and "0pm" are a typo or were never a time; either reading is a guess.
+		expect(parseProposedTime('July 10 at 13am', CTX)).toBeNull();
+		expect(parseProposedTime('July 10 at 0pm', CTX)).toBeNull();
+		// Noon and midnight are the hours the bound must leave alone.
+		expect(parseProposedTime('July 10 at 12pm', CTX)).toBe('2026-07-10T19:00:00.000Z');
+		expect(parseProposedTime('July 10 at 12am', CTX)).toBe('2026-07-10T07:00:00.000Z');
+	});
+
 	it('returns null when no complete day + time is named', () => {
 		expect(parseProposedTime('sometime next week?', CTX)).toBeNull();
 		expect(parseProposedTime('at 2pm', CTX)).toBeNull(); // time, no day
@@ -205,6 +214,7 @@ describe('parseSlotChoice — negation guard', () => {
 		'option 2 does not work',
 		"I can't do the second one",
 		'none of those work for me',
+		'not the first one',
 	])('never reads %j as a pick', (text) => {
 		expect(parseSlotChoice(text, 3)).toBeNull();
 	});
@@ -270,6 +280,62 @@ describe('matchOfferedSlot — guards', () => {
 		expect(matchOfferedSlot('this tuesday at 9am', offered, PACIFIC)).toBe(0);
 		// Minutes and hours are not shifted windows either.
 		expect(matchOfferedSlot('in 20 mins can we do 2pm?', offered, PACIFIC)).toBe(1);
+	});
+
+	it.each([
+		// A plain refusal, with no contraction to spot it by.
+		'no, not 2pm',
+		'not tuesday',
+		// An exclusion frame names what is NOT wanted.
+		'anything but 2pm',
+	])('refuses to match the refusal in %j', (text) => {
+		expect(matchOfferedSlot(text, offered, PACIFIC)).toBeNull();
+	});
+
+	it('keeps ordinary politeness affirmative', () => {
+		// "no problem"/"no worries" are agreement, not refusal.
+		expect(matchOfferedSlot('no problem, tuesday works', offered, PACIFIC)).toBe(0);
+		expect(matchOfferedSlot('no worries — 2pm works', offered, PACIFIC)).toBe(1);
+	});
+
+	it.each([
+		// A boundary is a request for what lies the other side of it: booking the
+		// boundary itself answers the opposite of what was asked.
+		'anything before 2pm',
+		'until 2pm',
+	])('refuses to book the boundary time in %j', (text) => {
+		expect(matchOfferedSlot(text, offered, PACIFIC)).toBeNull();
+	});
+
+	it('still matches a time the reply merely approximates', () => {
+		// "around 2pm" is satisfied by the 2 PM window itself, unlike "before 2pm".
+		expect(matchOfferedSlot('around 2pm works', offered, PACIFIC)).toBe(1);
+	});
+
+	it('refuses to pick one of several times the reply listed', () => {
+		expect(matchOfferedSlot('9am or 2pm works', offered, PACIFIC)).toBeNull();
+		expect(matchOfferedSlot('tuesday at 9am or 2pm', offered, PACIFIC)).toBeNull();
+	});
+
+	it('counts one time named twice as one time', () => {
+		expect(matchOfferedSlot('yes 2pm, 2pm!', offered, PACIFIC)).toBe(1);
+		// Two spellings of 2:00 PM are still 2:00 PM.
+		expect(matchOfferedSlot('2pm or 14:00', offered, PACIFIC)).toBe(1);
+	});
+
+	it('reads an hour a 12-hour clock does not have as no time at all', () => {
+		expect(matchOfferedSlot('13am', offered, PACIFIC)).toBeNull();
+	});
+
+	it('refuses to match when the reply names a slashed date', () => {
+		expect(matchOfferedSlot('8/5 at 2pm', offered, PACIFIC)).toBeNull();
+		expect(matchOfferedSlot('tuesday 7/14 at 9am', offered, PACIFIC)).toBeNull();
+	});
+
+	it('still matches around the sizes and hours a trades inbox is full of', () => {
+		// "1/2 inch" and "24/7" are not dates, and their digits are not hours.
+		expect(matchOfferedSlot('1/2 inch pipe — tuesday at 9am works', offered, PACIFIC)).toBe(0);
+		expect(matchOfferedSlot('we are reachable 24/7, tuesday 9am works', offered, PACIFIC)).toBe(0);
 	});
 });
 
@@ -492,5 +558,8 @@ describe('parseProposedTime — negated times are not proposals', () => {
 		expect(parseProposedTime('none of those — July 10 at 2pm?', CTX)).toBe(
 			'2026-07-10T21:00:00.000Z',
 		);
+		// A bare "no" refuses the pick, but the clause after it still proposes: the
+		// comma splits them, and only the clause that says no is skipped.
+		expect(parseProposedTime('no, tuesday at 2pm works', CTX)).toBe('2026-07-07T21:00:00.000Z');
 	});
 });
