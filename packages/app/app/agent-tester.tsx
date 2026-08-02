@@ -82,6 +82,14 @@ const RIVUS_MARK = 26;
 const PREVIEW_URL_TTL_MS = 60_000;
 
 /**
+ * Tap slop for the quiet side-door buttons under a reply (preview the email,
+ * play the reply): their ~16px rows sit far below the 44dp touch minimum
+ * (WCAG 2.5.5), and everything the slop swallows — captions, the timestamp —
+ * is text, not a competing target.
+ */
+const SIDE_DOOR_HIT_SLOP = { top: 14, bottom: 14, left: 14, right: 14 };
+
+/**
  * Open the exact HTML body an email turn would have delivered, in a new tab.
  *
  * Web only: it needs a blob URL and a window, and the app carries no WebView
@@ -1023,7 +1031,7 @@ function Turn({
 						onPress={() => openEmailPreview(html)}
 						accessibilityRole="button"
 						accessibilityLabel="Preview the email Rivus would have sent"
-						hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+						hitSlop={SIDE_DOOR_HIT_SLOP}
 						style={({ pressed }) => [styles.tertiaryRow, pressed && styles.pressed]}
 					>
 						<Icon name="external-link" size={12} color={colors.brandPurple} />
@@ -1035,7 +1043,7 @@ function Turn({
 						onPress={() => speakReply(speech)}
 						accessibilityRole="button"
 						accessibilityLabel="Play Rivus’s reply out loud"
-						hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+						hitSlop={SIDE_DOOR_HIT_SLOP}
 						style={({ pressed }) => [styles.tertiaryRow, pressed && styles.pressed]}
 					>
 						<Icon name="volume-2" size={12} color={colors.brandPurple} />
