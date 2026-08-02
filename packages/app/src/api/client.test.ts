@@ -2221,12 +2221,29 @@ describe('createApiClient', () => {
 			});
 		});
 
-		it('rejects an unsupported channel before hitting the network', async () => {
+		it('creates a phone session — a call is a channel the tester drives too', async () => {
+			const session = makeTesterSession({ channel: 'phone', subject: '' });
+			fetchMock.mockResolvedValueOnce(jsonResponse(session, { status: 201 }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.createTesterSession('staff-token', {
+				channel: 'phone',
+				contactAddress: '+15551234567',
+			});
+
+			expect(result.channel).toBe('phone');
+			const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(JSON.parse(init.body as string)).toEqual({
+				channel: 'phone',
+				contactAddress: '+15551234567',
+			});
+		});
+
+		it('rejects a channel the agent doesn’t answer on before hitting the network', async () => {
 			const client = createApiClient(BASE, fetchMock);
 			await expect(
-				// `phone` is an inbox channel, but the tester has no voice transcript.
 				client.createTesterSession('staff-token', {
-					channel: 'phone' as 'sms',
+					channel: 'fax' as 'sms',
 					customerId: 'cust-1',
 				}),
 			).rejects.toBeInstanceOf(ValidationError);
@@ -2359,6 +2376,46 @@ describe('createApiClient', () => {
 
 			expect(result.delivery.subject).toBeUndefined();
 			expect(result.outcome).toBe('ask_details');
+			// No call to leave open or hang up on a chat channel.
+			expect(result.call).toBeUndefined();
+		});
+
+		it('parses a voice turn: the whole spoken line, and the call ending there', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse({
+					outcome: 'book',
+					// What the caller hears, sign-off included.
+					delivery: { text: 'You’re booked! Thanks for calling. Goodbye!' },
+					call: 'ended',
+					session: makeTesterSession({ channel: 'phone', subject: '', state: 'booked' }),
+					messages: [makeTesterMessage({ author: 'rivus', body: 'You’re booked!' })],
+				}),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.sendTesterMessage('staff-token', 'sess-1', {
+				text: 'option one',
+			});
+
+			expect(result.call).toBe('ended');
+			expect(result.delivery.text).toContain('Goodbye!');
+		});
+
+		it('rejects a turn whose call flow is not one a call can be in', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse({
+					outcome: 'offer_slots',
+					delivery: { text: 'Option 1: Tuesday at 9am.' },
+					call: 'on hold',
+					session: makeTesterSession({ channel: 'phone' }),
+					messages: [],
+				}),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.sendTesterMessage('staff-token', 'sess-1', { text: 'hi' }),
+			).rejects.toThrow();
 		});
 
 		it('rejects an empty message before hitting the network', async () => {

@@ -103,6 +103,30 @@ function openEmailPreview(html: string): void {
 }
 
 /**
+ * Whether this platform can read a voice reply out loud.
+ *
+ * Web only, and only where the browser actually ships the Web Speech API: the
+ * app carries no speech dependency, and hearing the line is a nicety on top of
+ * reading it — so the button simply isn't offered where it wouldn't work.
+ */
+function canSpeakAloud(): boolean {
+	return IS_WEB && typeof window !== 'undefined' && 'speechSynthesis' in window;
+}
+
+/**
+ * Speak the line Rivus would have said on the call. Cancels whatever is already
+ * speaking first: pressing play twice means "say it again from the top", not
+ * "queue a second reading behind the first".
+ */
+function speakReply(text: string): void {
+	if (!canSpeakAloud()) {
+		return;
+	}
+	window.speechSynthesis.cancel();
+	window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+}
+
+/**
  * The staff-only Agent Tester: chat with the customer-facing scheduling agent
  * *as* a customer (or as an unknown contact) on any channel, hold several
  * parallel sessions, and delete one to reset the agent's state and start over.
@@ -755,6 +779,9 @@ function Conversation({
 		-1,
 	);
 	const firstName = (session.contactName || session.contactAddress).split(/\s+/)[0] ?? '';
+	// A phone session is a call: you speak rather than write, and Rivus has
+	// already said hello before the first thing you say.
+	const onCall = session.channel === 'phone';
 	// Nothing to send (or a turn already running, here or in another session) — the
 	// button greys out rather than silently ignoring the press.
 	const inert = busy || draft.trim() === '';
@@ -835,7 +862,11 @@ function Conversation({
 				>
 					{messages.length === 0 && pending === null ? (
 						<Txt style={styles.placeholder}>
-							Write the first message as {firstName || 'this contact'} to start the agent.
+							{onCall
+								? // The greeting itself lives in the API, so don't quote it here —
+									// say what happened, and let the first turn show the wording.
+									`Rivus answers the call with a greeting — say something as ${firstName || 'the caller'} to run the first turn.`
+								: `Write the first message as ${firstName || 'this contact'} to start the agent.`}
 						</Txt>
 					) : null}
 					{messages.map((message, index) => (
@@ -843,7 +874,7 @@ function Conversation({
 							key={message.id}
 							message={message}
 							caption={index === lastRivusIndex ? turn : null}
-							emailChannel={session.channel === 'email'}
+							channel={session.channel}
 						/>
 					))}
 					{pending !== null ? (
@@ -874,7 +905,11 @@ function Conversation({
 						value={draft}
 						onChangeText={onChangeDraft}
 						onKeyPress={IS_WEB ? onKeyPress : undefined}
-						placeholder={`Write as ${firstName || 'the contact'}…`}
+						placeholder={
+							onCall
+								? `Speak as ${firstName || 'the caller'}…`
+								: `Write as ${firstName || 'the contact'}…`
+						}
 						placeholderTextColor={colors.textHint}
 						multiline
 					/>
@@ -910,11 +945,12 @@ function Conversation({
 function Turn({
 	message,
 	caption,
-	emailChannel,
+	channel,
 }: {
 	message: Message;
 	caption: TesterTurn | null;
-	emailChannel: boolean;
+	/** The session's channel — it decides which side doors a reply gets. */
+	channel: TesterSession['channel'];
 }) {
 	if (message.author === 'note') {
 		return (
@@ -946,10 +982,14 @@ function Turn({
 	}
 
 	const isRivus = message.author === 'rivus';
+	const emailChannel = channel === 'email';
 	const subject = caption?.delivery.subject ?? '';
 	// The exact body the agent would have emailed. Only a send hands one back, so
 	// it's always this session's — the caption clears with the selection.
 	const html = caption?.delivery.html ?? '';
+	// On a call the delivery is the whole spoken line, sign-off and all — more
+	// than the transcript records, which is exactly what's worth hearing.
+	const speech = channel === 'phone' ? (caption?.delivery.text ?? '') : '';
 	return (
 		<View style={styles.rivusRow}>
 			{isRivus ? (
@@ -970,16 +1010,36 @@ function Turn({
 				{caption && emailChannel && subject ? (
 					<Txt style={styles.caption}>subject: {subject}</Txt>
 				) : null}
+				{caption?.call === 'ended' ? (
+					// Where the caller would hear the line and then silence — the outcome
+					// alone doesn't say the call is over.
+					<View style={styles.tertiaryRow}>
+						<Icon name="phone-off" size={12} color={colors.textMuted} />
+						<Txt style={styles.caption}>the call would end here</Txt>
+					</View>
+				) : null}
 				{emailChannel && html && IS_WEB ? (
 					<Pressable
 						onPress={() => openEmailPreview(html)}
 						accessibilityRole="button"
 						accessibilityLabel="Preview the email Rivus would have sent"
 						hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-						style={({ pressed }) => [styles.previewBtn, pressed && styles.pressed]}
+						style={({ pressed }) => [styles.tertiaryRow, pressed && styles.pressed]}
 					>
 						<Icon name="external-link" size={12} color={colors.brandPurple} />
 						<Txt style={styles.previewTxt}>Preview email</Txt>
+					</Pressable>
+				) : null}
+				{speech && canSpeakAloud() ? (
+					<Pressable
+						onPress={() => speakReply(speech)}
+						accessibilityRole="button"
+						accessibilityLabel="Play Rivus’s reply out loud"
+						hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+						style={({ pressed }) => [styles.tertiaryRow, pressed && styles.pressed]}
+					>
+						<Icon name="volume-2" size={12} color={colors.brandPurple} />
+						<Txt style={styles.previewTxt}>Play reply</Txt>
 					</Pressable>
 				) : null}
 				<Txt style={styles.turnTime}>{clockTime(message.createdAt)}</Txt>
@@ -1181,9 +1241,9 @@ const styles = StyleSheet.create({
 		borderBottomLeftRadius: 3,
 	},
 	rivusBubbleTxt: { fontFamily: font.regular, fontSize: 13.5, color: colors.text, lineHeight: 20 },
-	// A quiet tertiary text button — the email preview is a side door, not the
-	// screen's action.
-	previewBtn: {
+	// The quiet row under a reply: the call-ended marker and the side-door buttons
+	// (preview the email, play the reply) — never the screen's action.
+	tertiaryRow: {
 		flexDirection: 'row',
 		alignItems: 'center',
 		gap: 5,
