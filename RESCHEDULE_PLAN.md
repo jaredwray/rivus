@@ -186,6 +186,41 @@ declares exactly `bookJob` and `flagForReview`; the orchestrator's only calendar
 
 ## 3. Architecture
 
+### 3.0 The backstop: a booked thread never gains a second job by accident
+
+Five rounds of review on this document produced a P1 in every round, and once they are sorted by
+cause rather than by symptom, almost all of them are one shape:
+
+> A guard in `matches` declines the turn, `knowledgeCapability` also declines because the message
+> contains a parseable day or time, and `schedulingCapability` — whose `matches` is `() => true` —
+> reads that time as an ordinary proposal. It does not overlap the existing booking, so the
+> `bookedSlot` guard at `engine.ts:162-164` never fires, and the agent **creates a second job while
+> the first one stands.**
+
+Found instances: "cancel this and rebook for Friday at 2pm"; "move me to Friday at 2; is there a
+fee?"; a follow-up time sent after a `reschedule_held` hand-off; a replayed voice pick that lands on
+a `booked` thread. They were found by tracing, one at a time, and each was patched where it was
+found. That is not a convergent process — the next phrasing that combines a declined guard with a
+readable time reintroduces it.
+
+**So the plan carries a structural backstop, and every specific guard below is defence in depth
+behind it.** In `schedulingCapability.handle`, when the thread has a **live booking** and the turn
+would produce `{ kind: 'book' }`, the decision is replaced by `hold_for_team` + `flagForReview`
+unless the message carries an explicit additional-visit signal (`also`, `another`, `second`, `as
+well`, `too`, `a separate`, "in addition"). Booking a *second* visit for someone who already has one
+is a real request — a customer with a Thursday install asking for a Friday repair — but it is rare,
+and it is never what a misrouted reschedule turn means.
+
+The property this buys, stated once and testable directly: **no agent turn on a thread with a live
+booking may increase `jobs.list`'s total unless the customer asked for an additional appointment in
+so many words.** Every duplicate-booking finding in this review is an instance, including the ones
+nobody has traced yet.
+
+This is a change to `schedulingCapability`, not to reschedule, and it lands in Phase 1 with its own
+tests — it is the phase that touches shared code, and putting the backstop *before* the feature that
+motivated it means the feature is never the thing standing between a customer and a duplicate
+booking.
+
 The feature is one new `AgentCapability` plus six new `AgentDecision` kinds, exactly as `AGENTS.md`
 prescribes — but **three seams have to be widened first**, because the current layering makes a
 correct reschedule capability literally unimplementable.
@@ -247,13 +282,18 @@ knowledge's.
 
 Two guards keep it from starving knowledge:
 
-- `namesPolicyQuestion` (fee / policy / charge / cost / "how much" / "what happens if")
-  hard-declines, so `is there a fee to postpone?` stays a knowledge turn.
+- `namesPolicyQuestion` (fee / policy / charge / cost / "how much" / "what happens if") declines —
+  but **only when the message carries no move shape of its own**, so `is there a fee to postpone?`
+  stays a knowledge turn while "move me to Friday at 2; is there a fee?" is claimed and answered
+  `reschedule_held` + `flagForReview`. An unconditional decline sends the mixed message straight
+  into §3.0's trap: knowledge declines it too (the day makes `isInformationalQuestion` false) and
+  scheduling books Friday as a second job. Same rule, same reason, as the mixed cancel-and-rebook
+  case in §2 — a turn that asks two things at once is a human's, not a silent booking.
 - On a `reschedule_offered` thread, an informational question carrying no reschedule shape and no
   pick is handed on to knowledge — the same doctrine knowledge already applies to scheduling.
 
 `matches`, in order: (1) `namesCancellation` → false. (2) `namesPolicyQuestion` → false.
-(3) `namesRescheduleShape(text)` → true. (4) `state === 'booked' && isBarePickShape(text)` → **true**
+(3) `namesRescheduleShape(text)` → true. (4) `state === 'booked' && isPickShape(text)` → **true**
 (§6.13). (5) not `state === 'reschedule_offered'` → false. (6) a pick of `thread.offeredSlots` →
 true. (7) `isAcknowledgement || isPureGreeting` → true. (8) `isInformationalQuestion` → false.
 (9) → true.
@@ -439,8 +479,12 @@ export function namesCancellation(text: string): boolean;
 /** A question ABOUT rescheduling rather than a request to reschedule (§3.6). */
 export function namesPolicyQuestion(text: string): boolean;
 
-/** Whether the whole message is just a number or ordinal — a stray or replayed pick (§6.13). */
-export function isBarePickShape(text: string): boolean;
+/**
+ * Whether the message reads as a choice from a numbered list — "2", "option 2 works",
+ * "the second one", "I'll take slot 3". Deliberately NOT limited to a bare digit: a
+ * replayed voice pick is whatever the customer actually said (§6.13).
+ */
+export function isPickShape(text: string): boolean;
 
 /**
  * A question ABOUT a listed option rather than a pick of it — "is option 2 in the
@@ -887,6 +931,17 @@ extracted verbatim in Phase 1 to serve `schedulingCapability`'s `bookedSlot`, an
 semantics there would not be the behavior-neutral refactor that phase promises. Reschedule applies
 `isMovable(job)` on top of it, on both the thread anchor and the CRM candidates.
 
+**`isMovable` also asserts ownership: `job.customerId === customer.id`.** This is the one guard
+here whose absence crosses a customer boundary rather than merely duplicating a booking. A
+dispatcher can reassign a job to a different customer through `PATCH /v1/jobs/:id` while leaving
+`startAt` and `durationMinutes` untouched — so the §6.11 retirement never fires — and the *old*
+contact's thread still carries that `bookedJobId`. Without an ownership check, `liveJob` hands it
+back happily and the old contact's next "move it to 4pm" **moves a different customer's
+appointment**, telling them it is theirs. Ownership is therefore checked on the thread anchor, not
+only on the CRM candidates (which get it for free from the query), and §6.11 adds
+`job.customerId !== before.customerId` to the retirement trigger — clearing `bookedJobId` on the
+detached threads as well as their offers, since for those threads the job is now somebody else's.
+
 **It must page, not read one page.** `ListJobsOptions` carries a single optional `status`, so
 "anything except `canceled`" cannot be expressed in the query — the liveness filter runs *after* it.
 A customer whose next few upcoming rows are canceled (routine after a cancel-and-rebook, or a
@@ -912,7 +967,7 @@ targets it is stale.* Three code paths can change it, and all three must retire 
 before the move is a list of windows chosen against a schedule that no longer exists, and picking
 one moves the job again.
 
-**Decision.** One shared helper, `retireMoveOffers(deps, accountId, jobId, exceptThreadId?)` — for
+**Decision.** One shared helper, `retireMoveOffers(deps, accountId, jobId)` — for
 each thread from `agentThreads.listByBookedJobId(accountId, jobId)` whose state is
 `reschedule_offered`, patch `{ offeredSlots: [] }`, **clearing the windows while leaving the state
 alone**. Called from all three:
@@ -921,9 +976,11 @@ alone**. Called from all three:
    over): look the thread up with the existing `agentThreads.findByConversationId` and, when its
    state is `reschedule_offered` or `slots_offered`, patch
    `{ state: 'booked' | 'new', offeredSlots: [] }` — retiring the offer only, never `bookedJobId`.
-2. `PATCH /v1/jobs/:id` (`routes/jobs.ts:190-210`), when `job.startAt !== before.startAt` **or
-   `job.durationMinutes !== before.durationMinutes`** — a duration edit invalidates a standing offer
-   just as thoroughly, since every window in it was checked against the old length (§6.8) — appends
+2. `PATCH /v1/jobs/:id` (`routes/jobs.ts:190-210`), when `job.startAt !== before.startAt`, **or
+   `job.durationMinutes !== before.durationMinutes`** (a duration edit invalidates every window in a
+   standing offer, since each was checked against the old length, §6.8), **or
+   `job.customerId !== before.customerId`** (the job now belongs to someone else, so linked threads
+   have their `bookedJobId` cleared as well as their offers, §6.10) — appends
    `{ author: 'note', body: 'The team moved <title> from <label> to <label>.' }` using the same
    `formatSlotLabel`, and calls `retireMoveOffers`. **It runs BEFORE `jobs.update`**, not after: if
    the retirement fails the `PATCH` errors with the schedule untouched and a retry re-runs cleanly,
@@ -931,12 +988,20 @@ alone**. Called from all three:
    retry finds `job.startAt === before.startAt` and skips retirement *permanently* — a live stale
    offer that can still move the job. Retiring an offer for a move that then fails costs the
    customer one round trip; the reverse costs them an appointment. Same asymmetry argument as §6.7.
-3. **The orchestrator, after any successful agent `moveJob`** — with `exceptThreadId` set to the
-   thread that just moved it, whose own patch already cleared its offer. Without this, a customer
-   with a standing move offer on their email thread who then moves the job over SMS still has three
-   live email options naming that job (both threads carry the same `bookedJobId` after §6.10), and a
-   later "2" on email moves it a second time. The dispatcher path in (2) never fires, because an
-   agent move goes through `moveJob`, not through the route.
+3. **The orchestrator, on any agent `moveJob`** — run **inside the rollback window, before
+   delivery**, and over **every** linked thread including the one that is moving. Without it, a
+   customer with a standing move offer on their email thread who then moves the job over SMS still
+   has three live email options naming that job (both threads carry the same `bookedJobId` after
+   §6.10), and a later "2" on email moves it a second time; the dispatcher path in (2) never fires,
+   because an agent move goes through `moveJob`, not the route.
+
+   **The moving thread is not excluded, and the timing is the reason.** An earlier draft excluded it
+   on the grounds that its own `threadPatch` clears the offer anyway — but that patch runs *after*
+   delivery (`orchestrator.ts:210`), outside the rollback window on every non-deferred channel. If
+   it fails after a successful send, the customer has the confirmation, the job has moved, and the
+   thread still holds `reschedule_offered` with the pre-move windows. Retiring inside the rollback
+   window makes the retirement as durable as the move itself; the post-delivery patch then only
+   confirms what is already true.
 
 **Why.** (1) is a live hazard: a dispatcher replies "I've got you down for Friday at 10" and PATCHes
 the job; the customer then texts "2"; reschedule still claims the turn, the pick resolves, and the
@@ -995,7 +1060,9 @@ ambiguity is *which*. Both still assert that nothing moved. Both keep `flagForRe
 ### 6.13 A replayed pick must not become a booking offer — and voice's missing dedupe is the root
 
 **Decision.** `matches` step (4): on a `booked` thread whose booking is live, a message that is
-*nothing but a pick shape* — a bare number or ordinal, `isBarePickShape(text)` — is claimed by
+*pick-shaped* — `isPickShape(text)`, which covers a bare digit **and** the contextual forms
+("option 2 works", "I'll take slot 3"), because a replayed voice utterance is whatever the customer
+said — is claimed by
 reschedule and answered `reschedule_unchanged`, never handed on.
 
 **Why.** A completed move patches `{ state: 'booked', offeredSlots: [] }`. Replay that turn — voice
@@ -1019,7 +1086,28 @@ does not dedupe a caller legitimately repeating themselves, which is what the cu
 worries about). That is promoted from a footnote to **§10.4's recommended next step**, because it is
 the difference between "we enumerated the replay hazards we thought of" and "replay is handled".
 
-### 6.14 A note on `notifier.jobUpdated`
+### 6.14 A conversation awaiting a human does not get another agent turn
+
+**Decision.** `handleInboundAgentMessage` reads the thread's conversation and, when its status is
+`needs_attention`, records the customer's message in the transcript and returns
+`{ handled: false, outcome: 'awaiting_review' }` without dispatching to any capability.
+
+**Why.** `reschedule_held` flags the conversation and leaves the thread untouched (`{}`), and the
+orchestrator consults the conversation's status nowhere (`orchestrator.ts:96-149`). So a customer
+told *"I've passed this to the team"* who then sends "Friday at 2" reaches
+`schedulingCapability`, which reads it as a proposal and **books a third job** while a human is
+still deciding which of their two appointments to move. §3.0's backstop stops the *booking*, but
+the deeper problem stands: the agent is talking underneath a human who owns the conversation and may
+have a draft pending (`pendingReply`), so the two can contradict each other in the same thread.
+
+**This is pre-existing and wider than reschedule** — `knowledgeCapability`'s `hold_for_team` has had
+the same hole since it shipped. It is fixed here because this feature adds a hand-off path whose
+failure mode is a duplicate booking rather than a redundant FAQ answer, and because the fix is six
+lines in the orchestrator. Flagged in §10 as a behavior change to the existing hand-off, not just a
+new guard: a contact who writes back after a hand-off currently gets an agent reply and will stop
+getting one. That is the intended behavior, but it is a change worth naming.
+
+### 6.15 A note on `notifier.jobUpdated`
 
 `jobUpdated` notifies the **assignee** only, and `assigneeToNotify` returns null for an empty
 `assignedUserId` (`notifications.ts:353-358`). Agent-booked jobs are created with
@@ -1178,6 +1266,9 @@ lines of `agent-engine.test.ts` and the whole existing suite are the regression 
   `book`/`confirm_existing`/`send_signup_link`, switch `runVoiceTurn` to it, **delete**
   `VOICE_TERMINAL_OUTCOMES`, and rewrite the now-stale dedupe comment at
   `agent-voice-shared.ts:150-157` to name the absolute-SET property instead.
+- **§3.0's duplicate-booking backstop**, in its own commit: `schedulingCapability.handle` replaces a
+  `book` decision with `hold_for_team` + `flagForReview` when the thread has a live booking and the
+  message carries no additional-visit signal. It lands here, before the feature that motivated it.
 - Separate commit, `fix(api): read curly apostrophes as negations` — fold `’‘` to `'` before
   `NEGATION` runs. `/\bdoesn'?t\b/` does not match the curly form every iOS and Gmail client
   produces; this strictly *widens* refusal, which is the safe direction, and every existing test
@@ -1233,6 +1324,11 @@ compile error that proves the ripple was found. `packages/core` still meets 100/
 
 ### Phase 5 — The capability, `moveJob`, and the orchestrator: the feature goes live
 
+**Prerequisite:** voice carries a real per-utterance `externalMessageId` (call SID + turn index) and
+the stale comment at `agent-voice-shared.ts:150-157` is rewritten. §10.4 explains why this is a gate
+rather than a nice-to-have; without it, voice is the one channel where a redelivery is
+indistinguishable from a new request, and this is the phase that starts mutating the calendar.
+
 `rescheduleCapability` (§6.1), the `moveJob` side effect and `rollbackEffects` (§6.7), the registry
 line, `notifier.jobUpdated`, and the transcript note.
 
@@ -1258,7 +1354,8 @@ does not know, who gets `send_signup_link` with no lookup at all.
 ### Phase 7 — Interference, parity, and observability
 
 The three retirement call sites in §6.11 (two routes plus the orchestrator), the
-`listByBookedJobId` repository addition they need, plus the tester surface. The orchestrator call
+`listByBookedJobId` repository addition they need, the `needs_attention` turn gate (§6.14), plus the
+tester surface. The orchestrator call
 site (§6.11.3) is the one part of this phase that is not route work — it lands beside the existing
 `moveJob` execution.
 
@@ -1336,7 +1433,7 @@ corpus**, asserting `job.startAt` identical, `jobCount` 1, thread state / `offer
 clause is what catches a capability that wrongly *claims* the turn and silently arms the next "2".
 Registry order. Rollback, rollback-of-the-rollback (the **original** send error surfaces), and the
 deleted-job race. Dedupe. Notification: assigned job → exactly one "A job was rescheduled" with
-`linkHref: '/schedule'`; unassigned → zero (§6.14). **Cross-channel offer retirement (§6.11.3): a
+`linkHref: '/schedule'`; unassigned → zero (§6.15). **Cross-channel offer retirement (§6.11.3): a
 `reschedule_offered` email thread, then a successful move over SMS, then "2" on email — the job
 moves exactly once and the email reply is a fresh move offer, not a second move.** Cross-channel and
 ambiguity (Phase 6), including
@@ -1388,10 +1485,29 @@ load-bearing alone.
 because §6.8's re-check and §6.11's retirement are independent guards and either alone should stop
 it.
 
-**Mixed cancel-and-rebook (`agent-email-route.test.ts`, end to end).** A booked customer emails
-"cancel this and rebook for Friday at 2pm": `jobs.list` total stays **1**, `job.startAt` is
-unchanged, the conversation is `needs_attention`, and the outcome is `reschedule_held` — never
-`book`. This is the regression that the "falls through to scheduling" non-goal would have shipped.
+**Mixed-intent turns (`agent-email-route.test.ts`, end to end).** A booked customer emails "cancel
+this and rebook for Friday at 2pm", and separately "move me to Friday at 2; is there a fee?": in
+both, `jobs.list` total stays **1**, `job.startAt` is unchanged, the conversation is
+`needs_attention`, and the outcome is `reschedule_held` — never `book`.
+
+**The §3.0 backstop (`agent-engine.test.ts` + `agent-reschedule.test.ts`), which is the test that
+matters most in this document.** It is written as a *property over the negative corpus*, not as a
+handful of phrasings: for every message in the refusal corpus plus every mixed-intent row above,
+sent to a thread with a live booking, `jobs.list`'s total is unchanged afterwards. Paired with the
+one case that must still create a job — "can I also book a second visit for Friday at 2?" — so the
+guard is proven to be a gate and not a wall. Any future phrasing that combines a declined guard with
+a readable time fails here rather than in production, which is the whole point of having it.
+
+**Held conversations (`agent-reschedule.test.ts`, §6.14).** After `reschedule_held`, the customer's
+follow-up "Friday at 2" is recorded in the transcript, produces **no** agent reply
+(`handled: false`, `outcome: 'awaiting_review'`), and leaves `jobs.list`'s total unchanged. The same
+assertion for a `hold_for_team` hand-off from `knowledgeCapability`, since the gate changes that
+path's behavior too.
+
+**Ownership (`agent-reschedule.test.ts`, §6.10).** A dispatcher reassigns the job's `customerId`
+while leaving `startAt` and `durationMinutes` untouched; the *old* contact's "move it to 4pm" must
+not move it. Asserted twice: the anchor is rejected on ownership, and §6.11 has already cleared that
+thread's `bookedJobId`.
 
 **Regression pins.** `agent-question.test.ts` pins today's `isInformationalQuestion` results for the
 §1.2(b) table, so a future loosening of `SCHEDULING_VOCABULARY` cannot change capability ordering
@@ -1406,7 +1522,9 @@ terminal XML via `endsConversation`; the same speech posted twice moves the job 
 "2" posted twice leaves the thread `booked` and never produces a booking offer** (§6.13 — assert the
 second reply contains no options block and `thread.state !== 'slots_offered'`, the arming step);
 "move my thursday 1pm to friday 2pm" posted twice lands on Friday **both times** (§6.3's reversal);
-and "push it back an hour" offers windows rather than shifting anything (§6.7). Plus the
+and "push it back an hour" offers windows rather than shifting anything (§6.7); **"option 2 works"
+posted twice** leaves the thread `booked` and produces no booking offer (§6.13's contextual pick,
+the one a bare-digit-only guard missed). Plus the
 deferred-delivery rollback (§6.7): a transcript-write failure *after* the capture but before the XML
 is built restores `startAt` — the caller hears the apology and their appointment did not move.
 `jobs.test.ts`: retirement runs **before** `jobs.update`, so a repo failure on the thread write
@@ -1455,10 +1573,13 @@ rather than left to incidental coverage.
    thread field holding the last processed turn, or a real per-utterance `externalMessageId` on
    voice, which would also retire the stale comment at `agent-voice-shared.ts:150-157`.
 
-   **Recommendation: do the voice `externalMessageId` (call SID + turn index), and do it first.** It
-   is one line of channel work, it unlocks relative shifts, and — per §6.13 — it is the single root
-   cause behind all three replay hazards this plan had to enumerate and fix individually. Every one
-   of them was found by tracing; the next one may not be.
+   **This is no longer a recommendation: a real voice `externalMessageId` (call SID + turn index) is
+   a hard prerequisite of Phase 5**, the phase where the feature goes live. Four distinct P1s across
+   this review traced to its absence — a relative shift re-deriving, anchor elimination reversing, a
+   bare replayed pick arming a booking, a contextual replayed pick doing the same. Each was fixed on
+   its own terms and each fix is still in the plan, but four instances of one cause is the point at
+   which enumerating stops being credible. The remaining question for the team is only whether the
+   unlocked relative shifts ship in the same phase or later.
 5. **Does a moved job keep its `JobStatus`?** The agent books with `status: 'confirmed'`
    (`capabilities.ts:274`) and the move writes no status, so a confirmed job stays confirmed.
    Arguably a customer-initiated move should return it to `scheduled`. The plan keeps `confirmed`,
@@ -1466,7 +1587,7 @@ rather than left to incidental coverage.
    agent turn.
 6. **Should the agent's initial booking also call `notifier.jobCreated`?** Today it does not, so
    after this change the move path notifies while the create path stays silent. Currently invisible
-   (§6.14), but it becomes visible the day agent bookings get auto-assigned. Out of scope; worth a
+   (§6.15), but it becomes visible the day agent bookings get auto-assigned. Out of scope; worth a
    follow-up.
 7. **Compare-and-set on `JobRepository.update`.** The seam is
    `update(accountId, id, input, expected?: { startAt })`: Mongo adds `startAt` to the
