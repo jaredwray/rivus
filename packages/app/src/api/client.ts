@@ -597,11 +597,11 @@ export type ReleaseNumberResult = z.infer<typeof releaseNumberResponseSchema>;
 const TESTER_ROOT = '/v1/admin/agent-tester/sessions';
 
 /**
- * The channels the Agent Tester can impersonate a customer on — the subset of
- * the inbox's channels the customer-facing agent holds a written conversation on
- * (`phone` is voice, which has no transcript to drive).
+ * The channels the Agent Tester can impersonate a customer on — every channel
+ * the inbox knows. `phone` is a simulated voice call: you type what the caller
+ * says, and the reply that comes back is the line Rivus would speak.
  */
-const testerChannelSchema = z.enum(['email', 'sms', 'whatsapp'], {
+const testerChannelSchema = z.enum(['email', 'sms', 'whatsapp', 'phone'], {
 	error: 'Choose a valid channel.',
 });
 /** A channel a tester session can run on (see {@link RivusApiClient.createTesterSession}). */
@@ -666,6 +666,11 @@ export interface TesterTurn {
 	/** The engine's decision for this turn, e.g. `offer_slots`. */
 	outcome: string;
 	delivery: TesterDelivery;
+	/**
+	 * Voice only: where the turn left the call — still listening for the caller's
+	 * next words, or hung up after speaking. Absent on the messaging channels.
+	 */
+	call?: 'listen' | 'ended';
 	session: TesterSession;
 	messages: Message[];
 }
@@ -677,6 +682,7 @@ const testerTurnResponseSchema = z.object({
 		subject: z.string().optional(),
 		html: z.string().optional(),
 	}),
+	call: z.enum(['listen', 'ended']).optional(),
 	session: testerSessionResponseSchema,
 	messages: z.array(messageResponseSchema),
 }) satisfies z.ZodType<TesterTurn>;

@@ -26,12 +26,8 @@ import { ConflictError } from '../repositories/errors';
 import { defaultCapabilities } from '../services/agent/capabilities';
 import type { InboundAgentMessage } from '../services/agent/channel';
 import { handleInboundAgentMessage } from '../services/agent/orchestrator';
-import {
-	createTesterChannel,
-	isTesterThread,
-	type TesterChannel,
-	type TesterThread,
-} from '../services/agent/tester';
+import { createTesterChannel, type TesterChannel } from '../services/agent/tester';
+import { runVoiceTurn } from './agent-voice-shared';
 
 /**
  * The Agent Tester: a development-only, staff-only chat harness for the
@@ -41,6 +37,13 @@ import {
  * with only the transport swapped for a capturing one (see
  * `services/agent/tester.ts`), so a turn is exercised end to end without a
  * message ever leaving the building.
+ *
+ * A `phone` session is a simulated voice call: staff type what the caller says
+ * and get back the line Rivus would speak, plus where that left the call. Voice
+ * has no asynchronous transport to capture — its reply *is* the webhook's
+ * response — so those turns run through the shared voice core the Twilio and
+ * Plivo routes use, making the tester a third edge onto it rather than a
+ * lookalike that could drift.
  *
  * A "session" is not a new entity: it *is* the existing `AgentThread` for a
  * (account, channel, contactAddress) plus the inbox `Conversation` holding its
@@ -150,13 +153,13 @@ export const agentTesterRoutes: FastifyPluginAsync = async (fastify) => {
 	}
 
 	/**
-	 * The thread behind a session id. A thread from another account, an unknown
-	 * id, or a `phone` thread (no transport to capture) is uniformly "not found" —
-	 * the tester never reveals that someone else's session exists.
+	 * The thread behind a session id. A thread from another account and an unknown
+	 * id are uniformly "not found" — the tester never reveals that someone else's
+	 * session exists.
 	 */
-	async function requireSession(accountId: AccountId, id: string): Promise<TesterThread> {
+	async function requireSession(accountId: AccountId, id: string): Promise<AgentThread> {
 		const thread = await agentThreads.findById(accountId, id as AgentThreadId);
-		if (!thread || !isTesterThread(thread)) {
+		if (!thread) {
 			throw app.httpErrors.notFound('Tester session not found');
 		}
 		return thread;
@@ -212,8 +215,9 @@ export const agentTesterRoutes: FastifyPluginAsync = async (fastify) => {
 		} else {
 			address = normalizePhone(rawAddress);
 			if (address === '') {
+				// One message for every phone-shaped channel, calls included.
 				throw app.httpErrors.badRequest(
-					'Enter a phone number Rivus can text, like (555) 123-4567.',
+					'Enter a phone number Rivus can reach, like (555) 123-4567.',
 				);
 			}
 			customer = await customers.findByPhone(accountId, address);
@@ -222,7 +226,7 @@ export const agentTesterRoutes: FastifyPluginAsync = async (fastify) => {
 	}
 
 	/** A session's two halves, for the responses that carry the transcript. */
-	async function loadDetail(accountId: AccountId, thread: TesterThread) {
+	async function loadDetail(accountId: AccountId, thread: AgentThread) {
 		const conversation = await conversations.findById(accountId, thread.conversationId);
 		const messages = (await conversations.listMessages(accountId, thread.conversationId)) ?? [];
 		return { session: toTesterSession(thread, conversation), messages };
@@ -236,8 +240,8 @@ export const agentTesterRoutes: FastifyPluginAsync = async (fastify) => {
 				tags: ['admin'],
 				summary: 'List the agent tester sessions (development only, Rivus staff only)',
 				description:
-					'Every agent thread on the current account that the tester can drive — one ' +
-					'per (channel, contact) — joined with the inbox conversation carrying its ' +
+					'Every agent thread on the current account — one per (channel, contact), ' +
+					'phone calls included — joined with the inbox conversation carrying its ' +
 					'transcript, most recently active first. Unpaginated: a test account holds a ' +
 					'handful of these.',
 				security: [{ bearerAuth: [] }],
@@ -250,8 +254,7 @@ export const agentTesterRoutes: FastifyPluginAsync = async (fastify) => {
 		},
 		async (request) => {
 			const accountId = request.user.accountId as AccountId;
-			// `phone` threads have no capture transport, so they aren't testable.
-			const threads = (await agentThreads.listByAccount(accountId)).filter(isTesterThread);
+			const threads = await agentThreads.listByAccount(accountId);
 			const sessions = await Promise.all(
 				threads.map(async (thread) =>
 					toTesterSession(thread, await conversations.findById(accountId, thread.conversationId)),
@@ -335,9 +338,7 @@ export const agentTesterRoutes: FastifyPluginAsync = async (fastify) => {
 					`A tester session for this contact already exists on ${channel} — delete it to start over.`,
 				);
 			}
-			// The store echoes the channel we passed, so the created thread is a
-			// tester thread by construction.
-			return reply.code(201).send(toTesterSession({ ...thread, channel }, conversation));
+			return reply.code(201).send(toTesterSession(thread, conversation));
 		},
 	);
 
@@ -378,7 +379,10 @@ export const agentTesterRoutes: FastifyPluginAsync = async (fastify) => {
 					'capabilities, the channel’s own renderer, thread state, and the inbox ' +
 					'transcript — with a capturing transport in place of the provider. The ' +
 					'reply the customer *would* have received comes back as `delivery` ' +
-					'(with the rendered subject and HTML on email) and nothing is sent.',
+					'(with the rendered subject and HTML on email) and nothing is sent. On a ' +
+					'`phone` session the text is what the caller says and `delivery.text` is ' +
+					'the line Rivus would speak back, with `call` reporting whether the call ' +
+					'would keep listening or end there.',
 				security: [{ bearerAuth: [] }],
 				params: idParamsSchema,
 				body: testerMessageSchema,
@@ -395,8 +399,36 @@ export const agentTesterRoutes: FastifyPluginAsync = async (fastify) => {
 			const accountId = request.user.accountId as AccountId;
 			const account = await requireAccount(accountId);
 			const thread = await requireSession(accountId, request.params.id);
-			const conversation = await conversations.findById(accountId, thread.conversationId);
 
+			if (thread.channel === 'phone') {
+				// A call turn goes through the same core the Twilio and Plivo webhooks
+				// call, so staff get the real thing rather than a lookalike: spoken
+				// numbers normalized ("option one" → "option 1"), the sign-off appended
+				// on the outcomes that hang up, dedup off, and the caller identified by
+				// number alone — `runVoiceTurn` builds the inbound message exactly as a
+				// provider edge does.
+				const turn = await runVoiceTurn({
+					deps: orchestratorDeps,
+					customers,
+					capabilities,
+					account,
+					caller: thread.contactAddress,
+					speech: request.body.text,
+					logger: request.log,
+				});
+				const refreshed = await agentThreads.findById(accountId, thread.id);
+				const call: 'listen' | 'ended' = turn.mode === 'terminal' ? 'ended' : 'listen';
+				return {
+					outcome: turn.outcome,
+					// The FULL spoken line, sign-off included — what the caller hears,
+					// which is more than the utterance the transcript records.
+					delivery: { text: turn.text },
+					call,
+					...(await loadDetail(accountId, refreshed ?? thread)),
+				};
+			}
+
+			const conversation = await conversations.findById(accountId, thread.conversationId);
 			// A per-request harness, so two staff testing at once can't read each
 			// other's delivery.
 			const harness = createTesterChannel(app.deps, thread.channel);
@@ -423,11 +455,10 @@ export const agentTesterRoutes: FastifyPluginAsync = async (fastify) => {
 			// Re-read the thread: the turn advanced its state, and the orchestrator
 			// re-links a fresh conversation when the transcript was deleted mid-thread.
 			const refreshed = await agentThreads.findById(accountId, thread.id);
-			const current = refreshed && isTesterThread(refreshed) ? refreshed : thread;
 			return {
 				outcome: result.outcome,
 				delivery: harness.lastDelivery(),
-				...(await loadDetail(accountId, current)),
+				...(await loadDetail(accountId, refreshed ?? thread)),
 			};
 		},
 	);

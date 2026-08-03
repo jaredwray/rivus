@@ -8,7 +8,7 @@ import { colors } from '@/src/theme/tokens';
  */
 
 /** The channels a tester session can run on, in the order the picker offers them. */
-export const TESTER_CHANNELS: TesterChannel[] = ['email', 'sms', 'whatsapp'];
+export const TESTER_CHANNELS: TesterChannel[] = ['email', 'sms', 'whatsapp', 'phone'];
 
 /**
  * Label and dot color per channel — the same language the Inbox uses for its
@@ -18,6 +18,7 @@ export const CHANNEL_META: Record<TesterChannel, { label: string; color: string 
 	email: { label: 'Email', color: colors.brandPurple },
 	sms: { label: 'SMS', color: colors.textMuted },
 	whatsapp: { label: 'WhatsApp', color: colors.green },
+	phone: { label: 'Phone', color: colors.brandCyan },
 };
 
 /**
@@ -51,7 +52,7 @@ export function addressFor(customer: Customer, channel: TesterChannel): string {
 
 /**
  * Why a customer can't be impersonated on this channel — empty when they can.
- * SMS and WhatsApp both ride on the phone number.
+ * SMS, WhatsApp and calls all ride on the phone number.
  */
 export function missingAddressHint(customer: Customer, channel: TesterChannel): string {
 	if (addressFor(customer, channel)) {

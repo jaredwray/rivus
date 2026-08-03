@@ -25,6 +25,7 @@ const CHANNEL_OPTIONS: { label: string; value: TesterChannel }[] = [
 	{ label: CHANNEL_META.email.label, value: 'email' },
 	{ label: CHANNEL_META.sms.label, value: 'sms' },
 	{ label: CHANNEL_META.whatsapp.label, value: 'whatsapp' },
+	{ label: CHANNEL_META.phone.label, value: 'phone' },
 ];
 
 type Mode = 'customer' | 'custom';
