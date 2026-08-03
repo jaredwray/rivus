@@ -5,6 +5,7 @@ import { loadConfig } from '../src/config';
 import { SESSION_COOKIE } from '../src/plugins/auth';
 import { createInMemoryRepositories } from '../src/repositories/memory';
 import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
+import { DisabledTesterVoiceService } from '../src/services/agent/tester-voice';
 import { NoopChannelProvisioner, NoopNumberReleaser } from '../src/services/channel-provisioning';
 import { createDecider } from '../src/services/chat/decide';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
@@ -35,6 +36,7 @@ function buildAppWithCors(corsOrigin: string): FastifyInstance {
 		notifier: createNotificationService({ notifications: repos.notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
+		testerVoice: new DisabledTesterVoiceService(),
 		chatDecider: createDecider(),
 		websiteAudit: createWebsiteAuditService({}),
 		ping: async () => ({ ready: true }),
@@ -63,6 +65,7 @@ function buildProdApp(corsOrigin: string): FastifyInstance {
 		notifier: createNotificationService({ notifications: repos.notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
+		testerVoice: new DisabledTesterVoiceService(),
 		chatDecider: createDecider(),
 		websiteAudit: createWebsiteAuditService({}),
 		ping: async () => ({ ready: true }),

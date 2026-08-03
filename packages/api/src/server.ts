@@ -19,6 +19,7 @@ import {
 	MongoVerificationCodeRepository,
 } from './repositories/mongo';
 import { createReceivedEmailReader } from './services/agent/email/received';
+import { createTesterVoiceService } from './services/agent/tester-voice';
 import { createDeciderFromConfig } from './services/chat/decide';
 import { createFaqAnswerService } from './services/faq-answer';
 import { createFaqSimilarityService } from './services/faq-similarity';
@@ -65,6 +66,7 @@ export async function start(): Promise<void> {
 		notifier: createNotificationService({ notifications }),
 		faqSimilarity: createFaqSimilarityService(config),
 		faqAnswer: createFaqAnswerService(config),
+		testerVoice: createTesterVoiceService(config),
 		chatDecider: createDeciderFromConfig(config),
 		websiteAudit: createWebsiteAuditService(config),
 		// Real readiness: run an actual query so "connected but unauthorized" reports

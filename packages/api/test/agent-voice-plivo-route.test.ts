@@ -6,6 +6,7 @@ import { loadConfig } from '../src/config';
 import { createInMemoryRepositories } from '../src/repositories/memory';
 import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
 import { composeAgentResponse } from '../src/services/agent/response';
+import { DisabledTesterVoiceService } from '../src/services/agent/tester-voice';
 import { renderVoiceResponse } from '../src/services/agent/voice/renderer';
 import { NoopChannelProvisioner, NoopNumberReleaser } from '../src/services/channel-provisioning';
 import { createDecider } from '../src/services/chat/decide';
@@ -289,6 +290,7 @@ function buildVoiceApp(extraConfig: Record<string, string> = {}): FastifyInstanc
 		notifier: createNotificationService({ notifications: repos.notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
+		testerVoice: new DisabledTesterVoiceService(),
 		chatDecider: createDecider(),
 		websiteAudit: createWebsiteAuditService({}),
 		ping: async () => ({ ready: true }),

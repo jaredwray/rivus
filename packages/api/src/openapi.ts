@@ -4,6 +4,7 @@ import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createInMemoryRepositories } from './repositories/memory';
 import { NoopReceivedEmailReader } from './services/agent/email/received';
+import { DisabledTesterVoiceService } from './services/agent/tester-voice';
 import { NoopChannelProvisioner, NoopNumberReleaser } from './services/channel-provisioning';
 import { createDecider } from './services/chat/decide';
 import { NoopMailer } from './services/email';
@@ -63,6 +64,7 @@ async function main(): Promise<void> {
 		notifier: createNotificationService({ notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
+		testerVoice: new DisabledTesterVoiceService(),
 		chatDecider: createDecider(),
 		websiteAudit: createWebsiteAuditService(config),
 		ping: async () => ({ ready: true }),

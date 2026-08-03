@@ -562,6 +562,37 @@ export const testerTurnResponseSchema = z
 	.meta({ id: 'TesterTurn' });
 
 /**
+ * Whether the tester can hold a *spoken* call: true only when the deployment has
+ * an OpenAI key, since the speech and transcription both run through it. The app
+ * asks once and, when it's false, keeps the browser's own speech synthesis for
+ * reading a reply aloud and offers no microphone.
+ */
+export const testerVoiceResponseSchema = z
+	.object({
+		enabled: z.boolean(),
+	})
+	.meta({ id: 'TesterVoice' });
+
+/** One synthesized line, base64 inside JSON so it needs no second transport. */
+export const testerSpeechResponseSchema = z
+	.object({
+		audio: z.string(),
+		/** IANA media type of `audio`, for the data URL the browser plays. */
+		mediaType: z.string(),
+	})
+	.meta({ id: 'TesterSpeech' });
+
+/**
+ * What the caller was heard to say. Empty when the recording held no speech —
+ * a normal outcome (a mis-tap, a silent room), not a failure.
+ */
+export const testerTranscriptionResponseSchema = z
+	.object({
+		text: z.string(),
+	})
+	.meta({ id: 'TesterTranscription' });
+
+/**
  * Billing summary for the account (owner-only). Rivus has no payment provider
  * wired up yet, so this is a placeholder: every account is on the free plan and
  * `seats` reflects the current member count.

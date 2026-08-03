@@ -19,7 +19,10 @@ import {
 	testerSessionDetailResponseSchema,
 	testerSessionListResponseSchema,
 	testerSessionResponseSchema,
+	testerSpeechResponseSchema,
+	testerTranscriptionResponseSchema,
 	testerTurnResponseSchema,
+	testerVoiceResponseSchema,
 } from '../http-schemas';
 import { toTesterSession } from '../presenters';
 import { ConflictError } from '../repositories/errors';
@@ -44,6 +47,13 @@ import { runVoiceTurn } from './agent-voice-shared';
  * response — so those turns run through the shared voice core the Twilio and
  * Plivo routes use, making the tester a third edge onto it rather than a
  * lookalike that could drift.
+ *
+ * A call can also be *held* rather than typed: the speech routes below transcribe
+ * what staff say into the microphone and synthesize what Rivus says back, so the
+ * copy can be judged by ear — which is the only way a spoken line is really
+ * judged. They are strictly an input/output convenience around the same turn
+ * endpoint, so a session driven by voice produces exactly the transcript a typed
+ * one does.
  *
  * A "session" is not a new entity: it *is* the existing `AgentThread` for a
  * (account, channel, contactAddress) plus the inbox `Conversation` holding its
@@ -100,6 +110,30 @@ const testerMessageSchema = z.object({
 		.max(4000, { error: 'Message must be 4000 characters or fewer.' }),
 });
 
+/** Body of "say this line out loud" — the reply the caller would have heard. */
+const testerSpeechSchema = z.object({
+	text: z
+		.string({ error: 'Text is required.' })
+		.trim()
+		.min(1, { error: 'Text is required.' })
+		.max(4000, { error: 'Text must be 4000 characters or fewer.' }),
+});
+
+/**
+ * How much base64 audio one utterance may carry. The app stops recording at 60
+ * seconds, which is a few hundred KB of Opus — this bound only exists so a
+ * malformed or hostile client can't stream an unbounded body at the transcriber.
+ */
+const MAX_UTTERANCE_BASE64 = 8 * 1024 * 1024;
+
+/** Body of "here's what the caller just said" — one recorded utterance. */
+const testerTranscribeSchema = z.object({
+	audio: z
+		.string({ error: 'Audio is required.' })
+		.min(1, { error: 'Audio is required.' })
+		.max(MAX_UTTERANCE_BASE64, { error: 'That recording is too long — keep it under a minute.' }),
+});
+
 /** The contact a session is opened for, resolved from either identifier. */
 interface ResolvedContact {
 	/** Canonical channel address: a lower-cased email, or an E.164 phone. */
@@ -128,6 +162,7 @@ export const agentTesterRoutes: FastifyPluginAsync = async (fastify) => {
 		faqAnswer,
 		memberships,
 		notifier,
+		testerVoice,
 	} = app.deps;
 	const orchestratorDeps = {
 		config,
@@ -500,6 +535,146 @@ export const agentTesterRoutes: FastifyPluginAsync = async (fastify) => {
 				throw app.httpErrors.notFound('Tester session not found');
 			}
 			return reply.code(204).send(null);
+		},
+	);
+
+	/* ---------------------------- Holding the call --------------------------- */
+
+	app.get(
+		'/voice',
+		{
+			onRequest: [fastify.authenticate, fastify.requireStaff],
+			schema: {
+				tags: ['admin'],
+				summary: 'Whether tester calls can be spoken (development only, Rivus staff only)',
+				description:
+					'Reports whether this deployment can synthesize and transcribe speech for the ' +
+					'tester’s phone sessions — true only when an OpenAI key is configured. The app ' +
+					'asks once: when it’s false there is no microphone, and reading a reply aloud ' +
+					'falls back to the browser’s own speech synthesis.',
+				security: [{ bearerAuth: [] }],
+				response: {
+					200: testerVoiceResponseSchema,
+					401: errorResponseSchema,
+					403: errorResponseSchema,
+				},
+			},
+		},
+		async () => ({ enabled: testerVoice.enabled }),
+	);
+
+	app.post(
+		'/sessions/:id/speech',
+		{
+			onRequest: [fastify.authenticate, fastify.requireStaff],
+			schema: {
+				tags: ['admin'],
+				summary: 'Speak a line of the agent’s reply (development only, Rivus staff only)',
+				description:
+					'Synthesizes the line Rivus would say on the call — normally the `delivery.text` ' +
+					'a turn just returned — and hands back the audio, base64 inside the JSON so it ' +
+					'needs no second transport. Nothing about the session changes: this only ' +
+					're-renders a reply that already happened. 503 when the deployment has no ' +
+					'OpenAI key.',
+				security: [{ bearerAuth: [] }],
+				params: idParamsSchema,
+				body: testerSpeechSchema,
+				response: {
+					200: testerSpeechResponseSchema,
+					400: errorResponseSchema,
+					401: errorResponseSchema,
+					403: errorResponseSchema,
+					404: errorResponseSchema,
+					502: errorResponseSchema,
+					503: errorResponseSchema,
+				},
+			},
+		},
+		async (request, reply) => {
+			const accountId = request.user.accountId as AccountId;
+			await requireSession(accountId, request.params.id);
+			if (!testerVoice.enabled) {
+				// Sent directly: the central error handler flattens thrown 5xx into a
+				// generic 500, and what's worth saying here is which key is missing.
+				return reply.code(503).send({
+					error: 'Service Unavailable',
+					message: 'Speech is not configured on this deployment — set OPENAI_API_KEY.',
+					statusCode: 503,
+				});
+			}
+			try {
+				return await testerVoice.speak(request.body.text);
+			} catch (error) {
+				request.log.error({ err: error }, 'tester speech synthesis failed');
+				// The speech provider is the failing dependency, so 502 rather than a
+				// generic 500 — the tester itself is fine.
+				return reply.code(502).send({
+					error: 'Bad Gateway',
+					message: 'Could not speak that line right now. Please try again.',
+					statusCode: 502,
+				});
+			}
+		},
+	);
+
+	app.post(
+		'/sessions/:id/transcribe',
+		{
+			onRequest: [fastify.authenticate, fastify.requireStaff],
+			// Fastify's 1MB default would refuse a perfectly ordinary utterance. The
+			// headroom over the schema's own cap leaves room for the JSON envelope, so
+			// an over-long recording gets the schema's friendly 400 rather than a 413.
+			bodyLimit: MAX_UTTERANCE_BASE64 + 1024,
+			schema: {
+				tags: ['admin'],
+				summary: 'Transcribe what the caller just said (development only, Rivus staff only)',
+				description:
+					'Takes one recorded utterance as base64 audio (any container the browser ' +
+					'records — the transcriber reads the format from the bytes) and returns the ' +
+					'words. The text is what the caller said, to be sent through the normal turn ' +
+					'endpoint; an empty `text` means the recording held no speech, which is a ' +
+					'normal outcome rather than an error. 503 when the deployment has no OpenAI key.',
+				security: [{ bearerAuth: [] }],
+				params: idParamsSchema,
+				body: testerTranscribeSchema,
+				response: {
+					200: testerTranscriptionResponseSchema,
+					400: errorResponseSchema,
+					401: errorResponseSchema,
+					403: errorResponseSchema,
+					404: errorResponseSchema,
+					502: errorResponseSchema,
+					503: errorResponseSchema,
+				},
+			},
+		},
+		async (request, reply) => {
+			const accountId = request.user.accountId as AccountId;
+			await requireSession(accountId, request.params.id);
+			if (!testerVoice.enabled) {
+				return reply.code(503).send({
+					error: 'Service Unavailable',
+					message: 'Speech is not configured on this deployment — set OPENAI_API_KEY.',
+					statusCode: 503,
+				});
+			}
+			// Base64 decoding is lenient — it drops what it doesn't recognize — so the
+			// only thing worth checking is that something survived it. Sending the
+			// provider zero bytes would just buy a slow failure.
+			const bytes = Buffer.from(request.body.audio, 'base64');
+			if (bytes.length === 0) {
+				throw app.httpErrors.badRequest('That recording came through empty — try again.');
+			}
+			try {
+				return { text: await testerVoice.transcribe(bytes) };
+			} catch (error) {
+				request.log.error({ err: error }, 'tester transcription failed');
+				return reply.code(502).send({
+					error: 'Bad Gateway',
+					message: 'Could not make out that recording right now. Please try again.',
+					statusCode: 502,
+				});
+			}
 		},
 	);
 };

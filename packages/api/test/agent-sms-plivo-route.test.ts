@@ -5,6 +5,7 @@ import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
 import { createInMemoryRepositories } from '../src/repositories/memory';
 import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
+import { DisabledTesterVoiceService } from '../src/services/agent/tester-voice';
 import { NoopChannelProvisioner, NoopNumberReleaser } from '../src/services/channel-provisioning';
 import { createDecider } from '../src/services/chat/decide';
 import { NoopFaqAnswerService } from '../src/services/faq-answer';
@@ -373,6 +374,7 @@ function buildSmsApp(extraConfig: Record<string, string> = {}): FastifyInstance 
 		notifier: createNotificationService({ notifications: repos.notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
+		testerVoice: new DisabledTesterVoiceService(),
 		chatDecider: createDecider(),
 		websiteAudit: createWebsiteAuditService({}),
 		ping: async () => ({ ready: true }),
