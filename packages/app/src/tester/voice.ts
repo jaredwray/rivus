@@ -437,28 +437,41 @@ export function useVoiceCall(options: VoiceCallOptions): VoiceCall {
 				return;
 			}
 			streamRef.current = stream;
-			const mimeType = pickRecorderMimeType();
-			const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-			const chunks: Blob[] = [];
-			recorder.ondataavailable = (event) => {
-				if (event.data.size > 0) {
-					chunks.push(event.data);
-				}
-			};
-			recorder.onstop = () => {
-				const recording = new Blob(chunks, { type: recorder.mimeType });
-				releaseRecorder();
-				void finishUtterance(recording, run);
-			};
-			recorderRef.current = recorder;
-			recorder.start();
-			// A recording nobody ends would grow until the API refuses it; cap it at a
-			// length no single spoken turn needs.
-			timerRef.current = setTimeout(() => {
-				if (runRef.current === run) {
-					stopRecording();
-				}
-			}, MAX_UTTERANCE_MS);
+			try {
+				const mimeType = pickRecorderMimeType();
+				const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+				const chunks: Blob[] = [];
+				recorder.ondataavailable = (event) => {
+					if (event.data.size > 0) {
+						chunks.push(event.data);
+					}
+				};
+				recorder.onstop = () => {
+					const recording = new Blob(chunks, { type: recorder.mimeType });
+					releaseRecorder();
+					void finishUtterance(recording, run);
+				};
+				recorderRef.current = recorder;
+				recorder.start();
+				// A recording nobody ends would grow until the API refuses it; cap it at a
+				// length no single spoken turn needs.
+				timerRef.current = setTimeout(() => {
+					if (runRef.current === run) {
+						stopRecording();
+					}
+				}, MAX_UTTERANCE_MS);
+			} catch {
+				// A granted microphone can still refuse to record — the stream died while
+				// the prompt was up, or the recorder balks at the container it promised to
+				// support. Left uncaught, the loop would sit in `recording` with no
+				// recorder behind it (and a live mic); the stream is already in
+				// `streamRef`, so the teardown hands it back. Everything in this block is
+				// synchronous, so the run is still ours to fail.
+				teardown({
+					type: 'FAIL',
+					message: 'The recorder wouldn’t start — try again, or type the line instead.',
+				});
+			}
 		})();
 	}, [finishUtterance, releaseRecorder, stopRecording, teardown]);
 	armRef.current = arm;
