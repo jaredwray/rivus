@@ -31,6 +31,7 @@ const CHAT_CAPS: ChannelCapabilities = {
 function replyContext(medium: 'chat' | 'email' = 'chat') {
 	return {
 		accountName: 'Cascade Plumbing',
+		agentName: 'Rivus',
 		customerName: 'Dana',
 		timeZone: 'America/Los_Angeles',
 		signupUrl: 'https://www.rivus.ai/customers/join/cascade-plumbing?phone=%2B15559990000',

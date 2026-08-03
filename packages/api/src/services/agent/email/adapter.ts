@@ -51,6 +51,7 @@ export function createEmailChannelAdapter(deps: {
 		async deliver(response: AgentResponse, ctx: OutboundContext): Promise<string> {
 			const rendered = renderEmailResponse(response, {
 				accountName: ctx.account.name,
+				agentName: ctx.account.agentName,
 				inboundSubject: ctx.subject,
 			});
 			await deps.mailer.sendAgentEmail({

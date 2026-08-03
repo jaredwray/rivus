@@ -19,8 +19,8 @@ const TEXT_PRIMARY = '#16161f';
 const TEXT_SUB = '#8a8b99';
 const GRADIENT = 'linear-gradient(135deg, #1ebefa, #6e1ec8)';
 
-const FOOTER_NOTE = (accountName: string) =>
-	`Rivus · AI scheduling for ${accountName}. Reply to this email and I'll take care of it.`;
+const FOOTER_NOTE = (accountName: string, agentName: string) =>
+	`${agentName} · AI scheduling for ${accountName}. Reply to this email and I'll take care of it.`;
 
 /** `Re:` the customer's own subject, or a sensible thread-starter without one. */
 export function replySubject(inboundSubject: string, accountName: string): string {
@@ -43,7 +43,7 @@ function paragraphRaw(inner: string): string {
  * page background, the account-headed card, and the Rivus footer — so every agent
  * email looks like one thread.
  */
-function emailShell(accountName: string, body: string[]): string {
+function emailShell(accountName: string, agentName: string, body: string[]): string {
 	return [
 		'<!doctype html>',
 		'<html lang="en">',
@@ -52,7 +52,7 @@ function emailShell(accountName: string, body: string[]): string {
 		`<p style="margin: 0 0 16px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: ${TEXT_SUB};">${escapeHtml(accountName)}</p>`,
 		...body,
 		'</div>',
-		`<p style="max-width: 560px; margin: 12px auto 0; font-size: 11.5px; font-weight: 500; color: ${TEXT_SUB}; text-align: center;">${escapeHtml(FOOTER_NOTE(accountName))}</p>`,
+		`<p style="max-width: 560px; margin: 12px auto 0; font-size: 11.5px; font-weight: 500; color: ${TEXT_SUB}; text-align: center;">${escapeHtml(FOOTER_NOTE(accountName, agentName))}</p>`,
 		'</body>',
 		'</html>',
 	].join('\n');
@@ -82,7 +82,12 @@ function actionHtml(label: string, url: string): string[] {
 }
 
 /** Render a free-text reply (human or approved draft) into the shared card. */
-function renderPlain(accountName: string, inboundSubject: string, body: string): RenderedEmail {
+function renderPlain(
+	accountName: string,
+	agentName: string,
+	inboundSubject: string,
+	body: string,
+): RenderedEmail {
 	// A blank line separates paragraphs; single breaks within one become <br>.
 	// Newlines match `\r?\n` (like the inbound reply parser) so CRLF bodies split
 	// the same as LF ones; the separator tolerates spaces/tabs on a blank line.
@@ -98,7 +103,7 @@ function renderPlain(accountName: string, inboundSubject: string, body: string):
 		.map((block) => paragraphRaw(block));
 	return {
 		subject: replySubject(inboundSubject, accountName),
-		html: emailShell(accountName, paragraphs),
+		html: emailShell(accountName, agentName, paragraphs),
 		text: body,
 	};
 }
@@ -106,13 +111,13 @@ function renderPlain(accountName: string, inboundSubject: string, body: string):
 /** Render a composed agent response into subject + design-system HTML + text. */
 export function renderEmailResponse(
 	response: AgentResponse,
-	input: { accountName: string; inboundSubject: string },
+	input: { accountName: string; agentName: string; inboundSubject: string },
 ): RenderedEmail {
 	// A free-text response carries no agent chrome (greeting) and uses the
 	// paragraph-splitting body form; agent decisions get the composed card.
 	const plain = response.blocks.find((block) => block.kind === 'freeText');
 	if (plain) {
-		return renderPlain(input.accountName, input.inboundSubject, plain.text);
+		return renderPlain(input.accountName, input.agentName, input.inboundSubject, plain.text);
 	}
 
 	const body: string[] = [];
@@ -138,7 +143,7 @@ export function renderEmailResponse(
 	}
 	return {
 		subject: replySubject(input.inboundSubject, input.accountName),
-		html: emailShell(input.accountName, body),
+		html: emailShell(input.accountName, input.agentName, body),
 		text: renderResponseText(response),
 	};
 }

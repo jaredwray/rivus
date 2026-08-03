@@ -112,6 +112,8 @@ export interface Account {
 	id: AccountId;
 	/** Business name shown throughout the product. */
 	name: string;
+	/** Customer-facing name used by the account's agent on every channel. */
+	agentName: string;
 	/** URL-safe, unique handle derived from the business name. */
 	slug: string;
 	phone: string;

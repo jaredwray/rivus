@@ -177,6 +177,7 @@ function mapAccount(doc: HydratedDocument<AccountDocument>): Account {
 	return {
 		id: doc._id.toString() as AccountId,
 		name: doc.name,
+		agentName: doc.agentName || 'Rivus',
 		slug: doc.slug,
 		phone: doc.phone,
 		address: doc.address,
@@ -477,7 +478,7 @@ export class MongoAccountRepository implements AccountRepository {
 		}
 		// `$set` with only the provided keys, so a partial update never blanks a field.
 		const set: UpdateAccount = {};
-		for (const key of ['name', 'phone', 'address', 'website', 'timezone'] as const) {
+		for (const key of ['name', 'agentName', 'phone', 'address', 'website', 'timezone'] as const) {
 			const value = input[key];
 			if (value !== undefined) {
 				set[key] = value;

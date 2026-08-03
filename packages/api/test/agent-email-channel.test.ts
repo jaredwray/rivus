@@ -330,6 +330,7 @@ describe('buildCustomerSignupUrl', () => {
 describe('agent email templates', () => {
 	const context: AgentEmailRenderContext = {
 		accountName: 'Cascade Plumbing',
+		agentName: 'Rivus',
 		customerName: 'Dana Fox',
 		timeZone: 'America/Los_Angeles',
 		signupUrl: 'https://www.rivus.ai/customers/join/cascade-plumbing?email=d%40x.io',

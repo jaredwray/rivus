@@ -76,6 +76,7 @@ export const accountStatusSchema = z.enum(['active', 'canceled'], {
 });
 
 export const businessNameSchema = requiredText('Business name', 160);
+export const agentNameSchema = requiredText('Agent name', 80);
 export const phoneSchema = optionalText('Phone number', 40);
 export const addressSchema = optionalText('Address', 300);
 export const timezoneSchema = optionalText('Time zone', 64);
@@ -208,6 +209,7 @@ export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;
 export const updateAccountSchema = z
 	.object({
 		businessName: businessNameSchema.optional(),
+		agentName: agentNameSchema.optional(),
 		phone: phoneSchema.optional(),
 		address: addressSchema.optional(),
 		website: websiteSchema.optional(),

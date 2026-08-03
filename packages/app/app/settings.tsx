@@ -407,6 +407,7 @@ export default function SettingsScreen() {
 	const narrow = width < 520;
 
 	const [businessName, setBusinessName] = useState(account?.name ?? '');
+	const [agentName, setAgentName] = useState(account?.agentName ?? 'Rivus');
 	const [phone, setPhone] = useState(account?.phone ?? '');
 	const [address, setAddress] = useState(account?.address ?? '');
 	const [website, setWebsite] = useState(account?.website ?? '');
@@ -511,6 +512,7 @@ export default function SettingsScreen() {
 		try {
 			await updateAccount({
 				businessName: businessName.trim(),
+				agentName: agentName.trim(),
 				phone: phone.trim(),
 				address: address.trim(),
 				website: website.trim(),
@@ -590,6 +592,20 @@ export default function SettingsScreen() {
 						autoCapitalize="words"
 					/>
 					<TextField
+						label="Agent name"
+						value={agentName}
+						onChangeText={(next) => {
+							setAgentName(next);
+							setSaved(false);
+						}}
+						placeholder="Rivus"
+						autoCapitalize="words"
+					/>
+					<Txt style={styles.agentEmailHint}>
+						This is how your agent introduces itself to customers across email, messaging, and phone
+						calls.
+					</Txt>
+					<TextField
 						label="Phone"
 						value={phone}
 						onChangeText={setPhone}
@@ -635,8 +651,8 @@ export default function SettingsScreen() {
 			<Card style={styles.card}>
 				<SectionLabel>Agent email</SectionLabel>
 				<Txt style={styles.agentEmailHint}>
-					Customers can book by emailing this address — Rivus checks your calendar and schedules
-					them automatically. Share it, or add it to your website.
+					Customers can book by emailing this address — {session.account.agentName} checks your
+					calendar and schedules them automatically. Share it, or add it to your website.
 				</Txt>
 				<CopyField label="Your agent address" value={agentEmail} />
 			</Card>

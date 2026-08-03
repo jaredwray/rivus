@@ -14,6 +14,7 @@ import { renderEmailResponse, replySubject } from './renderer';
 
 export interface AgentEmailRenderContext {
 	accountName: string;
+	agentName: string;
 	/** The matched customer's name; '' when the sender isn't recognized. */
 	customerName: string;
 	/** IANA zone slot labels are written in. */
@@ -37,6 +38,7 @@ export { replySubject };
 function toEmailResponse(decision: AgentDecision, context: AgentEmailRenderContext) {
 	return composeAgentResponse(decision, {
 		accountName: context.accountName,
+		agentName: context.agentName,
 		customerName: context.customerName,
 		timeZone: context.timeZone,
 		signupUrl: context.signupUrl,
@@ -53,6 +55,7 @@ export function renderAgentEmail(
 ): RenderedEmail {
 	return renderEmailResponse(toEmailResponse(decision, context), {
 		accountName: context.accountName,
+		agentName: context.agentName,
 		inboundSubject: context.inboundSubject,
 	});
 }
@@ -72,11 +75,13 @@ export function renderAgentReplyText(
  */
 export function renderReplyEmail(context: {
 	accountName: string;
+	agentName: string;
 	inboundSubject: string;
 	body: string;
 }): RenderedEmail {
 	return renderEmailResponse(freeTextResponse(context.body), {
 		accountName: context.accountName,
+		agentName: context.agentName,
 		inboundSubject: context.inboundSubject,
 	});
 }

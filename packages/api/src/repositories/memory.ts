@@ -241,6 +241,7 @@ export class InMemoryAccountRepository implements AccountRepository {
 		const account: Account = {
 			id: randomUUID() as AccountId,
 			name: input.name,
+			agentName: 'Rivus',
 			slug,
 			phone: input.phone,
 			address: input.address,
@@ -301,7 +302,7 @@ export class InMemoryAccountRepository implements AccountRepository {
 		}
 		// Only overwrite fields the caller actually sent (undefined means "leave as is").
 		const patch: Partial<Account> = {};
-		for (const key of ['name', 'phone', 'address', 'website', 'timezone'] as const) {
+		for (const key of ['name', 'agentName', 'phone', 'address', 'website', 'timezone'] as const) {
 			const value = input[key];
 			if (value !== undefined) {
 				patch[key] = value;

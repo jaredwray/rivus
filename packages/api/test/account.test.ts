@@ -79,6 +79,21 @@ describe('account settings', () => {
 		});
 	});
 
+	it('defaults the agent name and lets the owner customize it', async () => {
+		const owner = await signupOwner(app);
+		expect(owner.account.agentName).toBe('Rivus');
+
+		const response = await updateAccount(owner.token, { agentName: 'Maya' });
+
+		expect(response.json().agentName).toBe('Maya');
+	});
+
+	it('rejects a blank agent name', async () => {
+		const owner = await signupOwner(app);
+		const response = await updateAccount(owner.token, { agentName: '   ' });
+		expect(response.statusCode).toBe(400);
+	});
+
 	it('rejects an empty update (400)', async () => {
 		const owner = await signupOwner(app);
 		const response = await updateAccount(owner.token, {});

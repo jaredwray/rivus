@@ -147,6 +147,7 @@ export interface NewAccount {
  */
 export interface UpdateAccount {
 	name?: string;
+	agentName?: string;
 	phone?: string;
 	address?: string;
 	website?: string;

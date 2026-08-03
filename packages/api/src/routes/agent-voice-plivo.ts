@@ -136,7 +136,7 @@ export const agentVoicePlivoRoutes: FastifyPluginAsync = async (fastify) => {
 					return speakDocument(VOICE_LINES.anonymous);
 				}
 				return listenDocument(
-					voiceGreeting(resolved.name),
+					voiceGreeting(resolved.name, resolved.agentName),
 					`${requestOrigin(request)}${INPUT_PATH}`,
 				);
 			} catch (error) {

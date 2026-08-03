@@ -144,6 +144,7 @@ function account(): Account {
 	return {
 		id: 'acct-1' as AccountId,
 		name: 'Cascade Plumbing',
+		agentName: 'Rivus',
 		slug: 'cascade-plumbing',
 		phone: '',
 		address: '',
@@ -179,6 +180,7 @@ function thread(): AgentThread {
 function replyContext(medium: AgentReplyContext['medium']): AgentReplyContext {
 	return {
 		accountName: 'Cascade Plumbing',
+		agentName: 'Rivus',
 		customerName: 'Dana Fox',
 		timeZone: 'America/Los_Angeles',
 		signupUrl: 'https://www.rivus.ai/customers/join/cascade-plumbing?email=d%40x.io',
