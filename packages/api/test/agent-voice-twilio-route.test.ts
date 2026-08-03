@@ -522,6 +522,39 @@ describe('runVoiceTurn', () => {
 			speech: 'hello there',
 			logger: app.log,
 		});
-		expect(turn).toEqual({ mode: 'terminal', text: VOICE_LINES.goodbye });
+		// The outcome still travels with the turn, mute or not: the Agent Tester
+		// reports it even when there was nothing to say.
+		expect(turn).toEqual({ mode: 'terminal', text: VOICE_LINES.goodbye, outcome: 'mute' });
+	});
+
+	it('reports the re-prompt as its own outcome when nothing was said', async () => {
+		const { app: built, repos } = await buildTestAppWithRepos();
+		app = built;
+		const owner = await signupOwner(app);
+		const account = await repos.accounts.findById(owner.account.id as AccountId);
+		if (!account) {
+			throw new Error('account missing');
+		}
+		const turn = await runVoiceTurn({
+			deps: {
+				config: app.deps.config,
+				jobs: repos.jobs,
+				conversations: repos.conversations,
+				agentThreads: repos.agentThreads,
+				faqs: repos.faqs,
+				faqAnswer: app.deps.faqAnswer,
+				memberships: repos.memberships,
+				notifier: app.deps.notifier,
+			},
+			customers: repos.customers,
+			capabilities: [],
+			account,
+			caller: CALLER,
+			speech: '   ',
+			logger: app.log,
+		});
+		// No turn ran at all, so there is no engine outcome to report — only the
+		// re-prompt, and the call stays open for another try.
+		expect(turn).toEqual({ mode: 'listen', text: VOICE_LINES.reprompt, outcome: 'reprompt' });
 	});
 });

@@ -1,4 +1,4 @@
-import type { AgentThread } from '@rivus/core';
+import type { ConversationChannel } from '@rivus/core';
 import type { AppDeps } from '../../types';
 import { type AgentEmail, NoopMailer } from '../email';
 import type { SmsMessage, SmsSender } from '../sms';
@@ -16,6 +16,13 @@ import { createWhatsappChannelAdapter } from './whatsapp/adapter';
  * and the inbox transcript all run for real) while nothing ever reaches a
  * customer's inbox or phone.
  *
+ * The tester drives every channel the agent speaks on. Voice is the exception
+ * this module doesn't cover: its transport is synchronous — the reply *is* the
+ * webhook's own response — so there is no asynchronous send to intercept. A
+ * `phone` turn runs through the shared voice core in the route instead (see
+ * `routes/agent-voice-shared.ts`), which is what keeps a simulated call
+ * identical to a real one.
+ *
  * Everything here is per-request: {@link createTesterChannel} builds a fresh
  * adapter over a fresh capture buffer, so two staff sessions running at once can
  * never read each other's delivery.
@@ -25,16 +32,11 @@ import { createWhatsappChannelAdapter } from './whatsapp/adapter';
  * only what the adapter it wraps sees.
  */
 
-/** The channels the tester can drive — every channel with an outbound transport. */
-export type TesterChannel = 'email' | 'sms' | 'whatsapp';
+/** The channels the tester can drive — every channel the agent answers on. */
+export type TesterChannel = ConversationChannel;
 
-/** An agent thread the tester can drive; `phone` threads have no transport to capture. */
-export type TesterThread = AgentThread & { channel: TesterChannel };
-
-/** Whether a thread lives on a channel the tester can drive. */
-export function isTesterThread(thread: AgentThread): thread is TesterThread {
-	return thread.channel !== 'phone';
-}
+/** The tester channels with an asynchronous transport to capture (voice has none). */
+export type CapturedTesterChannel = Exclude<TesterChannel, 'phone'>;
 
 /** What the agent WOULD have delivered, captured instead of sent. */
 export interface TesterDelivery {
@@ -98,7 +100,7 @@ class CaptureWhatsappSender implements WhatsappSender {
  */
 export function createTesterChannel(
 	deps: Pick<AppDeps, 'config' | 'customers'>,
-	channel: TesterChannel,
+	channel: CapturedTesterChannel,
 ): TesterChannelHarness {
 	const deliveries: TesterDelivery[] = [];
 	return {
@@ -111,7 +113,7 @@ export function createTesterChannel(
 /** The real factory for each channel, given a capture transport. */
 function buildAdapter(
 	deps: Pick<AppDeps, 'config' | 'customers'>,
-	channel: TesterChannel,
+	channel: CapturedTesterChannel,
 	deliveries: TesterDelivery[],
 ): ChannelAdapter {
 	switch (channel) {

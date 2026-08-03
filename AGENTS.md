@@ -94,7 +94,7 @@ Tests are an inventory of failure modes, not a coverage ritual.
   `pnpm --filter @rivus/api openapi`.
 
   The customer-facing agent is **unified across channels** (email, WhatsApp,
-  and — later — SMS/voice), and the layering is what keeps it that way:
+  SMS, and voice), and the layering is what keeps it that way:
   - **Core (`src/services/agent/`) owns all behavior** — the pure policy
     (`engine.ts`), availability (`slots.ts`), reply parsing (`parse.ts`), the
     capability registry (`capabilities.ts`), the `AgentDecision → AgentResponse`
