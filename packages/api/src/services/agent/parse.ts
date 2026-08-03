@@ -599,6 +599,39 @@ export function isAcknowledgement(text: string): boolean {
 	return sawAcknowledgement;
 }
 
+// The additional-visit phrases are anchored on a booking noun on purpose:
+// "another appointment" asks for a second visit, while "another time" /
+// "another slot" / "another option" ask for DIFFERENT windows for the same one,
+// so a bare "another" (or "second", which every numbered pick is full of) is
+// never enough. The verb forms require the verb: "can you also book…" adds a
+// visit, "option 2 also works" picks one.
+//
+// "also need/want" carries its own trap, so it is guarded by a lookahead:
+// "I also need to reschedule" / "also want it moved" / "also want Friday at 2
+// instead" are asks about the EXISTING booking, and reading them as an
+// additional visit re-creates the very double-booking this vocabulary exists to
+// prevent. The lookahead declines on two continuations within the clause:
+// words that can only mean replacement wherever they sit (reschedule, rebook,
+// instead, rather than), and move-verbs behind an object frame ("to move",
+// "it moved", "my appointment changed") — the frame matters because a bare
+// stem would also catch "also need help, we're moving house", which the
+// refusal corpus keeps additive. `book`/`schedule` need no guard: what they
+// add is by construction a new visit.
+const ADDITIONAL_VISIT =
+	/\b(?:another|a second|an additional|a separate|one more|an extra)\s+(?:appointment|visit|booking|job)\b|\balso\s+(?:book|schedule)\b|\balso\s+(?:need|want)\b(?![^.?!;]*?\b(?:re-?schedul[a-z]*|re-?book[a-z]*|instead|rather than)\b|\s+(?:to\s+|(?:it|that|this|them|my|our|the)\b[^.?!;]*?)(?:chang|mov|shift|postpon|cancel|push|bump|adjust))|\bin addition\b|\bkeep\s+both\b|\bboth\s+(?:appointments|visits|bookings)\b/;
+
+/**
+ * Whether the message asks for an appointment IN ADDITION to one the contact
+ * already has ("can I book another appointment for the upstairs bath?"), rather
+ * than a change to it. For a contact who already holds a booking, this is what
+ * authorizes the turn to create a second job instead of moving the one they
+ * have — the same reading either way would silently do the wrong thing for the
+ * other intent.
+ */
+export function namesAdditionalVisit(text: string): boolean {
+	return ADDITIONAL_VISIT.test(text.toLowerCase().replace(/\s+/g, ' '));
+}
+
 /**
  * The specific instant a reply proposes ("July 10 at 2pm", "10 July 14:00",
  * "2026-07-10 14:00", "Tuesday at 2pm", "tomorrow at 9"), as a UTC ISO

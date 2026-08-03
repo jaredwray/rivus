@@ -99,7 +99,37 @@ export type AgentDecision =
 	 * says exactly that and puts what IS open in front of them (`alternatives`,
 	 * empty when nothing is).
 	 */
-	| { kind: 'no_booking'; alternatives: AgentSlot[] };
+	| { kind: 'no_booking'; alternatives: AgentSlot[] }
+	/**
+	 * Not from this engine — the scheduling capability's substitution when a pick
+	 * (or proposal) lands on a contact who already has the appointment: the SAME
+	 * job moved to the chosen window, never a second visit. `title` names the job
+	 * as the calendar knows it; `from` is the window it left, so the reply names
+	 * both sides and a misread ask is visible in the very message that made it.
+	 */
+	| { kind: 'reschedule'; title: string; from: AgentSlot; to: AgentSlot }
+	/**
+	 * Not from this engine — a move was implied but the chosen window can't hold
+	 * this job at its real duration (a two-hour install picked into the last hour
+	 * of the day, or into a window another job's tail collides with). Nothing
+	 * moved, the reply says the booking still stands, and `alternatives` are
+	 * windows that CAN hold it (empty when none can).
+	 */
+	| {
+			kind: 'reschedule_unavailable';
+			reason: 'taken' | 'outside_hours';
+			from: AgentSlot;
+			requestedStartAt: IsoDateString;
+			alternatives: AgentSlot[];
+	  }
+	/**
+	 * Not from this engine — a human owns this move: the contact has more than
+	 * one upcoming job (`slot: null` — moving the wrong one is the worst outcome
+	 * available), or the one they have is not the agent's to move (already under
+	 * way, or longer than the business day). Nothing moves, and the reply says
+	 * so in its own sentence.
+	 */
+	| { kind: 'reschedule_held'; slot: AgentSlot | null };
 
 /**
  * One appointment on the calendar as a status answer names it: the service, when

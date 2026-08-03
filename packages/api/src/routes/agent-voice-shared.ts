@@ -19,7 +19,12 @@ import { createVoiceChannelAdapter } from '../services/agent/voice/adapter';
  */
 
 /** Outcomes after which the call ends instead of listening for another turn. */
-export const VOICE_TERMINAL_OUTCOMES = new Set(['book', 'confirm_existing', 'send_signup_link']);
+export const VOICE_TERMINAL_OUTCOMES = new Set([
+	'book',
+	'reschedule',
+	'confirm_existing',
+	'send_signup_link',
+]);
 
 export const VOICE_LINES = {
 	goodbye: 'Thanks for calling. Goodbye!',

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	isAcknowledgement,
 	matchOfferedSlot,
+	namesAdditionalVisit,
 	parseProposedTime,
 	parseRequestedDay,
 	parseSlotChoice,
@@ -422,6 +423,55 @@ describe('isAcknowledgement', () => {
 		'how about the 10th',
 	])('does not read numeric scheduling content in %j as an acknowledgement', (text) => {
 		expect(isAcknowledgement(text)).toBe(false);
+	});
+});
+
+describe('namesAdditionalVisit', () => {
+	it.each([
+		'Can I book another appointment for the upstairs bath?',
+		'I need a second visit for the water heater',
+		'could we add an additional booking next week',
+		'we want a separate job for the rental unit',
+		'can you fit one more appointment in?',
+		'need an extra visit before the inspection',
+		'can you also book me for the gutter cleaning?',
+		'I also need someone for the furnace',
+		'in addition to Thursday, can you do Friday at 2?',
+		'keep both please',
+		'I want to keep both appointments',
+	])('reads %j as asking for an additional visit', (text) => {
+		expect(namesAdditionalVisit(text)).toBe(true);
+	});
+
+	it.each([
+		// Picks and confirmations — the words a numbered offer is full of.
+		'2',
+		'option 2 works',
+		'the second one works',
+		'second option please',
+		'option 2 also works',
+		// Asking for DIFFERENT windows for the same visit, not another visit.
+		'can we do another time?',
+		'is there another slot?',
+		'do you have another option?',
+		'any other day works too',
+		// Reschedule asks — the intent this guard must never claim.
+		'can we reschedule?',
+		'move it to Friday',
+		'can you reschedule that to 4pm instead?',
+		// "also need/want" continuing into a move of the EXISTING booking —
+		// reading these as an additional visit re-creates the double-booking.
+		'I also need to reschedule my appointment',
+		'I also want to change my appointment to Monday at 10am',
+		'I also need to reschedule it to Friday at 2pm',
+		'I also want Friday at 2 instead',
+		'also need it moved to Friday',
+		'thanks — also want my appointment pushed back an hour',
+		'also need to cancel that visit',
+		'also want Monday rather than Friday',
+		'',
+	])('does not read %j as asking for an additional visit', (text) => {
+		expect(namesAdditionalVisit(text)).toBe(false);
 	});
 });
 

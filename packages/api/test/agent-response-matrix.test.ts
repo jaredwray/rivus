@@ -25,6 +25,8 @@ import { RecordingSmsSender, RecordingWhatsappSender } from './helpers';
 
 const SLOT_A = { startAt: '2026-07-07T16:00:00.000Z', durationMinutes: 60 };
 const SLOT_B = { startAt: '2026-07-09T21:00:00.000Z', durationMinutes: 60 };
+/** Later the same local day as SLOT_A, for the same-day reschedule wording. */
+const SLOT_A_LATER = { startAt: '2026-07-07T21:00:00.000Z', durationMinutes: 60 };
 const SLOTS = [SLOT_A, SLOT_B];
 const ANSWER = "We're open Monday through Friday, 9:00 AM to 5:00 PM.";
 
@@ -71,12 +73,44 @@ const DECISIONS: AgentDecision[] = [
 	{ kind: 'booking_status', bookings: [BOOKING], more: true, offeredSlots: SLOTS },
 	{ kind: 'no_booking', alternatives: SLOTS },
 	{ kind: 'no_booking', alternatives: [] },
+	// The reschedule kinds: a move across days and within one (the same-day
+	// wording names the date once), a declined move with and without windows to
+	// fall back on, and the two shapes of handing a move to a human.
+	{ kind: 'reschedule', title: 'Water heater install', from: SLOT_A, to: SLOT_B },
+	{ kind: 'reschedule', title: 'Water heater install', from: SLOT_A, to: SLOT_A_LATER },
+	{
+		kind: 'reschedule_unavailable',
+		reason: 'taken',
+		from: SLOT_A,
+		requestedStartAt: SLOT_B.startAt,
+		alternatives: SLOTS,
+	},
+	{
+		kind: 'reschedule_unavailable',
+		reason: 'outside_hours',
+		from: SLOT_A,
+		requestedStartAt: SLOT_B.startAt,
+		alternatives: [],
+	},
+	{ kind: 'reschedule_held', slot: SLOT_A },
+	{ kind: 'reschedule_held', slot: null },
 ];
 
 /** A distinct test name per decision, so the variants of one kind don't collide. */
 function decisionLabel(decision: AgentDecision): string {
-	if (decision.kind === 'propose_unavailable' || decision.kind === 'day_unavailable') {
+	if (
+		decision.kind === 'propose_unavailable' ||
+		decision.kind === 'day_unavailable' ||
+		decision.kind === 'reschedule_unavailable'
+	) {
 		return `${decision.kind}:${decision.reason}:${decision.alternatives.length ? 'alt' : 'none'}`;
+	}
+	if (decision.kind === 'reschedule') {
+		const sameDay = decision.from.startAt.slice(0, 10) === decision.to.startAt.slice(0, 10);
+		return `${decision.kind}:${sameDay ? 'sameday' : 'crossday'}`;
+	}
+	if (decision.kind === 'reschedule_held') {
+		return `${decision.kind}:${decision.slot ? 'slot' : 'none'}`;
 	}
 	if (decision.kind === 'offer_slots') {
 		return decision.requestedDayStartAt ? `${decision.kind}:day` : decision.kind;

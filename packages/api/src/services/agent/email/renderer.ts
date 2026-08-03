@@ -5,9 +5,8 @@ import { cleanSubject } from '../subject';
 /**
  * The email channel's ONE generic renderer: any {@link AgentResponse} → the
  * design-system HTML card + plain text + subject. It switches exhaustively on the
- * neutral block kinds and knows only chrome (the shell, the footer, the text
- * sign-off) — never a scheduling decision — so a new core feature renders here
- * with no change. Every visual value is a DESIGN_SYSTEM.md token (Montserrat, the
+ * neutral block kinds and knows only chrome (the shell, the footer) — never a
+ * scheduling decision — so a new core feature renders here with no change. Every visual value is a DESIGN_SYSTEM.md token (Montserrat, the
  * surface/hairline/text colors, the 14px card, and the signature gradient
  * reserved for the single Rivus-the-agent button).
  */
@@ -109,8 +108,8 @@ export function renderEmailResponse(
 	response: AgentResponse,
 	input: { accountName: string; inboundSubject: string },
 ): RenderedEmail {
-	// A free-text response carries no agent chrome (greeting/sign-off) and uses the
-	// paragraph-splitting body form; agent decisions get the card + sign-off.
+	// A free-text response carries no agent chrome (greeting) and uses the
+	// paragraph-splitting body form; agent decisions get the composed card.
 	const plain = response.blocks.find((block) => block.kind === 'freeText');
 	if (plain) {
 		return renderPlain(input.accountName, input.inboundSubject, plain.text);
@@ -140,6 +139,6 @@ export function renderEmailResponse(
 	return {
 		subject: replySubject(input.inboundSubject, input.accountName),
 		html: emailShell(input.accountName, body),
-		text: `${renderResponseText(response)}\n\n— Rivus, scheduling for ${input.accountName}`,
+		text: renderResponseText(response),
 	};
 }

@@ -378,6 +378,12 @@ describe('agent email templates', () => {
 		expect(text).toContain('Water heater install — Tuesday, July 7 at 9:00 AM (60 minutes).');
 	});
 
+	it('carries no sign-off after the body in the plain-text part', () => {
+		const rendered = renderAgentEmail({ kind: 'offer_slots', slots }, context);
+		expect(rendered.text).not.toContain('— Rivus, scheduling for');
+		expect(rendered.text.trimEnd().endsWith('or suggest another time.')).toBe(true);
+	});
+
 	it('explains an unavailable time and lists alternatives', () => {
 		const decision: AgentDecision = {
 			kind: 'propose_unavailable',
