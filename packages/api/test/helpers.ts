@@ -5,6 +5,7 @@ import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
 import { createInMemoryRepositories, type InMemoryRepositories } from '../src/repositories/memory';
 import { NoopReceivedEmailReader } from '../src/services/agent/email/received';
+import { DisabledTesterVoiceService } from '../src/services/agent/tester-voice';
 import { NoopChannelProvisioner, NoopNumberReleaser } from '../src/services/channel-provisioning';
 import { createDecider } from '../src/services/chat/decide';
 import type {
@@ -135,6 +136,9 @@ export async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<Fa
 		// Default to the no-op AI services so tests stay hermetic (no model/network).
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
+		// No OpenAI key in tests, so the tester's voice endpoints report themselves
+		// unconfigured — a fake service is injected by the tests that exercise them.
+		testerVoice: new DisabledTesterVoiceService(),
 		// The model-less decider routes chat deterministically — hermetic by default.
 		chatDecider: createDecider(),
 		// No provider keys in tests, so the audit answers "disabled" — hermetic,
@@ -199,6 +203,7 @@ export async function buildTestAppWithRepos(overrides: Partial<AppDeps> = {}): P
 		notifier: createNotificationService({ notifications }),
 		faqSimilarity: new NoopFaqSimilarityService(),
 		faqAnswer: new NoopFaqAnswerService(),
+		testerVoice: new DisabledTesterVoiceService(),
 		chatDecider: createDecider(),
 		websiteAudit: createWebsiteAuditService({}),
 		ping: async () => ({ ready: true }),

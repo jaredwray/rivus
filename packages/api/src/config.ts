@@ -140,6 +140,17 @@ const envSchema = z
 		XAI_MODEL: z.string().min(1).default('grok-4-fast'),
 		ANTHROPIC_API_KEY: z.string().min(1).optional(),
 		ANTHROPIC_MODEL: z.string().min(1).default('claude-haiku-4-5'),
+		// --- Agent tester voice (OpenAI) ---
+		// Speech for the development-only Agent Tester's simulated calls, and
+		// nothing else: staff speak into the mic as the caller (transcribed) and
+		// hear Rivus's reply back in a real voice instead of the browser's robotic
+		// one. `OPENAI_API_KEY` above is the on/off switch — without it the tester's
+		// voice endpoints report themselves unconfigured and the app falls back to
+		// the browser's own speech synthesis, so these only choose *which* models
+		// serve it.
+		OPENAI_TTS_MODEL: z.string().min(1).default('gpt-4o-mini-tts'),
+		OPENAI_TTS_VOICE: z.string().min(1).default('coral'),
+		OPENAI_TRANSCRIBE_MODEL: z.string().min(1).default('gpt-4o-mini-transcribe'),
 		// --- Web tools (the chat's website audit — their one purpose) ---
 		// These power "audit my website" and nothing else: there is no generic web
 		// search or page fetching.

@@ -43,6 +43,12 @@ export const FORWARDED_VARS = [
 	'XAI_MODEL',
 	'ANTHROPIC_API_KEY',
 	'ANTHROPIC_MODEL',
+	// Same story for the Agent Tester's spoken calls: the model/voice ids are
+	// `vars`, but unforwarded they'd leave the deployed dev tester on the default
+	// voice with no way to change it.
+	'OPENAI_TTS_MODEL',
+	'OPENAI_TTS_VOICE',
+	'OPENAI_TRANSCRIBE_MODEL',
 	// The chat's website audit (ZenRows fetches the site; Brave adds the
 	// presence check). Missing here = the audit reports "not enabled" even when
 	// the secret is set on the Worker.

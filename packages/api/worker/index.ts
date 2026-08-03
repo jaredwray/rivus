@@ -43,6 +43,12 @@ export interface Env {
 	XAI_MODEL?: string;
 	ANTHROPIC_API_KEY?: string;
 	ANTHROPIC_MODEL?: string;
+	// The speech + transcription models behind the development-only Agent Tester's
+	// simulated calls. Optional: `OPENAI_API_KEY` is what turns the feature on, and
+	// each has a default in `loadConfig`.
+	OPENAI_TTS_MODEL?: string;
+	OPENAI_TTS_VOICE?: string;
+	OPENAI_TRANSCRIBE_MODEL?: string;
 	// The chat's website audit (both optional; ZenRows fetches the site, Brave
 	// adds the presence check — unset = the audit says it's not enabled).
 	ZENROWS_API_KEY?: string;

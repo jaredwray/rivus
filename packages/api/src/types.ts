@@ -18,6 +18,7 @@ import type {
 	VerificationCodeRepository,
 } from './repositories/types';
 import type { ReceivedEmailReader } from './services/agent/email/received';
+import type { TesterVoiceService } from './services/agent/tester-voice';
 import type { ChannelProvisioner, NumberReleaser } from './services/channel-provisioning';
 import type { Decide } from './services/chat/decide';
 import type { Mailer } from './services/email';
@@ -78,6 +79,12 @@ export interface AppDeps {
 	faqSimilarity: FaqSimilarityService;
 	/** AI answering of questions from the knowledge base (deterministic when no key is set). */
 	faqAnswer: FaqAnswerService;
+	/**
+	 * Speech for the development-only Agent Tester's simulated calls — speaking
+	 * the agent's reply and transcribing the caller's. Disabled (and refused by
+	 * the routes) when no OpenAI key is set; nothing else depends on it.
+	 */
+	testerVoice: TesterVoiceService;
 	/** Routes a chat turn to an action (model-backed when a key is set, rule-based otherwise). */
 	chatDecider: Decide;
 	/** The chat's website audit — the one purpose-bound use of the web tools (Brave + ZenRows). */

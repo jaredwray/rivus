@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config';
 import type { InMemoryRepositories } from '../src/repositories/memory';
 import { createTesterChannel } from '../src/services/agent/tester';
+import type { TesterSpeech, TesterVoiceService } from '../src/services/agent/tester-voice';
+import type { AppDeps } from '../src/types';
 import {
 	authHeader,
 	buildTestApp,
@@ -42,10 +44,45 @@ interface Harness {
 }
 
 /** A dev-mode app with a signed-in Rivus staff owner (the only caller these routes allow). */
-async function setup(): Promise<Harness> {
-	const { app, repos } = await buildTestAppWithRepos({ config: devConfig() });
+async function setup(overrides: Partial<AppDeps> = {}): Promise<Harness> {
+	const { app, repos } = await buildTestAppWithRepos({ config: devConfig(), ...overrides });
 	const staff = await signupOwner(app, { email: STAFF_EMAIL, businessName: 'Rivus HQ' });
 	return { app, repos, staff, accountId: staff.account.id as AccountId };
+}
+
+/**
+ * A stand-in for the OpenAI speech service: records what it was asked to say and
+ * what it was given to hear, so the routes can be driven end to end without a
+ * provider. `transcript` is what it claims to have heard — '' is the silence
+ * case the routes must pass through rather than treat as a failure.
+ */
+class FakeTesterVoice implements TesterVoiceService {
+	readonly spoken: string[] = [];
+	readonly heard: Uint8Array[] = [];
+	transcript = 'My water heater is leaking';
+	/** When set, the next call of either kind rejects (the provider-down path). */
+	failNext = false;
+
+	constructor(readonly enabled: boolean = true) {}
+
+	async speak(text: string): Promise<TesterSpeech> {
+		this.failIfAsked();
+		this.spoken.push(text);
+		return { audio: Buffer.from(`spoken:${text}`).toString('base64'), mediaType: 'audio/mpeg' };
+	}
+
+	async transcribe(audio: Uint8Array): Promise<string> {
+		this.failIfAsked();
+		this.heard.push(audio);
+		return this.transcript;
+	}
+
+	private failIfAsked(): void {
+		if (this.failNext) {
+			this.failNext = false;
+			throw new Error('speech provider is down (test)');
+		}
+	}
 }
 
 function addCustomer(
@@ -170,6 +207,9 @@ describe('agent tester — registration gate', () => {
 				`${BASE}/sessions`,
 				`${BASE}/sessions/{id}`,
 				`${BASE}/sessions/{id}/messages`,
+				`${BASE}/voice`,
+				`${BASE}/sessions/{id}/speech`,
+				`${BASE}/sessions/{id}/transcribe`,
 			]),
 		);
 	});
@@ -963,5 +1003,303 @@ describe('createTesterChannel', () => {
 		expect(second.deliveries).toEqual([]);
 		expect(second.lastDelivery()).toEqual({ text: '' });
 		await built.app.close();
+	});
+});
+
+describe('GET /v1/admin/agent-tester/voice', () => {
+	let app: FastifyInstance | undefined;
+	afterEach(async () => {
+		await app?.close();
+		app = undefined;
+	});
+
+	it('reports speech as available when the deployment has a provider', async () => {
+		const built = await setup({ testerVoice: new FakeTesterVoice() });
+		app = built.app;
+		const response = await app.inject({
+			method: 'GET',
+			url: `${BASE}/voice`,
+			headers: authHeader(built.staff.token),
+		});
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({ enabled: true });
+	});
+
+	it('reports it unavailable without a key, so the app keeps its own fallback', async () => {
+		// The default test app has no OpenAI key — exactly an unconfigured deployment.
+		const built = await setup();
+		app = built.app;
+		const response = await app.inject({
+			method: 'GET',
+			url: `${BASE}/voice`,
+			headers: authHeader(built.staff.token),
+		});
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({ enabled: false });
+	});
+
+	it('is gated like the rest of the tester (401 / 403)', async () => {
+		const built = await setup({ testerVoice: new FakeTesterVoice() });
+		app = built.app;
+		expect((await app.inject({ method: 'GET', url: `${BASE}/voice` })).statusCode).toBe(401);
+		const civilian = await signupOwner(app, { email: 'owner@acme.test' });
+		const forbidden = await app.inject({
+			method: 'GET',
+			url: `${BASE}/voice`,
+			headers: authHeader(civilian.token),
+		});
+		expect(forbidden.statusCode).toBe(403);
+	});
+});
+
+describe('POST /v1/admin/agent-tester/sessions/:id/speech', () => {
+	let app: FastifyInstance | undefined;
+	afterEach(async () => {
+		await app?.close();
+		app = undefined;
+	});
+
+	/** A phone session plus the fake speech service the route will call. */
+	async function callSetup(voice: FakeTesterVoice = new FakeTesterVoice()) {
+		const built = await setup({ testerVoice: voice });
+		const session = await openSession(built.app, built.staff.token, {
+			channel: 'phone',
+			contactAddress: CUSTOMER_E164,
+		});
+		return { ...built, session, voice };
+	}
+
+	function speak(instance: FastifyInstance, token: string, id: string, text: string) {
+		return instance.inject({
+			method: 'POST',
+			url: `${BASE}/sessions/${id}/speech`,
+			headers: authHeader(token),
+			payload: { text },
+		});
+	}
+
+	it('synthesizes the line the caller would hear and hands back playable audio', async () => {
+		const built = await callSetup();
+		app = built.app;
+		const line = 'You’re all set for Tuesday at 9am. Thanks for calling. Goodbye!';
+
+		const response = await speak(app, built.staff.token, built.session.id, line);
+
+		expect(response.statusCode).toBe(200);
+		const body = response.json<{ audio: string; mediaType: string }>();
+		expect(body.mediaType).toBe('audio/mpeg');
+		expect(Buffer.from(body.audio, 'base64').toString()).toBe(`spoken:${line}`);
+		// The whole spoken line goes through untouched — sign-off included, since
+		// that is what the caller actually hears.
+		expect(built.voice.spoken).toEqual([line]);
+	});
+
+	it('refuses an empty line before reaching the provider', async () => {
+		const built = await callSetup();
+		app = built.app;
+		expect((await speak(app, built.staff.token, built.session.id, '   ')).statusCode).toBe(400);
+		expect(
+			(await speak(app, built.staff.token, built.session.id, 'x'.repeat(4001))).statusCode,
+		).toBe(400);
+		expect(built.voice.spoken).toEqual([]);
+	});
+
+	it('404s an unknown session and never crosses accounts', async () => {
+		const built = await callSetup();
+		app = built.app;
+		const other = await signupOwner(app, { email: 'other-staff@rivus.ai' });
+		expect((await speak(app, built.staff.token, 'no-such-session', 'Hello?')).statusCode).toBe(404);
+		expect((await speak(app, other.token, built.session.id, 'Hello?')).statusCode).toBe(404);
+	});
+
+	it('says which key is missing when the deployment has no speech (503)', async () => {
+		const built = await callSetup(new FakeTesterVoice(false));
+		app = built.app;
+		const response = await speak(app, built.staff.token, built.session.id, 'Hello?');
+		expect(response.statusCode).toBe(503);
+		expect(response.json<{ message: string }>().message).toContain('OPENAI_API_KEY');
+	});
+
+	it('answers 502 when the provider fails — the tester itself is fine', async () => {
+		const built = await callSetup();
+		app = built.app;
+		built.voice.failNext = true;
+		const response = await speak(app, built.staff.token, built.session.id, 'Hello?');
+		expect(response.statusCode).toBe(502);
+		expect(response.json<{ message: string }>().message).toContain('Could not speak that line');
+	});
+
+	it('is gated like the rest of the tester (401 / 403)', async () => {
+		const built = await callSetup();
+		app = built.app;
+		const anonymous = await app.inject({
+			method: 'POST',
+			url: `${BASE}/sessions/${built.session.id}/speech`,
+			payload: { text: 'Hello?' },
+		});
+		expect(anonymous.statusCode).toBe(401);
+		const civilian = await signupOwner(app, { email: 'owner@acme.test' });
+		expect((await speak(app, civilian.token, built.session.id, 'Hello?')).statusCode).toBe(403);
+	});
+});
+
+describe('POST /v1/admin/agent-tester/sessions/:id/transcribe', () => {
+	let app: FastifyInstance | undefined;
+	afterEach(async () => {
+		await app?.close();
+		app = undefined;
+	});
+
+	// The first bytes of a WebM container — what Chrome's recorder produces, and
+	// what the route must hand through untouched for the format to be readable.
+	const UTTERANCE = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x01, 0x02, 0x03]);
+
+	async function callSetup(voice: FakeTesterVoice = new FakeTesterVoice()) {
+		const built = await setup({ testerVoice: voice });
+		const session = await openSession(built.app, built.staff.token, {
+			channel: 'phone',
+			contactAddress: CUSTOMER_E164,
+		});
+		return { ...built, session, voice };
+	}
+
+	function transcribe(instance: FastifyInstance, token: string, id: string, audio: string) {
+		return instance.inject({
+			method: 'POST',
+			url: `${BASE}/sessions/${id}/transcribe`,
+			headers: authHeader(token),
+			payload: { audio },
+		});
+	}
+
+	it('decodes the recording and reports what the caller said', async () => {
+		const built = await callSetup();
+		app = built.app;
+
+		const response = await transcribe(
+			app,
+			built.staff.token,
+			built.session.id,
+			UTTERANCE.toString('base64'),
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({ text: 'My water heater is leaking' });
+		// The provider gets the raw bytes back, since it reads the container from them.
+		expect(built.voice.heard).toHaveLength(1);
+		expect(Buffer.from(built.voice.heard[0] ?? new Uint8Array()).equals(UTTERANCE)).toBe(true);
+	});
+
+	it('passes silence through as an empty transcript, not an error', async () => {
+		const voice = new FakeTesterVoice();
+		voice.transcript = '';
+		const built = await callSetup(voice);
+		app = built.app;
+		const response = await transcribe(
+			app,
+			built.staff.token,
+			built.session.id,
+			UTTERANCE.toString('base64'),
+		);
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({ text: '' });
+	});
+
+	it('refuses a body that carries no audio at all', async () => {
+		const built = await callSetup();
+		app = built.app;
+		// An absent recording is caught by the schema; one that decodes to nothing
+		// (all padding, or nothing base64 survives) by the route.
+		expect((await transcribe(app, built.staff.token, built.session.id, '')).statusCode).toBe(400);
+		expect((await transcribe(app, built.staff.token, built.session.id, '!!!!')).statusCode).toBe(
+			400,
+		);
+		expect(built.voice.heard).toEqual([]);
+	});
+
+	it('refuses a recording past the utterance cap', async () => {
+		const built = await callSetup();
+		app = built.app;
+		const response = await transcribe(
+			app,
+			built.staff.token,
+			built.session.id,
+			'A'.repeat(8 * 1024 * 1024 + 1),
+		);
+		expect(response.statusCode).toBe(400);
+		expect(built.voice.heard).toEqual([]);
+	});
+
+	it('404s an unknown session and never crosses accounts', async () => {
+		const built = await callSetup();
+		app = built.app;
+		const other = await signupOwner(app, { email: 'other-staff@rivus.ai' });
+		const audio = UTTERANCE.toString('base64');
+		expect((await transcribe(app, built.staff.token, 'no-such-session', audio)).statusCode).toBe(
+			404,
+		);
+		expect((await transcribe(app, other.token, built.session.id, audio)).statusCode).toBe(404);
+	});
+
+	it('says which key is missing when the deployment has no speech (503)', async () => {
+		const built = await callSetup(new FakeTesterVoice(false));
+		app = built.app;
+		const response = await transcribe(
+			app,
+			built.staff.token,
+			built.session.id,
+			UTTERANCE.toString('base64'),
+		);
+		expect(response.statusCode).toBe(503);
+		expect(response.json<{ message: string }>().message).toContain('OPENAI_API_KEY');
+	});
+
+	it('answers 502 when the provider fails — the tester itself is fine', async () => {
+		const built = await callSetup();
+		app = built.app;
+		built.voice.failNext = true;
+		const response = await transcribe(
+			app,
+			built.staff.token,
+			built.session.id,
+			UTTERANCE.toString('base64'),
+		);
+		expect(response.statusCode).toBe(502);
+		expect(response.json<{ message: string }>().message).toContain('Could not make out');
+	});
+
+	it('is gated like the rest of the tester (401 / 403)', async () => {
+		const built = await callSetup();
+		app = built.app;
+		const audio = UTTERANCE.toString('base64');
+		const anonymous = await app.inject({
+			method: 'POST',
+			url: `${BASE}/sessions/${built.session.id}/transcribe`,
+			payload: { audio },
+		});
+		expect(anonymous.statusCode).toBe(401);
+		const civilian = await signupOwner(app, { email: 'owner@acme.test' });
+		expect((await transcribe(app, civilian.token, built.session.id, audio)).statusCode).toBe(403);
+	});
+
+	it('feeds the normal turn endpoint, so a spoken turn writes the same transcript', async () => {
+		const built = await callSetup();
+		app = built.app;
+		const heard = await transcribe(
+			app,
+			built.staff.token,
+			built.session.id,
+			UTTERANCE.toString('base64'),
+		);
+		const { text } = heard.json<{ text: string }>();
+
+		// The one thing that must stay true of voice mode: it is only an input to
+		// the send path every typed turn already takes, so the transcript records
+		// the spoken words exactly as it records typed ones.
+		const turn = (await sendAs(app, built.staff.token, built.session.id, text)).json<TesterTurn>();
+		expect(turn.messages.map((message) => message.author)).toEqual(['customer', 'rivus']);
+		expect(turn.messages[0]?.body).toBe('My water heater is leaking');
+		// And it is still a call: the turn reports where it left one.
+		expect(turn.call).toBeDefined();
 	});
 });
