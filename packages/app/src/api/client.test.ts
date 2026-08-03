@@ -47,6 +47,7 @@ function makeAccount() {
 	return {
 		id: faker.string.uuid(),
 		name: faker.company.name(),
+		agentName: 'Rivus',
 		slug: faker.lorem.slug(),
 		phone: '',
 		address: '',
@@ -567,6 +568,19 @@ describe('createApiClient', () => {
 			expect(init.method).toBe('PATCH');
 			expect(JSON.parse(init.body as string)).toEqual({ businessName: 'Renamed Co' });
 			expect(init.headers).toMatchObject({ Authorization: 'Bearer owner-token' });
+		});
+
+		it('sends a custom agent name', async () => {
+			const account = makeAccount();
+			fetchMock.mockResolvedValueOnce(jsonResponse({ ...account, agentName: 'Maya' }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.updateAccount('owner-token', { agentName: 'Maya' });
+
+			expect(result.agentName).toBe('Maya');
+			expect(JSON.parse((fetchMock.mock.calls[0]?.[1]?.body as string) ?? '')).toEqual({
+				agentName: 'Maya',
+			});
 		});
 
 		it('rejects an empty update before hitting the network', async () => {

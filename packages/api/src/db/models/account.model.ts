@@ -11,6 +11,7 @@ export interface AccountChannelConfigSubdocument {
 
 export interface AccountDocument {
 	name: string;
+	agentName: string;
 	slug: string;
 	phone: string;
 	address: string;
@@ -53,6 +54,7 @@ const accountChannelConfigSchema = new Schema<AccountChannelConfigSubdocument>(
 const accountSchema = new Schema<AccountDocument>(
 	{
 		name: { type: String, required: true, trim: true },
+		agentName: { type: String, default: 'Rivus', trim: true },
 		slug: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
 		phone: { type: String, default: '' },
 		address: { type: String, default: '' },

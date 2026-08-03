@@ -43,9 +43,9 @@ export const VOICE_LINES = {
 } as const;
 
 /** The greeting a connected caller hears — identical on every provider edge. */
-export function voiceGreeting(accountName: string): string {
+export function voiceGreeting(accountName: string, agentName: string): string {
 	return (
-		`Hi! You've reached ${accountName}. I'm Rivus, their scheduling assistant. ` +
+		`Hi! You've reached ${accountName}. I'm ${agentName}, their scheduling assistant. ` +
 		'How can I help you today?'
 	);
 }

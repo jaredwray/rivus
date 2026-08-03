@@ -238,6 +238,14 @@ describe('updateAccountSchema', () => {
 		expect(updateAccountSchema.parse({ businessName: '  Acme  ' }).businessName).toBe('Acme');
 	});
 
+	it('trims a custom agent name', () => {
+		expect(updateAccountSchema.parse({ agentName: '  Maya  ' }).agentName).toBe('Maya');
+	});
+
+	it('rejects a blank agent name', () => {
+		expect(() => updateAccountSchema.parse({ agentName: '   ' })).toThrow();
+	});
+
 	it('rejects an empty update', () => {
 		expect(() => updateAccountSchema.parse({})).toThrow();
 	});

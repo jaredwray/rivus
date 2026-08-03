@@ -263,6 +263,7 @@ export function threadPatchFor(decision: AgentDecision): UpdateAgentThread {
 function replyContextFor(ctx: TurnContext): AgentReplyContext {
 	return {
 		accountName: ctx.account.name,
+		agentName: ctx.account.agentName,
 		customerName: ctx.customer?.name ?? ctx.message.sender.name,
 		timeZone: ctx.timeZone,
 		signupUrl: ctx.signupUrl,

@@ -91,6 +91,7 @@ export const accountResponseSchema = z
 	.object({
 		id: z.string(),
 		name: z.string(),
+		agentName: z.string(),
 		slug: z.string(),
 		phone: z.string(),
 		address: z.string(),

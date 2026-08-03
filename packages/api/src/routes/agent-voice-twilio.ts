@@ -155,7 +155,7 @@ export const agentVoiceTwilioRoutes: FastifyPluginAsync = async (fastify) => {
 					return sayDocument(VOICE_LINES.anonymous);
 				}
 				return gatherDocument(
-					voiceGreeting(resolved.name),
+					voiceGreeting(resolved.name, resolved.agentName),
 					pinnedInputUrl ?? `${requestOrigin(request)}${INPUT_PATH}`,
 				);
 			} catch (error) {

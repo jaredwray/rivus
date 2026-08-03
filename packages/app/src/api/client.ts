@@ -218,6 +218,7 @@ export const TWILIO_WHATSAPP_SANDBOX_NUMBER = '+14155238886';
 const accountResponseSchema = z.object({
 	id: accountId(),
 	name: z.string(),
+	agentName: z.string().default('Rivus'),
 	slug: z.string(),
 	phone: z.string(),
 	address: z.string(),

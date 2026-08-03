@@ -51,6 +51,7 @@ export type ChannelMedium = 'email' | 'chat' | 'voice';
 /** Everything the core composer needs to word a decision, with no channel/provider detail. */
 export interface AgentReplyContext {
 	accountName: string;
+	agentName: string;
 	/** The matched customer's first-namable name; '' when the sender isn't recognized. */
 	customerName: string;
 	/** IANA zone slot labels are written in. */
@@ -221,7 +222,7 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 		case 'send_signup_link':
 			return {
 				lead: [
-					`Thanks for reaching out to ${context.accountName}! I'm Rivus, their scheduling assistant.`,
+					`Thanks for reaching out to ${context.accountName}! I'm ${context.agentName}, their scheduling assistant.`,
 					signupInvitation(context),
 				],
 				slots: [],
@@ -380,7 +381,7 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 			// reply names what the agent can do and hands the turn straight back.
 			return {
 				lead: [
-					`Thanks for reaching out to ${context.accountName}! I'm Rivus, their assistant — I can book you an appointment or answer questions about ${context.accountName}.`,
+					`Thanks for reaching out to ${context.accountName}! I'm ${context.agentName}, their assistant — I can book you an appointment or answer questions about ${context.accountName}.`,
 				],
 				...none,
 				trail: [

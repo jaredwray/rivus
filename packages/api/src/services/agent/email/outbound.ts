@@ -22,6 +22,6 @@ export function sanitizeDisplayName(name: string): string {
  */
 export function agentFromHeader(account: Account, agentDomain: string): string {
 	const address = `${agentEmailLocalPart(account.slug, account.id)}@${agentDomain}`;
-	const displayName = sanitizeDisplayName(account.name);
+	const displayName = sanitizeDisplayName(account.agentName);
 	return displayName === '' ? address : `"${displayName}" <${address}>`;
 }

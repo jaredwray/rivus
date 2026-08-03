@@ -33,6 +33,7 @@ function makeAccount(fields: {
 	return {
 		id: fields.id as AccountId,
 		name: fields.name,
+		agentName: 'Rivus',
 		slug: fields.slug,
 		phone: '',
 		address: '',

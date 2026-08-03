@@ -53,6 +53,7 @@ export function toPublicAccount(account: Account): PublicAccount {
 	return {
 		id: account.id,
 		name: account.name,
+		agentName: account.agentName,
 		slug: account.slug,
 		phone: account.phone,
 		address: account.address,

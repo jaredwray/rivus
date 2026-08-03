@@ -367,6 +367,7 @@ describe('POST /v1/channels/voice/plivo/* — signature', () => {
 describe('renderVoiceResponse', () => {
 	const context = {
 		accountName: 'Cascade Plumbing',
+		agentName: 'Rivus',
 		customerName: 'Dana Fox',
 		timeZone: 'America/Los_Angeles',
 		signupUrl: 'https://www.rivus.ai/customers/join/cascade?phone=%2B15559990000',

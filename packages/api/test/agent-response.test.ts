@@ -20,6 +20,7 @@ const NOW = new Date('2026-07-03T17:00:00.000Z');
 function context(overrides: Partial<AgentReplyContext> = {}): AgentReplyContext {
 	return {
 		accountName: 'Cascade Plumbing',
+		agentName: 'Rivus',
 		customerName: 'Dana Fox',
 		timeZone: 'America/Los_Angeles',
 		signupUrl: 'https://www.rivus.ai/customers/join/cascade-plumbing?email=d%40x.io',
@@ -95,6 +96,13 @@ const DECISIONS: AgentDecision[] = [
 ];
 
 describe('composeAgentResponse', () => {
+	it('introduces the account custom agent name', () => {
+		const text = renderResponseText(
+			composeAgentResponse({ kind: 'greet' }, context({ agentName: 'Maya' })),
+		);
+		expect(text).toContain("I'm Maya");
+	});
+
 	it('always opens with a greeting block naming the customer', () => {
 		for (const decision of DECISIONS) {
 			const [first] = composeAgentResponse(decision, context()).blocks;

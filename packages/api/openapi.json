@@ -1106,6 +1106,11 @@
                     "minLength": 1,
                     "maxLength": 160
                   },
+                  "agentName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
                   "phone": {
                     "type": "string",
                     "maxLength": 40
