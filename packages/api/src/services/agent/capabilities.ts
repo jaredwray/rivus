@@ -237,6 +237,8 @@ export function threadPatchFor(decision: AgentDecision): UpdateAgentThread {
 			return decision.alternatives.length > 0
 				? { state: 'slots_offered', offeredSlots: decision.alternatives }
 				: { state: 'new', offeredSlots: [] };
+		case 'booking_choice':
+			return { state: 'booking_choice', offeredSlots: [] };
 		case 'reschedule':
 			// The SAME booking, at its new time: booked again, offer retired. The
 			// orchestrator points `bookedJobId` at the moved job, which also links a
@@ -420,6 +422,15 @@ async function resolveMoveOnBook(options: {
 	};
 }
 
+/** Explicit answers to the existing-appointment choice gate. */
+function namesRescheduleChoice(text: string): boolean {
+	return /\b(?:re-?schedul\w*|re-?book\w*|mov\w*|chang\w*|shift\w*)\b/i.test(text);
+}
+
+function namesKeepChoice(text: string): boolean {
+	return /\b(?:keep|leave)\b|\b(?:as[ -]?is|still works?|works? for me|no change)\b/i.test(text);
+}
+
 /**
  * The scheduling capability. Wraps the pure {@link decideScheduling} engine,
  * composes its decision into a neutral response, and declares a booking as a
@@ -449,16 +460,116 @@ export const schedulingCapability: AgentCapability = {
 			}
 		}
 
+		const offeredState =
+			thread.state === 'slots_offered' || thread.state === 'additional_slots_offered';
 		let decision = decideScheduling({
 			customerKnown: customer !== null,
 			text: message.text,
-			offeredSlots: thread.state === 'slots_offered' ? thread.offeredSlots : [],
+			offeredSlots: offeredState ? thread.offeredSlots : [],
 			busy,
 			timeZone,
 			now,
 			bookedSlot,
 		});
 		let sideEffects: CapabilitySideEffects | undefined;
+		let threadPatchOverride: UpdateAgentThread | undefined;
+
+		if (customer && thread.state === 'booking_choice') {
+			const upcoming = await collectUpcomingJobs(deps.jobs, account.id, customer.id, now, 2);
+			const [job] = upcoming.jobs;
+			if (
+				job &&
+				upcoming.jobs.length === 1 &&
+				!upcoming.more &&
+				namesAdditionalVisit(message.text)
+			) {
+				if (decision.kind === 'book') {
+					threadPatchOverride = { state: 'booked', offeredSlots: [] };
+				} else {
+					const slots = computeOpenSlots({ now, timeZone, busy });
+					decision =
+						slots.length > 0 ? { kind: 'offer_slots', slots } : { kind: 'no_availability' };
+					threadPatchOverride =
+						slots.length > 0
+							? { state: 'additional_slots_offered', offeredSlots: slots }
+							: { state: 'new', offeredSlots: [] };
+				}
+			} else if (
+				job &&
+				upcoming.jobs.length === 1 &&
+				!upcoming.more &&
+				namesRescheduleChoice(message.text)
+			) {
+				if (decision.kind === 'book') {
+					const move = await resolveMoveOnBook({
+						deps,
+						accountId: account.id,
+						customerId: customer.id,
+						slot: decision.slot,
+						busy,
+						timeZone,
+						now,
+					});
+					if (move) {
+						decision = move.decision;
+						sideEffects = move.sideEffects;
+					}
+				} else {
+					const slots = computeOpenSlots({
+						now,
+						timeZone,
+						busy,
+						durationMinutes: job.durationMinutes,
+					});
+					decision =
+						slots.length > 0 ? { kind: 'offer_slots', slots } : { kind: 'no_availability' };
+					threadPatchOverride =
+						slots.length > 0
+							? { state: 'slots_offered', offeredSlots: slots }
+							: { state: 'booking_choice', offeredSlots: [] };
+				}
+			} else if (
+				job &&
+				upcoming.jobs.length === 1 &&
+				!upcoming.more &&
+				namesKeepChoice(message.text)
+			) {
+				decision = {
+					kind: 'confirm_existing',
+					slot: { startAt: job.startAt, durationMinutes: job.durationMinutes },
+				};
+				threadPatchOverride = { state: 'booked', offeredSlots: [], bookedJobId: job.id };
+			} else if (job && upcoming.jobs.length === 1 && !upcoming.more) {
+				decision = {
+					kind: 'booking_choice',
+					booking: {
+						title: job.title,
+						startAt: job.startAt,
+						durationMinutes: job.durationMinutes,
+					},
+				};
+			}
+		} else if (
+			customer &&
+			thread.state !== 'slots_offered' &&
+			thread.state !== 'additional_slots_offered' &&
+			(decision.kind === 'offer_slots' || decision.kind === 'book') &&
+			!namesAdditionalVisit(message.text) &&
+			!namesRescheduleChoice(message.text)
+		) {
+			const upcoming = await collectUpcomingJobs(deps.jobs, account.id, customer.id, now, 2);
+			const [job] = upcoming.jobs;
+			if (job && upcoming.jobs.length === 1 && !upcoming.more) {
+				decision = {
+					kind: 'booking_choice',
+					booking: {
+						title: job.title,
+						startAt: job.startAt,
+						durationMinutes: job.durationMinutes,
+					},
+				};
+			}
+		}
 
 		// A pick (or a suggested time) while an offer stands, from a contact who
 		// already has an appointment, is a reschedule — not a second booking. The
@@ -529,7 +640,7 @@ export const schedulingCapability: AgentCapability = {
 		const outcome: CapabilityOutcome = {
 			response,
 			outcome: decision.kind,
-			threadPatch: threadPatchFor(decision),
+			threadPatch: threadPatchOverride ?? threadPatchFor(decision),
 		};
 		if (sideEffects) {
 			outcome.sideEffects = sideEffects;

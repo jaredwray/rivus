@@ -720,7 +720,14 @@ export type ConversationListQuery = z.infer<typeof conversationListQuerySchema>;
 // `ItemStatus`/`itemStatusSchema` split); here we only add the runtime schema.
 /** Where an agent scheduling thread stands (see {@link AgentThreadState}). */
 export const agentThreadStateSchema = z.enum(
-	['new', 'awaiting_signup', 'slots_offered', 'booked'],
+	[
+		'new',
+		'awaiting_signup',
+		'booking_choice',
+		'slots_offered',
+		'additional_slots_offered',
+		'booked',
+	],
 	{ error: 'Choose a valid agent thread state.' },
 );
 

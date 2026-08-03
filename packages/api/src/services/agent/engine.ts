@@ -101,6 +101,12 @@ export type AgentDecision =
 	 */
 	| { kind: 'no_booking'; alternatives: AgentSlot[] }
 	/**
+	 * The contact asked to schedule while another appointment is already coming
+	 * up. No slots are offered yet: they must first choose whether this is a move,
+	 * an additional visit, or no calendar change at all.
+	 */
+	| { kind: 'booking_choice'; booking: BookedAppointment }
+	/**
 	 * Not from this engine — the scheduling capability's substitution when a pick
 	 * (or proposal) lands on a contact who already has the appointment: the SAME
 	 * job moved to the chosen window, never a second visit. `title` names the job

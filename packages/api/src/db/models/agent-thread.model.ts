@@ -14,8 +14,14 @@ export interface AgentThreadDocument {
 	conversationId: Types.ObjectId;
 	/** Linked CRM customer id (as a string), or '' until the sender is validated. */
 	customerId: string;
-	state: 'new' | 'awaiting_signup' | 'slots_offered' | 'booked';
-	/** Slots most recently offered; only meaningful while `state` is `slots_offered`. */
+	state:
+		| 'new'
+		| 'awaiting_signup'
+		| 'booking_choice'
+		| 'slots_offered'
+		| 'additional_slots_offered'
+		| 'booked';
+	/** Slots most recently offered; meaningful in either offered-slots state. */
 	offeredSlots: AgentSlotSubdocument[];
 	lastExternalMessageId: string;
 	subject: string;
@@ -51,7 +57,14 @@ const agentThreadSchema = new Schema<AgentThreadDocument>(
 		customerId: { type: String, default: '' },
 		state: {
 			type: String,
-			enum: ['new', 'awaiting_signup', 'slots_offered', 'booked'],
+			enum: [
+				'new',
+				'awaiting_signup',
+				'booking_choice',
+				'slots_offered',
+				'additional_slots_offered',
+				'booked',
+			],
 			default: 'new',
 		},
 		offeredSlots: { type: [agentSlotSchema], default: [] },
