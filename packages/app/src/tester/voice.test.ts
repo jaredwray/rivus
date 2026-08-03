@@ -6,6 +6,7 @@ import {
 	pickRecorderMimeType,
 	playTesterAudio,
 	stopTesterAudio,
+	unlockTesterAudio,
 	type VoiceEvent,
 	type VoiceState,
 	voiceReducer,
@@ -204,6 +205,7 @@ class FakeAudio {
 	currentTime = 0;
 	paused = false;
 	playCalls = 0;
+	pauseCalls = 0;
 	onended: (() => void) | null = null;
 	onerror: (() => void) | null = null;
 	/** When set, `play()` rejects the way a blocked autoplay does. */
@@ -220,6 +222,7 @@ class FakeAudio {
 
 	pause(): void {
 		this.paused = true;
+		this.pauseCalls += 1;
 	}
 }
 
@@ -282,5 +285,50 @@ describe('playTesterAudio', () => {
 		await expect(playing).resolves.toBeUndefined();
 		expect(audio.paused).toBe(true);
 		expect(audio.currentTime).toBe(0);
+	});
+});
+
+describe('unlockTesterAudio', () => {
+	let audio: FakeAudio;
+
+	beforeEach(async () => {
+		vi.stubGlobal('Audio', FakeAudio);
+		// Settle whatever an earlier test left on the shared element, then zero the
+		// counters so each case reads only its own activity.
+		const settling = playTesterAudio({ audio: '', mediaType: 'audio/mpeg' });
+		audio = FakeAudio.last as FakeAudio;
+		audio.onended?.();
+		await settling;
+		Object.assign(audio, { playCalls: 0, pauseCalls: 0, paused: false, currentTime: 0 });
+	});
+
+	it('plays one silent sample on the tap and hands the element back paused', async () => {
+		unlockTesterAudio();
+		// The blessing has to come from a real (if inaudible) playback attempt.
+		expect(audio.src.startsWith('data:audio/wav;base64,')).toBe(true);
+		expect(audio.playCalls).toBe(1);
+
+		await Promise.resolve();
+		expect(audio.paused).toBe(true);
+		expect(audio.currentTime).toBe(0);
+	});
+
+	it('leaves the element alone once a real line has taken it over', async () => {
+		unlockTesterAudio();
+		const playing = playTesterAudio({ audio: 'QUJD', mediaType: 'audio/mpeg' });
+		// One pause — the takeover's own — and none after, or the unlock's cleanup
+		// would be silencing the very reply it made possible.
+		await Promise.resolve();
+		expect(audio.src).toBe('data:audio/mpeg;base64,QUJD');
+		expect(audio.pauseCalls).toBe(1);
+		audio.onended?.();
+		await expect(playing).resolves.toBeUndefined();
+	});
+
+	it('swallows a refusal — the reply path reports its own failures', async () => {
+		audio.refusePlay = true;
+		unlockTesterAudio();
+		await Promise.resolve();
+		expect(audio.pauseCalls).toBe(0);
 	});
 });

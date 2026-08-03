@@ -37,7 +37,13 @@ import {
 import { isSendKeyPress } from '@/src/tester/composer';
 import { CHANNEL_META, STATE_META } from '@/src/tester/meta';
 import { NewSessionModal } from '@/src/tester/NewSessionModal';
-import { canRecordAudio, playTesterAudio, useVoiceCall, type VoiceCall } from '@/src/tester/voice';
+import {
+	canRecordAudio,
+	playTesterAudio,
+	unlockTesterAudio,
+	useVoiceCall,
+	type VoiceCall,
+} from '@/src/tester/voice';
 import { colors, font, radii, SIDEBAR_BREAKPOINT } from '@/src/theme/tokens';
 import { useDocumentTitle } from '@/src/theme/useDocumentTitle';
 
@@ -449,6 +455,10 @@ export default function AgentTesterScreen() {
 	const playSessionId = selected?.id ?? '';
 	const playReply = useCallback(
 		async (text: string) => {
+			// Still inside the press that asked for this — the one moment playback
+			// rights can be earned before the synthesis round-trip (Safari refuses a
+			// `play()` that arrives with no gesture behind it).
+			unlockTesterAudio();
 			if (voiceEnabled && playSessionId) {
 				try {
 					const cached = speechCache.get(text);
@@ -626,8 +636,21 @@ export default function AgentTesterScreen() {
 			// Either voice can read a reply, so the side door opens for both — but
 			// both play in a browser, which is the one thing they have in common.
 			canPlayReply={canSpeakAloud() || (IS_WEB && voiceEnabled)}
+			// While a call is being held, a replay would talk over the live
+			// microphone — or stop the reply mid-line and re-arm it early. On a
+			// call, the call has the floor.
+			replayInert={voice.active}
 			onPlayReply={playReply}
-			onBack={wide ? undefined : () => setShowConversation(false)}
+			// Leaving for the session list hides every voice control, so it also
+			// hangs up voice mode — a live microphone must never outlast its UI.
+			onBack={
+				wide
+					? undefined
+					: () => {
+							voiceExit();
+							setShowConversation(false);
+						}
+			}
 			onChangeDraft={setDraft}
 			onSend={() => void onSend()}
 			onDelete={confirmDelete}
@@ -871,6 +894,7 @@ function Conversation({
 	deleting,
 	voice,
 	canPlayReply,
+	replayInert,
 	onPlayReply,
 	onBack,
 	onChangeDraft,
@@ -895,6 +919,8 @@ function Conversation({
 	voice: VoiceCall | null;
 	/** Whether either voice can read a reply aloud. */
 	canPlayReply: boolean;
+	/** A call is being held, so replaying an old line would fight it for the air. */
+	replayInert: boolean;
 	onPlayReply: (text: string) => Promise<void>;
 	onBack?: () => void;
 	onChangeDraft: (text: string) => void;
@@ -1016,6 +1042,7 @@ function Conversation({
 							caption={index === lastRivusIndex ? turn : null}
 							channel={session.channel}
 							canPlay={canPlayReply}
+							playInert={replayInert}
 							onPlay={onPlayReply}
 						/>
 					))}
@@ -1180,6 +1207,7 @@ function Turn({
 	caption,
 	channel,
 	canPlay,
+	playInert,
 	onPlay,
 }: {
 	message: Message;
@@ -1188,6 +1216,8 @@ function Turn({
 	channel: TesterSession['channel'];
 	/** Whether anything on this platform can read a reply out loud. */
 	canPlay: boolean;
+	/** A held call owns the audio right now, so the replay button waits its turn. */
+	playInert: boolean;
 	onPlay: (text: string) => Promise<void>;
 }) {
 	// True only while the audio is being fetched: playback itself is deliberately
@@ -1277,12 +1307,22 @@ function Turn({
 							setLoadingSpeech(true);
 							void onPlay(speech).finally(() => setLoadingSpeech(false));
 						}}
+						// Inert while a held call has the audio, and while a fetch is already
+						// out — a second press mid-fetch would only buy the same line twice
+						// and race the copies against each other. Replaying once the line is
+						// *playing* stays allowed: that's "say it again from the top".
+						disabled={playInert || loadingSpeech}
 						accessibilityRole="button"
 						accessibilityLabel="Play Rivus’s reply out loud"
-						accessibilityState={{ busy: loadingSpeech }}
+						accessibilityState={{ busy: loadingSpeech, disabled: playInert || loadingSpeech }}
 						aria-busy={loadingSpeech}
+						aria-disabled={playInert || loadingSpeech}
 						hitSlop={SIDE_DOOR_HIT_SLOP}
-						style={({ pressed }) => [styles.tertiaryRow, pressed && styles.pressed]}
+						style={({ pressed }) => [
+							styles.tertiaryRow,
+							playInert && styles.sideDoorInert,
+							pressed && !playInert && !loadingSpeech && styles.pressed,
+						]}
 					>
 						{loadingSpeech ? (
 							<ActivityIndicator
@@ -1509,6 +1549,8 @@ const styles = StyleSheet.create({
 	// Sized to the icon it stands in for, so the row doesn't jump while the audio
 	// is fetched.
 	playSpinner: { width: 12, height: 12 },
+	// A replay the held call has benched — visibly waiting, not gone.
+	sideDoorInert: { opacity: 0.4 },
 	authorLabel: {
 		fontFamily: font.semibold,
 		fontSize: 10.5,

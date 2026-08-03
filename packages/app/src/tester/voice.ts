@@ -191,6 +191,47 @@ export function stopTesterAudio(): void {
 }
 
 /**
+ * One sample of 16-bit silence in a WAV header — the shortest thing an audio
+ * element can genuinely play. See {@link unlockTesterAudio}.
+ */
+const SILENT_WAV =
+	'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQIAAAAAAA==';
+
+/**
+ * Earn the right to speak later, while a tap is still in hand.
+ *
+ * Safari only lets an element start audible playback from inside a user
+ * gesture — and the reply is played seconds after the tap, on the far side of
+ * a recording, a transcription, and two API calls, when no gesture is live.
+ * Playing one inaudible sample *now* marks the shared element as user-blessed,
+ * and that blessing is what the real `play()` runs on later. The pause
+ * afterwards is guarded on the source: if a real line has already taken the
+ * element over, silencing it is not ours to do.
+ */
+export function unlockTesterAudio(): void {
+	if (typeof Audio === 'undefined') {
+		return;
+	}
+	if (sharedAudio === null) {
+		sharedAudio = new Audio();
+	}
+	const audio = sharedAudio;
+	audio.src = SILENT_WAV;
+	audio
+		.play()
+		.then(() => {
+			if (audio.src === SILENT_WAV) {
+				audio.pause();
+				audio.currentTime = 0;
+			}
+		})
+		.catch(() => {
+			// A browser that refuses even silence will refuse the reply too; the
+			// playback path already fails that kindly, so nothing to add here.
+		});
+}
+
+/**
  * Play a synthesized line, resolving when it finishes (or when something else
  * stops it). The audio rides in as a data URL because that's the shape it
  * arrived in — base64 inside JSON — and it saves minting a blob URL per line.
@@ -328,6 +369,17 @@ export function useVoiceCall(options: VoiceCallOptions): VoiceCall {
 			let spoken: string;
 			try {
 				const audio = await blobToBase64(blob);
+				if (!current()) {
+					return;
+				}
+				if (audio === '') {
+					// A stop tapped before the browser handed over a single chunk. The API
+					// would refuse an empty recording outright, but to the caller this is
+					// just silence — so it gets silence's answer: listen again.
+					dispatch({ type: 'TRANSCRIBED_EMPTY' });
+					armRef.current();
+					return;
+				}
 				const { text } = await client.transcribeTesterAudio(token, sessionId, { audio });
 				if (!current()) {
 					return;
@@ -395,6 +447,9 @@ export function useVoiceCall(options: VoiceCallOptions): VoiceCall {
 	);
 
 	const stopRecording = useCallback(() => {
+		// This runs on the "done talking" tap — the last gesture before the reply
+		// needs to speak, so it renews the element's blessing while it can.
+		unlockTesterAudio();
 		dispatch({ type: 'STOP_RECORDING' });
 		const recorder = recorderRef.current;
 		if (recorder && recorder.state !== 'inactive') {
@@ -485,6 +540,9 @@ export function useVoiceCall(options: VoiceCallOptions): VoiceCall {
 		runRef.current += 1;
 		releaseRecorder();
 		stopTesterAudio();
+		// Entering on a tap, which is exactly when playback rights can be earned
+		// for the replies this call is about to speak (see unlockTesterAudio).
+		unlockTesterAudio();
 		dispatch({ type: 'START' });
 		arm();
 	}, [arm, releaseRecorder]);
