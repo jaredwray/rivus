@@ -463,9 +463,12 @@ describe('namesAdditionalVisit', () => {
 		// reading these as an additional visit re-creates the double-booking.
 		'I also need to reschedule my appointment',
 		'I also want to change my appointment to Monday at 10am',
+		'I also need to reschedule it to Friday at 2pm',
+		'I also want Friday at 2 instead',
 		'also need it moved to Friday',
 		'thanks — also want my appointment pushed back an hour',
 		'also need to cancel that visit',
+		'also want Monday rather than Friday',
 		'',
 	])('does not read %j as asking for an additional visit', (text) => {
 		expect(namesAdditionalVisit(text)).toBe(false);

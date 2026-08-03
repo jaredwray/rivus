@@ -397,6 +397,99 @@ describe('reschedule — a pick while booked moves the appointment, never double
 		expect((await harness.customerJobs())[0]?.startAt).toBe('2026-07-06T13:00:00.000Z');
 	});
 
+	it('confirms — not "just taken" — when a replayed pick finds the move already made', async () => {
+		const harness = await setup();
+		app = harness.app;
+		const jobId = await harness.book({ startAt: BOOKED_AT });
+		await harness.inbound('I need to reschedule my appointment');
+		// The crash window: the job write landed but the confirmation never went
+		// out, so the thread still holds the offer while the job already sits at
+		// slot 2. The redelivered pick must confirm, not report its own job as
+		// "just taken".
+		await harness.repos.jobs.update(harness.accountId, jobId, { startAt: OFFERED[1] });
+
+		const result = await harness.inbound('2');
+
+		expect(result.outcome).toBe('confirm_existing');
+		expect(harness.lastReply()).toContain("you're already booked for Friday, July 3 at 9:00 AM");
+		const jobs = await harness.customerJobs();
+		expect(jobs).toHaveLength(1);
+		expect(jobs[0]?.startAt).toBe(OFFERED[1]);
+	});
+
+	it('moves into a window only the job itself occupies (the 1:00 → 2:00 shift)', async () => {
+		const harness = await setup();
+		app = harness.app;
+		const jobId = await harness.book({
+			startAt: '2026-07-06T13:00:00.000Z',
+			durationMinutes: 120,
+		});
+		await harness.inbound('I need to reschedule my appointment');
+
+		// 2:00 PM sits inside the job's own 1:00–3:00 window, so the standard
+		// check reads it as taken — but the only thing there is the job itself.
+		const result = await harness.inbound('can you do monday at 2pm?');
+
+		expect(result.outcome).toBe('reschedule');
+		const jobs = await harness.customerJobs();
+		expect(jobs).toHaveLength(1);
+		expect(jobs[0]?.id).toBe(jobId);
+		expect(jobs[0]?.startAt).toBe('2026-07-06T14:00:00.000Z');
+		expect(jobs[0]?.durationMinutes).toBe(120);
+	});
+
+	it('moves a half-hour job into a window the standard-length check would refuse', async () => {
+		const harness = await setup();
+		app = harness.app;
+		const jobId = await harness.book({ startAt: BOOKED_AT, durationMinutes: 30 });
+		await harness.inbound('I need to reschedule my appointment');
+
+		// 4:30 PM fails the standard one-hour check (it would end at 5:30) but
+		// fits a 30-minute job exactly.
+		const result = await harness.inbound('can you do thursday at 4:30pm?');
+
+		expect(result.outcome).toBe('reschedule');
+		const jobs = await harness.customerJobs();
+		expect(jobs).toHaveLength(1);
+		expect(jobs[0]?.id).toBe(jobId);
+		expect(jobs[0]?.startAt).toBe('2026-07-02T16:30:00.000Z');
+		expect(jobs[0]?.durationMinutes).toBe(30);
+	});
+
+	it('keeps the plain decline when the picked window is truly taken by another job', async () => {
+		const harness = await setup();
+		app = harness.app;
+		await harness.book({ startAt: BOOKED_AT });
+		await harness.inbound('I need to reschedule my appointment');
+		// The team books another customer into slot 2 after the offer went out.
+		const other = await harness.repos.customers.create(harness.accountId, {
+			name: 'Sam Reed',
+			email: '',
+			phone: OTHER_CONTACT,
+			address: '',
+			lifetimeValue: 0,
+			balance: 0,
+			notes: '',
+		});
+		await harness.repos.jobs.create(harness.accountId, {
+			title: 'Someone elses visit',
+			customerId: other.id,
+			assignedUserId: '',
+			startAt: OFFERED[1] ?? '',
+			durationMinutes: 60,
+			status: 'confirmed',
+			address: '',
+			notes: '',
+			estimatedValue: 0,
+		});
+
+		const result = await harness.inbound('2');
+
+		expect(result.outcome).toBe('propose_unavailable');
+		expect(harness.lastReply()).toContain('was just taken');
+		expect((await harness.customerJobs())[0]?.startAt).toBe(BOOKED_AT);
+	});
+
 	it('lets a move overlap the window it is vacating — its own, and only its own', async () => {
 		const harness = await setup();
 		app = harness.app;

@@ -37,6 +37,7 @@ import {
 	formatSlotLabel,
 	isSlotFree,
 	isWithinBusinessHours,
+	SLOT_DURATION_MINUTES,
 	zonedParts,
 } from './slots';
 
@@ -481,6 +482,45 @@ export const schedulingCapability: AgentCapability = {
 			if (move) {
 				decision = move.decision;
 				sideEffects = move.sideEffects;
+			}
+		} else if (
+			decision.kind === 'propose_unavailable' &&
+			(decision.reason === 'taken' || decision.reason === 'outside_hours') &&
+			customer &&
+			thread.state === 'slots_offered' &&
+			!namesAdditionalVisit(message.text)
+		) {
+			// The engine validated the ask as a fresh standard-length slot, so two
+			// real moves die here that the guard above never sees. A window the
+			// customer's OWN appointment sits in or overlaps reads as "taken" — which
+			// is exactly what a replayed turn looks like after a crash between the
+			// job write and the send (the job already moved; only the confirmation is
+			// missing), and what "move my 1:00 to 2:00" looks like mid-window. And a
+			// job shorter than the standard slot can fit windows the standard-length
+			// check calls taken or outside hours. Re-resolve as a move at the job's
+			// real duration; keep the engine's decline whenever the move doesn't
+			// actually land.
+			const move = await resolveMoveOnBook({
+				deps,
+				accountId: account.id,
+				customerId: customer.id,
+				slot: {
+					startAt: decision.requestedStartAt as IsoDateString,
+					durationMinutes: SLOT_DURATION_MINUTES,
+				},
+				busy,
+				timeZone,
+				now,
+			});
+			if (move?.decision.kind === 'reschedule') {
+				if (move.decision.from.startAt === move.decision.to.startAt) {
+					// The move already happened (the replay case): the calendar is
+					// right, only the confirmation is missing — confirm, don't decline.
+					decision = { kind: 'confirm_existing', slot: move.decision.to };
+				} else {
+					decision = move.decision;
+					sideEffects = move.sideEffects;
+				}
 			}
 		}
 
