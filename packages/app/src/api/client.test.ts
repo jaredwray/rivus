@@ -2478,5 +2478,140 @@ describe('createApiClient', () => {
 			expect(error).toBeInstanceOf(ApiError);
 			expect(error).toMatchObject({ status: 404 });
 		});
+
+		it('reports whether a tester call can be spoken', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ enabled: true }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.getTesterVoice('staff-token');
+
+			expect(result).toEqual({ enabled: true });
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			// The probe is account-wide, so it hangs off the tester root rather than a session.
+			expect(url).toBe(`${BASE}/v1/admin/agent-tester/voice`);
+			expect(init.method).toBe('GET');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer staff-token' });
+		});
+
+		it('reports voice as off on a deployment without a speech provider', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ enabled: false }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await expect(client.getTesterVoice('staff-token')).resolves.toEqual({ enabled: false });
+		});
+
+		it('speaks a reply, returning the audio and the type needed to play it', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ audio: 'QUJD', mediaType: 'audio/mpeg' }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.speakTesterReply('staff-token', 'sess-1', {
+				text: 'You’re all set for Tuesday at 9am. Thanks for calling. Goodbye!',
+			});
+
+			expect(result).toEqual({ audio: 'QUJD', mediaType: 'audio/mpeg' });
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${TESTER}/sess-1/speech`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer staff-token' });
+			expect(JSON.parse(init.body as string)).toEqual({
+				text: 'You’re all set for Tuesday at 9am. Thanks for calling. Goodbye!',
+			});
+		});
+
+		it('rejects an empty line before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.speakTesterReply('staff-token', 'sess-1', { text: '   ' }),
+			).rejects.toBeInstanceOf(ValidationError);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it('surfaces speech being unconfigured (503) with the API’s explanation', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse(
+					{
+						error: 'Service Unavailable',
+						message: 'Speech is not configured on this deployment — set OPENAI_API_KEY.',
+						statusCode: 503,
+					},
+					{ status: 503 },
+				),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client
+				.speakTesterReply('staff-token', 'sess-1', { text: 'Hello?' })
+				.catch((caught) => caught);
+
+			expect(error).toBeInstanceOf(ApiError);
+			expect(error).toMatchObject({ status: 503 });
+			expect(error.message).toContain('OPENAI_API_KEY');
+		});
+
+		it('transcribes a recording into the words to send as the caller', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ text: 'My water heater is leaking' }));
+
+			const client = createApiClient(BASE, fetchMock);
+			const result = await client.transcribeTesterAudio('staff-token', 'sess-1', {
+				audio: 'GkXfow==',
+			});
+
+			expect(result).toEqual({ text: 'My water heater is leaking' });
+			const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+			expect(url).toBe(`${TESTER}/sess-1/transcribe`);
+			expect(init.method).toBe('POST');
+			expect(init.headers).toMatchObject({ Authorization: 'Bearer staff-token' });
+			expect(JSON.parse(init.body as string)).toEqual({ audio: 'GkXfow==' });
+		});
+
+		it('accepts an empty transcript — the caller said nothing, which is not a failure', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ text: '' }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.transcribeTesterAudio('staff-token', 'sess-1', { audio: 'GkXfow==' }),
+			).resolves.toEqual({ text: '' });
+		});
+
+		it('rejects a recording with no audio in it before hitting the network', async () => {
+			const client = createApiClient(BASE, fetchMock);
+			await expect(
+				client.transcribeTesterAudio('staff-token', 'sess-1', { audio: '' }),
+			).rejects.toBeInstanceOf(ValidationError);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it('surfaces a transcription the provider could not make out (502)', async () => {
+			fetchMock.mockResolvedValueOnce(
+				jsonResponse(
+					{
+						error: 'Bad Gateway',
+						message: 'Could not make out that recording right now. Please try again.',
+						statusCode: 502,
+					},
+					{ status: 502 },
+				),
+			);
+
+			const client = createApiClient(BASE, fetchMock);
+			const error = await client
+				.transcribeTesterAudio('staff-token', 'sess-1', { audio: 'GkXfow==' })
+				.catch((caught) => caught);
+
+			expect(error).toBeInstanceOf(ApiError);
+			expect(error).toMatchObject({ status: 502 });
+		});
+
+		it('url-encodes the session id on both speech routes', async () => {
+			fetchMock.mockResolvedValueOnce(jsonResponse({ audio: 'QUJD', mediaType: 'audio/mpeg' }));
+			fetchMock.mockResolvedValueOnce(jsonResponse({ text: 'hello' }));
+
+			const client = createApiClient(BASE, fetchMock);
+			await client.speakTesterReply('staff-token', 'a/b c', { text: 'Hello?' });
+			await client.transcribeTesterAudio('staff-token', 'a/b c', { audio: 'GkXfow==' });
+
+			expect((fetchMock.mock.calls[0] as [string])[0]).toBe(`${TESTER}/a%2Fb%20c/speech`);
+			expect((fetchMock.mock.calls[1] as [string])[0]).toBe(`${TESTER}/a%2Fb%20c/transcribe`);
+		});
 	});
 });

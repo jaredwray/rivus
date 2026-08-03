@@ -18,6 +18,7 @@ import {
 	type Message,
 	type TesterSession,
 	type TesterSessionDetail,
+	type TesterSpeech,
 	type TesterTurn,
 } from '@/src/api/client';
 import { initialsOf, useAuth } from '@/src/auth/AuthContext';
@@ -36,6 +37,7 @@ import {
 import { isSendKeyPress } from '@/src/tester/composer';
 import { CHANNEL_META, STATE_META } from '@/src/tester/meta';
 import { NewSessionModal } from '@/src/tester/NewSessionModal';
+import { canRecordAudio, playTesterAudio, useVoiceCall, type VoiceCall } from '@/src/tester/voice';
 import { colors, font, radii, SIDEBAR_BREAKPOINT } from '@/src/theme/tokens';
 import { useDocumentTitle } from '@/src/theme/useDocumentTitle';
 
@@ -111,20 +113,22 @@ function openEmailPreview(html: string): void {
 }
 
 /**
- * Whether this platform can read a voice reply out loud.
+ * Whether this platform can read a voice reply out loud *itself*.
  *
- * Web only, and only where the browser actually ships the Web Speech API: the
- * app carries no speech dependency, and hearing the line is a nicety on top of
- * reading it — so the button simply isn't offered where it wouldn't work.
+ * This is the fallback now: when the API has a speech provider the reply is
+ * synthesized there, in a voice that sounds like a person. The browser's own
+ * Web Speech API still answers for deployments without one — web only, since
+ * the app carries no speech dependency, and hearing the line is a nicety on top
+ * of reading it, so the button isn't offered where neither route works.
  */
 function canSpeakAloud(): boolean {
 	return IS_WEB && typeof window !== 'undefined' && 'speechSynthesis' in window;
 }
 
 /**
- * Speak the line Rivus would have said on the call. Cancels whatever is already
- * speaking first: pressing play twice means "say it again from the top", not
- * "queue a second reading behind the first".
+ * Speak the line Rivus would have said on the call, in the browser's own voice.
+ * Cancels whatever is already speaking first: pressing play twice means "say it
+ * again from the top", not "queue a second reading behind the first".
  */
 function speakReply(text: string): void {
 	if (!canSpeakAloud()) {
@@ -132,6 +136,24 @@ function speakReply(text: string): void {
 	}
 	window.speechSynthesis.cancel();
 	window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+}
+
+/**
+ * Lines already synthesized, so replaying one — or hearing the same sign-off a
+ * second time — costs nothing. Keyed by the line itself and capped, since a
+ * long testing session would otherwise hold every reply of the day in memory.
+ */
+const SPEECH_CACHE_LIMIT = 20;
+const speechCache = new Map<string, TesterSpeech>();
+
+function rememberSpeech(text: string, speech: TesterSpeech): void {
+	speechCache.set(text, speech);
+	if (speechCache.size > SPEECH_CACHE_LIMIT) {
+		const oldest = speechCache.keys().next().value;
+		if (oldest !== undefined) {
+			speechCache.delete(oldest);
+		}
+	}
 }
 
 /**
@@ -183,6 +205,10 @@ export default function AgentTesterScreen() {
 	// The session with a turn in flight, or null when idle. One turn at a time.
 	const [sendingId, setSendingId] = useState<string | null>(null);
 	const [sendError, setSendError] = useState<string | null>(null);
+	// Whether the API can synthesize and transcribe speech, so a phone session can
+	// be *held* rather than typed. Off until the API says otherwise — without it
+	// the tester is exactly what it has always been.
+	const [voiceEnabled, setVoiceEnabled] = useState(false);
 
 	// The company and session the pane is showing *right now*, in refs so an async
 	// call that started before a switch can compare against the live values when it
@@ -234,6 +260,31 @@ export default function AgentTesterScreen() {
 		},
 		[client, token, accountId, isStaff, isCurrent],
 	);
+
+	// Ask once per company whether calls can be spoken here. A failure is silent
+	// on purpose: every other answer (no key, no route, an old API) means the
+	// tester works exactly as it did before, which is not worth an error card.
+	useEffect(() => {
+		if (!accountId || !isStaff) {
+			return;
+		}
+		let active = true;
+		client
+			.getTesterVoice(token)
+			.then((result) => {
+				if (active) {
+					setVoiceEnabled(result.enabled);
+				}
+			})
+			.catch(() => {
+				if (active) {
+					setVoiceEnabled(false);
+				}
+			});
+		return () => {
+			active = false;
+		};
+	}, [client, token, accountId, isStaff]);
 
 	// `load` is re-created whenever the active company is, so this both loads on
 	// mount and starts the next company clean — one company's sessions, selection
@@ -312,45 +363,111 @@ export default function AgentTesterScreen() {
 		};
 	}, [selectedKey, loadDetail]);
 
+	/**
+	 * Run one turn as the impersonated customer. Typed and spoken messages both
+	 * come through here, so a call held out loud paints the same optimistic
+	 * bubble, the same thinking spinner and the same transcript a typed one does —
+	 * the spoken words are only another way of filling in the text.
+	 *
+	 * Resolves with the turn, or null when it failed (the error line explains).
+	 */
+	const sendText = useCallback(
+		async (text: string): Promise<TesterTurn | null> => {
+			if (!selected) {
+				return null;
+			}
+			const origin: Origin = { accountId, sessionId: selected.id };
+			setSendingId(selected.id);
+			setSendError(null);
+			setDraft('');
+			setPending({ sessionId: selected.id, text });
+			try {
+				const result = await client.sendTesterMessage(token, selected.id, { text });
+				// The turn really happened, so its row is refreshed whatever the user is
+				// looking at now — state, snippet and place in the order all moved on.
+				if (accountRef.current === origin.accountId) {
+					setSessions((prev) =>
+						prev
+							.map((item) => (item.id === result.session.id ? result.session : item))
+							.sort(byActivity),
+					);
+				}
+				// The transcript and the engine's outcome, though, belong to *this* session:
+				// install them only while it's still the one the pane is showing.
+				if (isCurrent(origin)) {
+					setTurn(result);
+					setDetail({ session: result.session, messages: result.messages });
+				}
+				return result;
+			} catch (caught) {
+				if (isCurrent(origin)) {
+					// Put the text back in the composer so the turn can be retried as typed.
+					setDraft(text);
+					setSendError(messageFor(caught, 'Could not run that turn.'));
+				}
+				return null;
+			} finally {
+				// Only one turn runs at a time, so this can't clear another's bubble.
+				setPending(null);
+				setSendingId(null);
+			}
+		},
+		[token, selected, client, accountId, isCurrent],
+	);
+
+	// A call can be spoken only where every part of the chain is there: the API
+	// has a speech provider, the platform has a microphone, and the session is a
+	// phone one — the other channels are written, not said.
+	const canHoldCall = voiceEnabled && IS_WEB && canRecordAudio();
+	const callSessionId = selected?.channel === 'phone' ? selected.id : null;
+	const voice = useVoiceCall({
+		enabled: canHoldCall,
+		sessionId: callSessionId,
+		client,
+		token,
+		send: sendText,
+	});
+	const voiceExit = voice.exit;
+
 	const onSend = useCallback(async () => {
 		const text = draft.trim();
 		if (!selected || text === '' || sendingId !== null) {
 			return;
 		}
-		const origin: Origin = { accountId, sessionId: selected.id };
-		setSendingId(selected.id);
-		setSendError(null);
-		setDraft('');
-		setPending({ sessionId: selected.id, text });
-		try {
-			const result = await client.sendTesterMessage(token, selected.id, { text });
-			// The turn really happened, so its row is refreshed whatever the user is
-			// looking at now — state, snippet and place in the order all moved on.
-			if (accountRef.current === origin.accountId) {
-				setSessions((prev) =>
-					prev
-						.map((item) => (item.id === result.session.id ? result.session : item))
-						.sort(byActivity),
-				);
+		// Typing takes the turn back from the microphone — one at a time, and the
+		// caller has clearly stopped speaking.
+		voiceExit();
+		await sendText(text);
+	}, [draft, selected, sendingId, sendText, voiceExit]);
+
+	/**
+	 * Play a line of the agent's reply. Prefers the API's own voice — the point of
+	 * the feature is that it doesn't sound like a machine — and falls back to the
+	 * browser's speech synthesis whenever that isn't available or doesn't answer,
+	 * so the button always does something.
+	 */
+	const playSessionId = selected?.id ?? '';
+	const playReply = useCallback(
+		async (text: string) => {
+			if (voiceEnabled && playSessionId) {
+				try {
+					const cached = speechCache.get(text);
+					const speech = cached ?? (await client.speakTesterReply(token, playSessionId, { text }));
+					if (!cached) {
+						rememberSpeech(text, speech);
+					}
+					// Not awaited: the caller only waits for the audio to arrive, so the
+					// button stops spinning when the line starts rather than when it ends.
+					void playTesterAudio(speech).catch(() => speakReply(text));
+					return;
+				} catch {
+					// Nothing to explain here — the browser's own voice reads it instead.
+				}
 			}
-			// The transcript and the engine's outcome, though, belong to *this* session:
-			// install them only while it's still the one the pane is showing.
-			if (isCurrent(origin)) {
-				setTurn(result);
-				setDetail({ session: result.session, messages: result.messages });
-			}
-		} catch (caught) {
-			if (isCurrent(origin)) {
-				// Put the text back in the composer so the turn can be retried as typed.
-				setDraft(text);
-				setSendError(messageFor(caught, 'Could not run that turn.'));
-			}
-		} finally {
-			// Only one turn runs at a time, so this can't clear another's bubble.
-			setPending(null);
-			setSendingId(null);
-		}
-	}, [draft, token, selected, sendingId, client, accountId, isCurrent]);
+			speakReply(text);
+		},
+		[client, token, voiceEnabled, playSessionId],
+	);
 
 	const performDelete = useCallback(
 		async (target: TesterSession) => {
@@ -503,6 +620,13 @@ export default function AgentTesterScreen() {
 			busy={sendingId !== null}
 			draft={draft}
 			deleting={selected !== null && deletingId === selected.id}
+			// The microphone belongs to the phone session on screen, and only where
+			// the whole chain holds up; everywhere else the composer is unchanged.
+			voice={canHoldCall && callSessionId !== null ? voice : null}
+			// Either voice can read a reply, so the side door opens for both — but
+			// both play in a browser, which is the one thing they have in common.
+			canPlayReply={canSpeakAloud() || (IS_WEB && voiceEnabled)}
+			onPlayReply={playReply}
 			onBack={wide ? undefined : () => setShowConversation(false)}
 			onChangeDraft={setDraft}
 			onSend={() => void onSend()}
@@ -745,6 +869,9 @@ function Conversation({
 	busy,
 	draft,
 	deleting,
+	voice,
+	canPlayReply,
+	onPlayReply,
 	onBack,
 	onChangeDraft,
 	onSend,
@@ -764,6 +891,11 @@ function Conversation({
 	busy: boolean;
 	draft: string;
 	deleting: boolean;
+	/** The spoken call loop, or null when this session can't be held out loud. */
+	voice: VoiceCall | null;
+	/** Whether either voice can read a reply aloud. */
+	canPlayReply: boolean;
+	onPlayReply: (text: string) => Promise<void>;
 	onBack?: () => void;
 	onChangeDraft: (text: string) => void;
 	onSend: () => void;
@@ -883,6 +1015,8 @@ function Conversation({
 							message={message}
 							caption={index === lastRivusIndex ? turn : null}
 							channel={session.channel}
+							canPlay={canPlayReply}
+							onPlay={onPlayReply}
 						/>
 					))}
 					{pending !== null ? (
@@ -905,6 +1039,7 @@ function Conversation({
 
 			<View style={styles.composerWrap}>
 				{sendError ? <Txt style={styles.errorTxt}>{sendError}</Txt> : null}
+				{voice?.state.error ? <Txt style={styles.errorTxt}>{voice.state.error}</Txt> : null}
 				<View style={styles.composer}>
 					{/* A multiline input never fires onSubmitEditing, so the send key is
 					    handled on keydown instead (see `onKeyPress`). */}
@@ -921,6 +1056,7 @@ function Conversation({
 						placeholderTextColor={colors.textHint}
 						multiline
 					/>
+					{voice ? <MicButton voice={voice} busy={busy} /> : null}
 					<Pressable
 						onPress={onSend}
 						disabled={inert}
@@ -941,11 +1077,100 @@ function Conversation({
 						</BrandGradient>
 					</Pressable>
 				</View>
-				{IS_WEB ? (
-					<Txt style={styles.composerHint}>Enter to send · Shift + Enter for a new line</Txt>
+				{voice?.active ? (
+					// While the call is being held, the hint row says where the loop is —
+					// that is the only feedback there is for something happening off-screen.
+					<View style={styles.voiceHintRow}>
+						{voice.state.phase === 'recording' ? <Dot color={colors.red} size={7} /> : null}
+						<Txt style={styles.composerHint}>{voiceHint(voice)}</Txt>
+					</View>
+				) : IS_WEB ? (
+					<Txt style={styles.composerHint}>
+						{voice
+							? 'Enter to send · Shift + Enter for a new line · or tap the mic and talk'
+							: 'Enter to send · Shift + Enter for a new line'}
+					</Txt>
 				) : null}
 			</View>
 		</View>
+	);
+}
+
+/** What the composer says for each leg of a call being held out loud. */
+function voiceHint(voice: VoiceCall): string {
+	if (voice.state.hint !== '') {
+		return voice.state.hint;
+	}
+	switch (voice.state.phase) {
+		case 'transcribing':
+			return 'Working out what you said…';
+		case 'sending':
+			return 'Rivus is thinking…';
+		case 'speaking':
+			return 'Rivus is speaking…';
+		default:
+			return '';
+	}
+}
+
+/** The icon that says what the microphone is doing right now. */
+function micIcon(phase: VoiceCall['state']['phase']): FeatherName {
+	if (phase === 'recording') {
+		return 'square';
+	}
+	return phase === 'speaking' ? 'volume-2' : 'mic';
+}
+
+/**
+ * The caller's own side of a held call: tap to talk, tap again when you're done,
+ * and an escape hatch beside it while the call is running.
+ *
+ * Deliberately neutral rather than gradient — the signature gradient marks
+ * Rivus-the-agent (DESIGN_SYSTEM.md), and this button is the *customer*
+ * speaking, the same reason their bubbles stay grey.
+ */
+function MicButton({ voice, busy }: { voice: VoiceCall; busy: boolean }) {
+	const { phase } = voice.state;
+	const recording = phase === 'recording';
+	const working = phase === 'transcribing' || phase === 'sending';
+	// Nothing to tap while a turn is running — here, or typed in another session.
+	const disabled = working || phase === 'speaking' || (!voice.active && busy);
+	return (
+		<>
+			{voice.active ? (
+				<Pressable
+					onPress={voice.exit}
+					accessibilityRole="button"
+					accessibilityLabel="End voice mode"
+					hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+					style={({ pressed }) => [styles.iconBtn, pressed && styles.pressed]}
+				>
+					<Icon name="x" size={15} color={colors.textMuted} />
+				</Pressable>
+			) : null}
+			<Pressable
+				onPress={recording ? voice.stop : voice.start}
+				disabled={disabled}
+				accessibilityRole="button"
+				accessibilityLabel={recording ? 'Stop talking and run the turn' : 'Speak as the caller'}
+				accessibilityState={{ disabled, busy: working }}
+				// react-native-web doesn't derive aria-* from accessibilityState.
+				aria-busy={working}
+				aria-disabled={disabled}
+				style={({ pressed }) => [
+					styles.micBtn,
+					recording && styles.micBtnRecording,
+					disabled && styles.micBtnDisabled,
+					pressed && !disabled && styles.pressed,
+				]}
+			>
+				{working ? (
+					<ActivityIndicator size="small" color={colors.textMuted} />
+				) : (
+					<Icon name={micIcon(phase)} size={17} color={recording ? colors.red : colors.textSub} />
+				)}
+			</Pressable>
+		</>
 	);
 }
 
@@ -954,12 +1179,20 @@ function Turn({
 	message,
 	caption,
 	channel,
+	canPlay,
+	onPlay,
 }: {
 	message: Message;
 	caption: TesterTurn | null;
 	/** The session's channel — it decides which side doors a reply gets. */
 	channel: TesterSession['channel'];
+	/** Whether anything on this platform can read a reply out loud. */
+	canPlay: boolean;
+	onPlay: (text: string) => Promise<void>;
 }) {
+	// True only while the audio is being fetched: playback itself is deliberately
+	// not awaited, so tapping again restarts the line rather than being ignored.
+	const [loadingSpeech, setLoadingSpeech] = useState(false);
 	if (message.author === 'note') {
 		return (
 			<View style={styles.noteWrap}>
@@ -1038,15 +1271,28 @@ function Turn({
 						<Txt style={styles.previewTxt}>Preview email</Txt>
 					</Pressable>
 				) : null}
-				{speech && canSpeakAloud() ? (
+				{speech && canPlay ? (
 					<Pressable
-						onPress={() => speakReply(speech)}
+						onPress={() => {
+							setLoadingSpeech(true);
+							void onPlay(speech).finally(() => setLoadingSpeech(false));
+						}}
 						accessibilityRole="button"
 						accessibilityLabel="Play Rivus’s reply out loud"
+						accessibilityState={{ busy: loadingSpeech }}
+						aria-busy={loadingSpeech}
 						hitSlop={SIDE_DOOR_HIT_SLOP}
 						style={({ pressed }) => [styles.tertiaryRow, pressed && styles.pressed]}
 					>
-						<Icon name="volume-2" size={12} color={colors.brandPurple} />
+						{loadingSpeech ? (
+							<ActivityIndicator
+								size="small"
+								color={colors.brandPurple}
+								style={styles.playSpinner}
+							/>
+						) : (
+							<Icon name="volume-2" size={12} color={colors.brandPurple} />
+						)}
 						<Txt style={styles.previewTxt}>Play reply</Txt>
 					</Pressable>
 				) : null}
@@ -1260,6 +1506,9 @@ const styles = StyleSheet.create({
 		paddingHorizontal: 2,
 	},
 	previewTxt: { fontFamily: font.semibold, fontSize: 11.5, color: colors.brandPurple },
+	// Sized to the icon it stands in for, so the row doesn't jump while the audio
+	// is fetched.
+	playSpinner: { width: 12, height: 12 },
 	authorLabel: {
 		fontFamily: font.semibold,
 		fontSize: 10.5,
@@ -1320,6 +1569,21 @@ const styles = StyleSheet.create({
 		color: colors.textHint,
 		paddingHorizontal: 2,
 	},
+	// The caller's microphone. Neutral tones on purpose: the gradient is Rivus's
+	// mark, and this button is the customer's side of the call.
+	micBtn: {
+		width: 38,
+		height: 38,
+		borderRadius: radii.pill,
+		alignItems: 'center',
+		justifyContent: 'center',
+		borderWidth: 1,
+		borderColor: colors.borderField,
+		backgroundColor: colors.surface,
+	},
+	micBtnRecording: { borderColor: colors.red },
+	micBtnDisabled: { opacity: 0.5 },
+	voiceHintRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 	sendBtnWrap: { borderRadius: radii.md },
 	sendBtnDisabled: { opacity: 0.5 },
 	sendBtn: {

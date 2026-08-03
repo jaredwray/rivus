@@ -594,7 +594,9 @@ export type ReleaseNumberResult = z.infer<typeof releaseNumberResponseSchema>;
 // --- Agent tester (development + Rivus staff only) -----------------------------
 
 /** Base path of the Agent Tester routes; every tester call hangs off it. */
-const TESTER_ROOT = '/v1/admin/agent-tester/sessions';
+const TESTER_BASE = '/v1/admin/agent-tester';
+/** The sessions themselves — everything but the account-wide voice probe. */
+const TESTER_ROOT = `${TESTER_BASE}/sessions`;
 
 /**
  * The channels the Agent Tester can impersonate a customer on — every channel
@@ -712,6 +714,43 @@ const testerMessageSchema = z.object({
 });
 /** Input for {@link RivusApiClient.sendTesterMessage}. */
 export type SendTesterMessageInput = z.infer<typeof testerMessageSchema>;
+
+/**
+ * Whether this deployment can hold a *spoken* tester call — synthesizing the
+ * agent's line and transcribing the caller's. False on a deployment with no
+ * speech provider, where the tester works exactly as it always has.
+ */
+const testerVoiceResponseSchema = z.object({ enabled: z.boolean() });
+export type TesterVoice = z.infer<typeof testerVoiceResponseSchema>;
+
+/** One synthesized line: base64 audio plus the media type needed to play it. */
+const testerSpeechResponseSchema = z.object({
+	audio: z.string(),
+	mediaType: z.string(),
+});
+export type TesterSpeech = z.infer<typeof testerSpeechResponseSchema>;
+
+/** What the caller was heard to say; empty when the recording held no speech. */
+const testerTranscriptionResponseSchema = z.object({ text: z.string() });
+export type TesterTranscription = z.infer<typeof testerTranscriptionResponseSchema>;
+
+/** The line to say out loud — normally the `delivery.text` of a turn just run. */
+const testerSpeechSchema = z.object({
+	text: z
+		.string({ error: 'Text is required.' })
+		.trim()
+		.min(1, { error: 'Text is required.' })
+		.max(4000, { error: 'Text must be 4000 characters or fewer.' }),
+});
+/** Input for {@link RivusApiClient.speakTesterReply}. */
+export type SpeakTesterReplyInput = z.infer<typeof testerSpeechSchema>;
+
+/** One recorded utterance, base64-encoded so it rides inside the JSON body. */
+const testerTranscribeSchema = z.object({
+	audio: z.string({ error: 'Audio is required.' }).min(1, { error: 'Audio is required.' }),
+});
+/** Input for {@link RivusApiClient.transcribeTesterAudio}. */
+export type TranscribeTesterAudioInput = z.infer<typeof testerTranscribeSchema>;
 
 const healthResponseSchema = z.object({
 	status: z.literal('ok'),
@@ -943,6 +982,35 @@ export interface RivusApiClient {
 	sendTesterMessage(token: string, id: string, input: SendTesterMessageInput): Promise<TesterTurn>;
 	/** Delete a tester session, resetting the agent state for that contact. */
 	deleteTesterSession(token: string, id: string): Promise<void>;
+	/**
+	 * Whether a tester phone session can be *held* rather than typed — the API
+	 * has a speech provider, so the caller's side can be spoken into a microphone
+	 * and the agent's replied out loud in a real voice.
+	 *
+	 * Development + Rivus-staff only like the rest of the tester. When it answers
+	 * `false` there is no microphone to offer and reading a reply aloud falls back
+	 * to the browser's own speech synthesis.
+	 */
+	getTesterVoice(token: string): Promise<TesterVoice>;
+	/**
+	 * Synthesize a line of the agent's reply — normally the `delivery.text` a turn
+	 * just returned, which on a call is the whole spoken line. Nothing about the
+	 * session changes. Rejects with a 503 when the deployment has no speech
+	 * provider (check {@link getTesterVoice} first).
+	 */
+	speakTesterReply(token: string, id: string, input: SpeakTesterReplyInput): Promise<TesterSpeech>;
+	/**
+	 * Transcribe one recorded utterance (base64 audio, in whatever container the
+	 * browser recorded). The text comes back to be sent through
+	 * {@link sendTesterMessage} like any typed turn; an empty `text` means the
+	 * recording held no speech, which is a normal answer rather than a failure.
+	 * Rejects with a 503 when the deployment has no speech provider.
+	 */
+	transcribeTesterAudio(
+		token: string,
+		id: string,
+		input: TranscribeTesterAudioInput,
+	): Promise<TesterTranscription>;
 }
 
 /** Strip a single trailing slash so `${base}${path}` never doubles up. */
@@ -1545,6 +1613,31 @@ export function createApiClient(
 				method: 'DELETE',
 				headers: authHeaders(token),
 			});
+		},
+
+		getTesterVoice(token: string) {
+			return request(`${TESTER_BASE}/voice`, testerVoiceResponseSchema, {
+				method: 'GET',
+				headers: authHeaders(token),
+			});
+		},
+
+		async speakTesterReply(token: string, id: string, input: SpeakTesterReplyInput) {
+			const payload = parseInput(testerSpeechSchema, input);
+			return request(
+				`${TESTER_ROOT}/${encodeURIComponent(id)}/speech`,
+				testerSpeechResponseSchema,
+				jsonInit('POST', payload, token),
+			);
+		},
+
+		async transcribeTesterAudio(token: string, id: string, input: TranscribeTesterAudioInput) {
+			const payload = parseInput(testerTranscribeSchema, input);
+			return request(
+				`${TESTER_ROOT}/${encodeURIComponent(id)}/transcribe`,
+				testerTranscriptionResponseSchema,
+				jsonInit('POST', payload, token),
+			);
 		},
 	};
 }
