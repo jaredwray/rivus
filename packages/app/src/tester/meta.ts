@@ -36,7 +36,17 @@ export const STATE_META: Record<
 		color: colors.amberInk,
 		bg: 'rgba(240,160,32,0.16)',
 	},
+	booking_choice: {
+		label: 'Awaiting choice',
+		color: colors.amberInk,
+		bg: 'rgba(240,160,32,0.16)',
+	},
 	slots_offered: { label: 'Slots offered', color: colors.brandPurple, bg: colors.purpleTint },
+	additional_slots_offered: {
+		label: 'Additional slots offered',
+		color: colors.brandPurple,
+		bg: colors.purpleTint,
+	},
 	booked: { label: 'Booked', color: colors.green, bg: 'rgba(31,181,115,0.12)' },
 };
 

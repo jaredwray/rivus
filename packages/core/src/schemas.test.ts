@@ -969,7 +969,14 @@ describe('seedAccountSchema', () => {
 });
 
 describe('agentThreadStateSchema', () => {
-	it.each(['new', 'awaiting_signup', 'slots_offered', 'booked'] as const)('accepts %s', (state) => {
+	it.each([
+		'new',
+		'awaiting_signup',
+		'booking_choice',
+		'slots_offered',
+		'additional_slots_offered',
+		'booked',
+	] as const)('accepts %s', (state) => {
 		expect(agentThreadStateSchema.parse(state)).toBe(state);
 	});
 

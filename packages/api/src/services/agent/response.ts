@@ -487,6 +487,19 @@ function contentFor(decision: AgentDecision, context: AgentReplyContext): Decisi
 				action: null,
 				trail: [pickAnOption(context.medium)],
 			};
+		case 'booking_choice':
+			return {
+				lead: [
+					`You already have ${decision.booking.title} coming up on ${formatSlotLabel(decision.booking.startAt, context.timeZone, year)} (${decision.booking.durationMinutes} minutes).`,
+					'Do you want to reschedule that appointment, keep it as-is, or add another appointment?',
+				],
+				...none,
+				trail: [
+					context.medium === 'voice'
+						? 'Say reschedule, keep it, or add another appointment.'
+						: 'Reply with reschedule, keep it, or add another appointment.',
+				],
+			};
 	}
 }
 

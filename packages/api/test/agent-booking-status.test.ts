@@ -264,7 +264,7 @@ describe('booking status — answering what the customer already has', () => {
 		const harness = await setup();
 		app = harness.app;
 		await harness.book({ startAt: BOOKED_AT });
-		const offered = await harness.inbound('Can I get someone out to look at my water heater?');
+		const offered = await harness.inbound('I need to reschedule my appointment');
 		expect(offered.outcome).toBe('offer_slots');
 		const slots = (await harness.thread()).offeredSlots;
 		expect(slots.length).toBeGreaterThan(1);
@@ -424,20 +424,32 @@ describe('booking status — turns it must never claim', () => {
 		app = undefined;
 	});
 
+	it('leaves an explicit request for a second visit to scheduling', async () => {
+		const harness = await setup();
+		app = harness.app;
+		await harness.book({ startAt: BOOKED_AT });
+
+		const result = await harness.inbound('can I book another appointment for the upstairs bath?');
+
+		expect(result.outcome).toBe('offer_slots');
+		expect(harness.lastReply()).not.toContain("Here's what you have coming up");
+		expect(harness.lastReply()).toContain('next openings');
+	});
+
 	it.each([
 		['a plain booking request', 'Can I get someone out to look at my water heater?'],
-		['a request for a second visit', 'can I book another appointment for the upstairs bath?'],
 		['an availability ask', 'what times do you have this week?'],
-	])('leaves %s to the scheduling engine, even with a booking on the calendar', async (_l, text) => {
+	])('asks for intent before %s can change an existing appointment', async (_label, text) => {
 		const harness = await setup();
 		app = harness.app;
 		await harness.book({ startAt: BOOKED_AT });
 
 		const result = await harness.inbound(text);
 
-		expect(result.outcome).toBe('offer_slots');
-		expect(harness.lastReply()).not.toContain("Here's what you have coming up");
-		expect(harness.lastReply()).toContain('next openings');
+		expect(result.outcome).toBe('booking_choice');
+		expect(harness.lastReply()).toContain('reschedule that appointment');
+		expect(harness.lastReply()).toContain('keep it as-is');
+		expect(harness.lastReply()).toContain('add another appointment');
 	});
 
 	it('still answers a question about the business from the knowledge base', async () => {
@@ -468,7 +480,7 @@ describe('booking status — turns it must never claim', () => {
 		expect(result.outcome).toBe('confirm_existing');
 	});
 
-	it('still books a proposal, rather than reporting the booking it would collide with', async () => {
+	it('asks for intent before acting on a proposal when an appointment already exists', async () => {
 		const harness = await setup();
 		app = harness.app;
 		await harness.book({ startAt: BOOKED_AT });
@@ -476,6 +488,6 @@ describe('booking status — turns it must never claim', () => {
 		// A complete day + time is a booking request however the rest of it reads.
 		const result = await harness.inbound('when is my appointment — can you do Monday at 10am?');
 
-		expect(result.outcome).toBe('book');
+		expect(result.outcome).toBe('booking_choice');
 	});
 });

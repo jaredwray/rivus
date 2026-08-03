@@ -182,6 +182,69 @@ describe('reschedule — a pick while booked moves the appointment, never double
 		app = undefined;
 	});
 
+	it('asks what to do with an upcoming appointment before offering or moving anything', async () => {
+		const harness = await setup();
+		app = harness.app;
+		const jobId = await harness.book({ startAt: BOOKED_AT });
+
+		const asked = await harness.inbound('What openings do you have next week?');
+
+		expect(asked.outcome).toBe('booking_choice');
+		expect(harness.lastReply()).toContain(
+			`You already have Water heater install coming up on ${BOOKED_LABEL} (60 minutes).`,
+		);
+		expect(harness.lastReply()).toContain(
+			'Do you want to reschedule that appointment, keep it as-is, or add another appointment?',
+		);
+		expect((await harness.thread()).state).toBe('booking_choice');
+		expect((await harness.thread()).offeredSlots).toEqual([]);
+
+		// A day is not consent to move the existing booking. Repeat the choice and
+		// leave the calendar alone until the customer says what they mean.
+		const ambiguous = await harness.inbound("Let's do Thursday");
+		expect(ambiguous.outcome).toBe('booking_choice');
+		expect((await harness.customerJobs())[0]?.startAt).toBe(BOOKED_AT);
+
+		const reschedule = await harness.inbound('reschedule it');
+		expect(reschedule.outcome).toBe('offer_slots');
+		expect((await harness.thread()).state).toBe('slots_offered');
+
+		const picked = await harness.inbound('1');
+		expect(picked.outcome).toBe('reschedule');
+		const jobs = await harness.customerJobs();
+		expect(jobs).toHaveLength(1);
+		expect(jobs[0]?.id).toBe(jobId);
+		expect(jobs[0]?.startAt).toBe(OFFERED[0]);
+	});
+
+	it('keeps the current appointment when that is the customer choice', async () => {
+		const harness = await setup();
+		app = harness.app;
+		const jobId = await harness.book({ startAt: BOOKED_AT });
+		await harness.inbound('Can I schedule an appointment?');
+
+		const result = await harness.inbound('keep the current one');
+
+		expect(result.outcome).toBe('confirm_existing');
+		expect(await harness.customerJobs()).toHaveLength(1);
+		expect((await harness.thread()).bookedJobId).toBe(jobId);
+	});
+
+	it('books a second visit only after the customer chooses to add another', async () => {
+		const harness = await setup();
+		app = harness.app;
+		await harness.book({ startAt: BOOKED_AT });
+		await harness.inbound('Can I schedule an appointment?');
+
+		const add = await harness.inbound('add another appointment');
+		expect(add.outcome).toBe('offer_slots');
+		expect((await harness.thread()).state).toBe('additional_slots_offered');
+
+		const picked = await harness.inbound('1');
+		expect(picked.outcome).toBe('book');
+		expect(await harness.customerJobs()).toHaveLength(2);
+	});
+
 	it('moves the existing appointment when the customer picks an offered time (the reported transcript)', async () => {
 		const harness = await setup();
 		app = harness.app;
@@ -318,6 +381,7 @@ describe('reschedule — a pick while booked moves the appointment, never double
 			status: 'in_progress',
 		});
 		await harness.inbound('Can I get someone out to look at my water heater?');
+		await harness.inbound('reschedule it');
 
 		const result = await harness.inbound('1');
 

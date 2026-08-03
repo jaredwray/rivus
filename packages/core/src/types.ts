@@ -396,11 +396,21 @@ export interface ConversationDetail {
  *   add themselves and the agent is waiting for them to write back.
  * - `slots_offered` — the agent proposed appointment times and is waiting for
  *   the contact to pick one (or suggest their own).
+ * - `booking_choice` — the contact already has an appointment and must say
+ *   whether to keep it, move it, or schedule an additional visit.
+ * - `additional_slots_offered` — the contact explicitly chose an additional
+ *   visit, so a pick creates a second job rather than moving the first.
  * - `booked` — a job was created and confirmed; a later message that asks for
  *   more scheduling starts a fresh round, while one that merely acknowledges the
  *   booking ("Confirmed!", "thanks") is reassured without reopening scheduling.
  */
-export type AgentThreadState = 'new' | 'awaiting_signup' | 'slots_offered' | 'booked';
+export type AgentThreadState =
+	| 'new'
+	| 'awaiting_signup'
+	| 'booking_choice'
+	| 'slots_offered'
+	| 'additional_slots_offered'
+	| 'booked';
 
 /** One appointment window the agent offered or booked: a UTC instant + length. */
 export interface AgentSlot {
@@ -431,7 +441,7 @@ export interface AgentThread {
 	/** The matched CRM {@link Customer}, or an empty string until the sender is validated. */
 	customerId: string;
 	state: AgentThreadState;
-	/** Slots most recently offered; only meaningful while `state` is `slots_offered`. */
+	/** Slots most recently offered; meaningful in either offered-slots state. */
 	offeredSlots: AgentSlot[];
 	/**
 	 * Channel-native id of the contact's latest inbound message (the RFC 5322
