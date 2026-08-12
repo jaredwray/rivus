@@ -33,6 +33,9 @@ catalog:
 minimumReleaseAge: 10080
 minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: false
+# Refuse transitive dependencies that resolve outside the npm registry
+# (git/URL/exotic sources anywhere in the graph). The lockfile contains none.
+blockExoticSubdeps: true
 
 # Install (build) scripts are blocked by default. allowBuilds explicitly
 # allows (true) or denies (false) each dependency that ships one. Add entries
