@@ -45,7 +45,7 @@ Tracking against https://github.com/jaredwray/agentic/blob/main/skills/security/
 - [x] `minimumReleaseAge: 10080` set in `pnpm-workspace.yaml` — verified 2026-08-12
 - [x] `minimumReleaseAgeStrict: true` set — verified 2026-08-12
 - [x] `minimumReleaseAgeIgnoreMissingTime: false` set — verified 2026-08-12
-- [ ] `blockExoticSubdeps: true` set (PR pending)
+- [ ] `blockExoticSubdeps: true` set (PR #151 pending)
 - [ ] `strictDepBuilds: true` set
 - [x] `dangerouslyAllowAllBuilds: false` confirmed — verified 2026-08-12 (not set anywhere; the pnpm default is false)
 - [x] `allowBuilds: {}` baseline set — verified 2026-08-12 (reviewed allow/deny list in `pnpm-workspace.yaml`)
