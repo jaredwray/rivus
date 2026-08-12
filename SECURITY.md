@@ -48,14 +48,14 @@ Tracking against https://github.com/jaredwray/agentic/blob/main/skills/security/
 - [ ] `blockExoticSubdeps: true` set (PR #151 pending)
 - [ ] `strictDepBuilds: true` set
 - [x] `dangerouslyAllowAllBuilds: false` confirmed — verified 2026-08-12 (not set anywhere; the pnpm default is false)
-- [x] `allowBuilds: {}` baseline set — verified 2026-08-12 (reviewed allow/deny list in `pnpm-workspace.yaml`)
+- [x] `allowBuilds: {}` baseline set — verified 2026-08-12 (default-deny policy in place; not literally empty: allows `esbuild` and `workerd`, explicitly denies `sharp`, `@mongodb-js/zstd`, `core-js-pure`, `node-liblzma`)
 - [x] Approved build scripts maintained as code-reviewed policy — verified 2026-08-12 (commented `allowBuilds` block)
 - [x] `pnpm approve-builds` only used during dependency review, never automatically in CI — verified 2026-08-12 (not used in any workflow)
 
 ### 5. GitHub Actions Hardening
 - [x] Default `permissions: contents: read` on every workflow — verified 2026-08-12 (all 4 workflows)
 - [x] `id-token: write` only on the final publish job — verified 2026-08-12 (no workflow requests `id-token`)
-- [x] No npm tokens stored in GitHub Actions secrets — verified 2026-08-12 (no workflow references one; this repo does not publish to npm)
+- [ ] No npm tokens stored in GitHub Actions secrets (no workflow references one and the repo does not publish to npm — verified 2026-08-12; stored-secret inventory in Settings → Actions needs maintainer confirmation)
 - [x] All third-party actions pinned to a full commit SHA — verified 2026-08-12
 - [ ] CODEOWNERS in place, listing the maintainer and a shared security contact
 - [x] No `pull_request_target` for workflows that check out or execute untrusted PR code — verified 2026-08-12 (not used at all)
@@ -66,8 +66,8 @@ Tracking against https://github.com/jaredwray/agentic/blob/main/skills/security/
 - [ ] Workflow/security scanner runs on every PR touching CI, manifests, lockfiles, release scripts, or security policy
 
 ### 8. Security Tooling and Detection
-- [ ] Aikido runs on every build
-- [ ] Socket.dev integrated as a second detection layer
+- [x] Aikido runs on every build — verified 2026-08-12 (GitHub App check "Aikido Security: check code" runs on every PR/push; see PR #151 checks)
+- [x] Socket.dev integrated as a second detection layer — verified 2026-08-12 (GitHub App checks "Socket Security: Pull Request Alerts" and "Project Report" run on every PR)
 - [ ] Socket Gateway in report-only mode (and evaluated for blocking)
 - [ ] `deepsec` runs on PRs touching release/dep/CI/auth/crypto/package paths
 - [ ] Secret scanning enabled on repo and CI artifacts (repo setting — verify in Settings → Code security)
