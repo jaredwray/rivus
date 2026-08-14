@@ -26,14 +26,24 @@ export const metadata: Metadata = {
 		description: siteConfig.description,
 		url: '/',
 		type: 'website',
+		// Next shallow-merges metadata: a page-level `openGraph` replaces the
+		// layout's object, so siteName and locale have to be repeated here.
+		siteName: siteConfig.name,
+		locale: 'en_US',
 	},
 };
 
 const organizationId = `${baseUrl}/#organization`;
 
-const monthlyPrices = pricingTiers.map((tier) => Number(tier.price.replace(/[^0-9.]/g, '')));
-const lowPrice = Math.min(...monthlyPrices);
-const highPrice = Math.max(...monthlyPrices);
+/** One Offer per published tier — no AggregateOffer ceiling, because
+ *  Multi-location has no finite monthly cap (first location + $179 each extra). */
+const softwareOffers = pricingTiers.map((tier) => ({
+	'@type': 'Offer' as const,
+	name: tier.name,
+	price: tier.price.replace(/[^0-9.]/g, ''),
+	priceCurrency: 'USD',
+	description: [tier.audience, tier.priceNote, ...tier.capacity].filter(Boolean).join(' · '),
+}));
 
 /**
  * Organization + WebSite + SoftwareApplication structured data for the home
@@ -67,13 +77,7 @@ const homeJsonLd = {
 			url: baseUrl,
 			description: siteConfig.description,
 			publisher: { '@id': organizationId },
-			offers: {
-				'@type': 'AggregateOffer',
-				priceCurrency: 'USD',
-				lowPrice: String(lowPrice),
-				highPrice: String(highPrice),
-				offerCount: String(pricingTiers.length),
-			},
+			offers: softwareOffers,
 		},
 	],
 };

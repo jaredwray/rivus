@@ -117,6 +117,16 @@ describe('HomePage', () => {
 			'WebSite',
 			'SoftwareApplication',
 		]);
+		const application = graph?.['@graph'].find(
+			(node: { '@type': string }) => node['@type'] === 'SoftwareApplication',
+		) as {
+			offers: Array<{ name: string; price: string; description: string; highPrice?: string }>;
+		};
+		expect(application.offers).toHaveLength(pricingTiers.length);
+		expect(application.offers.every((offer) => offer.highPrice === undefined)).toBe(true);
+		expect(
+			application.offers.find((offer) => offer.name === 'Multi-location')?.description,
+		).toMatch(/179/);
 		expect(faq?.mainEntity).toHaveLength(homeFaqTeasers.length);
 		expect(faq?.mainEntity[0].name).toBe(homeFaqTeasers[0]?.question);
 		expect(faq?.mainEntity[0].acceptedAnswer.text).toBe(homeFaqTeasers[0]?.answer);

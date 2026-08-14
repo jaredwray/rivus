@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Metadata } from 'next';
 import { describe, expect, it } from 'vitest';
 import { siteConfig } from '../lib/site';
@@ -58,6 +61,10 @@ describe('page metadata', () => {
 		expect(homeMeta.title).toBe(siteConfig.title);
 		expect(homeMeta.description).toBe(siteConfig.description);
 		expect(homeMeta.openGraph?.url).toBe('/');
+		// Page-level openGraph replaces the layout object, so these have to be
+		// restated or og:site_name / og:locale drop off `/`.
+		expect(homeMeta.openGraph?.siteName).toBe(siteConfig.name);
+		expect(homeMeta.openGraph?.locale).toBe('en_US');
 	});
 });
 
@@ -68,5 +75,15 @@ describe('manifest', () => {
 		expect(result.start_url).toBe('/');
 		expect(result.theme_color).toBe('#6e1ec8');
 		expect(result.icons?.map((icon) => icon.src)).toEqual(['/icon.svg', '/apple-icon.png']);
+	});
+});
+
+describe('opengraph-image alt', () => {
+	it('describes the raster card, which still uses the brand tagline', () => {
+		const alt = readFileSync(
+			join(dirname(fileURLToPath(import.meta.url)), 'opengraph-image.alt.txt'),
+			'utf8',
+		);
+		expect(alt.trim().toLowerCase()).toContain(siteConfig.tagline.toLowerCase());
 	});
 });

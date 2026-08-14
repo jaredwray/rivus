@@ -2612,6 +2612,28 @@ button:focus-visible {
 		transform: rotate(90deg);
 	}
 
+	/* Five desktop nav links plus Sign in / Get started no longer fit
+	   around 680–900px; collapse here (same breakpoint as the stacked hero). */
+	.nav__inner {
+		padding: 13px 18px;
+		gap: 12px;
+		justify-content: space-between;
+	}
+	.nav__links,
+	.nav__signin {
+		display: none;
+	}
+	.nav__menu-btn {
+		display: flex;
+	}
+	.nav__cta {
+		font-size: 13px;
+		padding: 9px 15px;
+	}
+	.nav--open .nav__mobile {
+		display: flex;
+	}
+
 	/* feature rows stack, copy first */
 	.feature-row,
 	.feature-row--reverse {
@@ -2668,26 +2690,6 @@ button:focus-visible {
 	}
 	.lead {
 		font-size: 15.5px;
-	}
-
-	.nav__inner {
-		padding: 13px 18px;
-		gap: 12px;
-		justify-content: space-between;
-	}
-	.nav__links,
-	.nav__signin {
-		display: none;
-	}
-	.nav__menu-btn {
-		display: flex;
-	}
-	.nav__cta {
-		font-size: 13px;
-		padding: 9px 15px;
-	}
-	.nav--open .nav__mobile {
-		display: flex;
 	}
 
 	.hero__inner {

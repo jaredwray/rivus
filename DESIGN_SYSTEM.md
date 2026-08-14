@@ -147,6 +147,11 @@ In the shared theme these are `SIDEBAR_BREAKPOINT`, `SIDEBAR_WIDTH`, and
 text settings), so surfaces that anchor to it should measure the rendered bar
 rather than assume the constant.
 
+The marketing site (`packages/website`) is a top bar, not a sidebar. Its
+primary nav (Why Rivus · Features · Setup · Pricing · FAQ, plus Sign in and
+Get started) collapses to the hamburger at **`900px`** — the same breakpoint
+the home hero stacks — so tablet widths never clip the fifth link.
+
 ---
 
 ## Components
@@ -263,8 +268,11 @@ grid:
 - **`faq-item__q`** — the `<summary>`: 600-weight 15.5px row with a "+"
   marker (Text-sub color) that rotates 45° when open; native markers hidden.
 - **`faq-item__a`** — the answer: 15px/1.65 body-2 text, 18px bottom padding.
-- **`price-faq` / `price-faq__more`** — the pricing-section wrapper for the
-  teaser trio (34px top margin) and its centered "more" link row.
+- **`price-faq` / `price-faq__eyebrow` / `price-faq__more`** — the
+  pricing-section wrapper for the owner-objection teasers (34px top
+  margin): five disclosures (cost, per-call fees, keeping the number,
+  on-brand voice, human takeover), a centered `OWNERS ASK` eyebrow, and a
+  wrapping "more" row of `card__link`s (full FAQ + compare).
 
 The hero trust bar's trade names are links styled by **`trust__link`**
 (inherit color, 700 weight, underline on hover) — visually identical to the

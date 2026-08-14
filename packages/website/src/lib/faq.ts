@@ -178,10 +178,9 @@ function faqByQuestion(question: string): FaqEntry {
 }
 
 /**
- * Questions teased on the home page (under pricing). Mixes the cost questions
- * owners open with and the two objections that actually stall a signup:
- * keeping their number, and whether the agent sounds like them / a human
- * can take over.
+ * Questions teased on the home page (under pricing). Five owner-objection
+ * disclosures — cost, per-call fees, keeping the number, on-brand voice,
+ * human takeover — matching DESIGN_SYSTEM.md (`price-faq`).
  */
 export const homeFaqTeasers: FaqEntry[] = [
 	'How much does Rivus cost?',
