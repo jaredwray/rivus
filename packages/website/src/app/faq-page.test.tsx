@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Pricing } from '../components/marketing/pricing';
-import { allFaqEntries, faqCategories, faqCategoryAnchor, pricingFaqTeasers } from '../lib/faq';
+import { allFaqEntries, faqCategories, faqCategoryAnchor, homeFaqTeasers } from '../lib/faq';
 import FaqPage from './faq/page';
 
 beforeEach(() => {
@@ -49,10 +49,17 @@ describe('FaqPage', () => {
 });
 
 describe('Pricing → FAQ strip', () => {
-	it('teases the top pricing questions and links the full FAQ', () => {
+	it('sources home teasers from the canonical FAQ entries', () => {
+		expect(homeFaqTeasers).toHaveLength(5);
+		for (const teaser of homeFaqTeasers) {
+			expect(allFaqEntries).toContainEqual(teaser);
+		}
+	});
+
+	it('teases the owner-objection questions and links the full FAQ and compare page', () => {
 		render(<Pricing />);
-		expect(pricingFaqTeasers.length).toBeGreaterThan(0);
-		for (const entry of pricingFaqTeasers) {
+		expect(homeFaqTeasers.length).toBeGreaterThan(0);
+		for (const entry of homeFaqTeasers) {
 			expect(screen.getByText(entry.question)).toBeTruthy();
 		}
 		expect(
@@ -60,5 +67,8 @@ describe('Pricing → FAQ strip', () => {
 				.getByRole('link', { name: /more questions answered in the faq/i })
 				.getAttribute('href'),
 		).toBe('/faq');
+		expect(
+			screen.getByRole('link', { name: /compare with an answering service/i }).getAttribute('href'),
+		).toBe('/compare');
 	});
 });

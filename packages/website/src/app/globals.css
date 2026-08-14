@@ -150,6 +150,16 @@ svg {
 	color: var(--body-2);
 }
 
+.lead a {
+	font-weight: 600;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+.lead a:hover {
+	color: var(--violet);
+}
+
 .grad-text {
 	background: var(--grad-text);
 	-webkit-background-clip: text;
@@ -369,6 +379,10 @@ button:focus-visible {
 	font-weight: 700;
 	margin-top: 16px;
 	margin-bottom: 7px;
+}
+
+.card > .card__title:first-child {
+	margin-top: 0;
 }
 
 .card__body {
@@ -2425,9 +2439,21 @@ button:focus-visible {
 	margin: 34px auto 0;
 }
 
+.price-faq__eyebrow {
+	text-align: center;
+}
+
 .price-faq__more {
 	margin-top: 14px;
 	text-align: center;
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 4px 28px;
+}
+
+.price-faq__more .card__link {
+	margin-top: 8px;
 }
 
 /* Hero trust-bar trade links (see DESIGN_SYSTEM.md · Navigation) */
@@ -2586,6 +2612,28 @@ button:focus-visible {
 		transform: rotate(90deg);
 	}
 
+	/* Five desktop nav links plus Sign in / Get started no longer fit
+	   around 680–900px; collapse here (same breakpoint as the stacked hero). */
+	.nav__inner {
+		padding: 13px 18px;
+		gap: 12px;
+		justify-content: space-between;
+	}
+	.nav__links,
+	.nav__signin {
+		display: none;
+	}
+	.nav__menu-btn {
+		display: flex;
+	}
+	.nav__cta {
+		font-size: 13px;
+		padding: 9px 15px;
+	}
+	.nav--open .nav__mobile {
+		display: flex;
+	}
+
 	/* feature rows stack, copy first */
 	.feature-row,
 	.feature-row--reverse {
@@ -2642,26 +2690,6 @@ button:focus-visible {
 	}
 	.lead {
 		font-size: 15.5px;
-	}
-
-	.nav__inner {
-		padding: 13px 18px;
-		gap: 12px;
-		justify-content: space-between;
-	}
-	.nav__links,
-	.nav__signin {
-		display: none;
-	}
-	.nav__menu-btn {
-		display: flex;
-	}
-	.nav__cta {
-		font-size: 13px;
-		padding: 9px 15px;
-	}
-	.nav--open .nav__mobile {
-		display: flex;
 	}
 
 	.hero__inner {

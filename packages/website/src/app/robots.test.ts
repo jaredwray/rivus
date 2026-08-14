@@ -12,9 +12,12 @@ describe('robots.txt', () => {
 		}
 	});
 
-	it('allows all crawlers in production', () => {
+	it('allows all crawlers in production and points them at the sitemap', () => {
 		process.env.RIVUS_ENV = 'production';
-		expect(robots().rules).toEqual({ userAgent: '*', allow: '/' });
+		expect(robots()).toEqual({
+			rules: { userAgent: '*', allow: '/' },
+			sitemap: 'https://rivus.ai/sitemap.xml',
+		});
 	});
 
 	it('disallows all crawlers in the development environment', () => {

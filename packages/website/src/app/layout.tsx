@@ -18,16 +18,17 @@ export const metadata: Metadata = {
 	// production origin: og:image URLs must resolve publicly, and pre-production
 	// deployments are noindexed anyway.
 	metadataBase: new URL(baseUrl),
-	title: `${siteConfig.name} — ${siteConfig.tagline}`,
+	title: siteConfig.title,
 	description: siteConfig.description,
 	// Keep every pre-production deployment (dev.rivus.ai, local builds) out of
 	// search indexes; production stays fully indexable. Pairs with /robots.txt.
 	robots: isProductionEnv() ? undefined : { index: false, follow: false },
 	openGraph: {
-		title: `${siteConfig.name} — ${siteConfig.tagline}`,
+		title: siteConfig.title,
 		description: siteConfig.description,
 		siteName: siteConfig.name,
 		type: 'website',
+		locale: 'en_US',
 	},
 	// The large-card hint; the image itself comes from the opengraph-image file
 	// convention, which X and other crawlers fall back to.

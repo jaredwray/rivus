@@ -9,8 +9,7 @@ export function OnboardingSection() {
 			<div className="onboard__grid">
 				<div className="onboard__copy">
 					<div className="onboard__pill">
-						<span className="onboard__pulse" />
-						WHITE-GLOVE SETUP · INCLUDED FREE
+						<span className="onboard__pulse" />A PERSON SETS IT UP · INCLUDED FREE
 					</div>
 					<h2 className="onboard__title">
 						You don't set it up.
@@ -50,8 +49,7 @@ export function OnboardingSection() {
 								<div className="specialist__role">Your onboarding specialist</div>
 							</div>
 							<span className="specialist__avail">
-								<span className="dot" />
-								Available now
+								<span className="dot" />A real human
 							</span>
 						</div>
 						<div className="specialist__stats">

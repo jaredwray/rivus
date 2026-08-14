@@ -92,7 +92,7 @@ export function Hero() {
 					    line is the founding-customer offer (see the claims rules in
 					    WEBSITE_CONTENT_PLAN.md). */}
 					<div className="trust__for">
-						Now onboarding <b>founding customers</b> — free white-glove setup
+						Now onboarding <b>founding customers</b> — free human setup
 					</div>
 					<span className="trust__sep" />
 					<div className="trust__for">

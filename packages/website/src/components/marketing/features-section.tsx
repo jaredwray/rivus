@@ -35,11 +35,11 @@ function Points({ items }: { items: string[] }) {
 
 export function FeaturesSection() {
 	return (
-		<section id="features" className="section section--gray">
+		<section id="features" className="section section--plain">
 			<div className="container">
 				<div className="section-head">
 					<p className="eyebrow">EVERYTHING IN ONE PLACE</p>
-					<h2 className="h2">The whole back office, handled.</h2>
+					<h2 className="h2">Calls, calendar, invoices, and reviews — handled.</h2>
 				</div>
 
 				{/* Row 1 — unified inbox */}

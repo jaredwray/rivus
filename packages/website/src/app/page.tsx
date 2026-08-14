@@ -6,28 +6,55 @@ import { FinalCta } from '../components/marketing/final-cta';
 import { FoundingCustomers } from '../components/marketing/founding-customers';
 import { Hero } from '../components/marketing/hero';
 import { HowItWorks } from '../components/marketing/how-it-works';
+import { IndustriesSection } from '../components/marketing/industries-section';
 import { JsonLd } from '../components/marketing/json-ld';
 import { OnboardingSection } from '../components/marketing/onboarding-section';
 import { Pricing } from '../components/marketing/pricing';
 import { ProblemSection } from '../components/marketing/problem-section';
 import { SiteFooter } from '../components/marketing/site-footer';
 import { SiteNav } from '../components/marketing/site-nav';
-import { siteConfig } from '../lib/site';
+import { homeFaqTeasers } from '../lib/faq';
+import { pricingTiers, siteConfig } from '../lib/site';
 import { baseUrl } from './sitemap';
 
 export const metadata: Metadata = {
+	title: siteConfig.title,
+	description: siteConfig.description,
 	alternates: { canonical: '/' },
+	openGraph: {
+		title: siteConfig.title,
+		description: siteConfig.description,
+		url: '/',
+		type: 'website',
+		// Next shallow-merges metadata: a page-level `openGraph` replaces the
+		// layout's object, so siteName and locale have to be repeated here.
+		siteName: siteConfig.name,
+		locale: 'en_US',
+	},
 };
 
+const organizationId = `${baseUrl}/#organization`;
+
+/** One Offer per published tier — no AggregateOffer ceiling, because
+ *  Multi-location has no finite monthly cap (first location + $179 each extra). */
+const softwareOffers = pricingTiers.map((tier) => ({
+	'@type': 'Offer' as const,
+	name: tier.name,
+	price: tier.price.replace(/[^0-9.]/g, ''),
+	priceCurrency: 'USD',
+	description: [tier.audience, tier.priceNote, ...tier.capacity].filter(Boolean).join(' · '),
+}));
+
 /**
- * Organization + WebSite structured data for the home page, built from the
- * same site config the visible copy uses.
+ * Organization + WebSite + SoftwareApplication structured data for the home
+ * page, built from the same site config and pricing the visible copy uses.
  */
-const organizationJsonLd = {
+const homeJsonLd = {
 	'@context': 'https://schema.org',
 	'@graph': [
 		{
 			'@type': 'Organization',
+			'@id': organizationId,
 			name: siteConfig.name,
 			url: baseUrl,
 			logo: `${baseUrl}/press/rivus-symbol.svg`,
@@ -38,8 +65,32 @@ const organizationJsonLd = {
 			'@type': 'WebSite',
 			name: siteConfig.name,
 			url: baseUrl,
+			description: siteConfig.description,
+			publisher: { '@id': organizationId },
+			inLanguage: 'en',
+		},
+		{
+			'@type': 'SoftwareApplication',
+			name: siteConfig.name,
+			applicationCategory: 'BusinessApplication',
+			operatingSystem: 'Web',
+			url: baseUrl,
+			description: siteConfig.description,
+			publisher: { '@id': organizationId },
+			offers: softwareOffers,
 		},
 	],
+};
+
+/** FAQPage structured data for the questions actually rendered on this page. */
+const homeFaqJsonLd = {
+	'@context': 'https://schema.org',
+	'@type': 'FAQPage',
+	mainEntity: homeFaqTeasers.map((entry) => ({
+		'@type': 'Question',
+		name: entry.question,
+		acceptedAnswer: { '@type': 'Answer', text: entry.answer },
+	})),
 };
 
 export default function HomePage() {
@@ -50,6 +101,7 @@ export default function HomePage() {
 			<main id="main">
 				<Hero />
 				<ProblemSection />
+				<IndustriesSection />
 				<HowItWorks />
 				<FeaturesSection />
 				<OnboardingSection />
@@ -59,7 +111,8 @@ export default function HomePage() {
 				<FinalCta />
 			</main>
 			<SiteFooter />
-			<JsonLd data={organizationJsonLd} />
+			<JsonLd data={homeJsonLd} />
+			<JsonLd data={homeFaqJsonLd} />
 		</>
 	);
 }
