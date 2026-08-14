@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apiUrl, type Feature, featureAnchor, features, pricingTiers } from './site';
+import { apiUrl, type Feature, featureAnchor, features, pricingTiers, siteConfig } from './site';
 
 describe('site content', () => {
 	it('derives a url-safe anchor from a feature title', () => {
@@ -40,5 +40,14 @@ describe('site content', () => {
 
 	it('falls back to a local api url', () => {
 		expect(apiUrl).toMatch(/^https?:\/\//);
+	});
+
+	it('keeps the home title and description inside typical SERP display limits', () => {
+		expect(siteConfig.title.length).toBeGreaterThan(40);
+		expect(siteConfig.title.length).toBeLessThanOrEqual(60);
+		expect(siteConfig.description.length).toBeGreaterThan(110);
+		expect(siteConfig.description.length).toBeLessThanOrEqual(160);
+		expect(siteConfig.title.toLowerCase()).toContain('local businesses');
+		expect(siteConfig.description.toLowerCase()).toContain('24/7');
 	});
 });

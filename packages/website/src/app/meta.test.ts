@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { describe, expect, it } from 'vitest';
+import { siteConfig } from '../lib/site';
 import { metadata as aboutMeta } from './about/page';
 import { metadata as acceptableUseMeta } from './acceptable-use/page';
 import { metadata as appsMeta } from './apps/page';
@@ -51,6 +52,12 @@ describe('page metadata', () => {
 	it('covers every static public route (dynamic industries handled in their own test)', () => {
 		const staticRoutes = publicRoutes.filter((route) => !route.startsWith('/industries/'));
 		expect(Object.keys(canonicals).sort()).toEqual([...staticRoutes].sort());
+	});
+
+	it('gives the home page a unique title and description aimed at local businesses', () => {
+		expect(homeMeta.title).toBe(siteConfig.title);
+		expect(homeMeta.description).toBe(siteConfig.description);
+		expect(homeMeta.openGraph?.url).toBe('/');
 	});
 });
 

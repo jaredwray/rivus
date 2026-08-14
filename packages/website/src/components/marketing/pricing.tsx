@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { pricingFaqTeasers } from '../../lib/faq';
+import { homeFaqTeasers } from '../../lib/faq';
 import { pricingTiers, signupUrl } from '../../lib/site';
 import { ArrowRightIcon, CheckIcon } from './icons';
 
@@ -19,7 +19,7 @@ export function Pricing() {
 					{pricingTiers.map((tier) => (
 						<div key={tier.name} className={tier.featured ? 'plan plan--featured' : 'plan'}>
 							{tier.badge ? <div className="plan__badge">{tier.badge}</div> : null}
-							<div className="plan__name">{tier.name}</div>
+							<h3 className="plan__name">{tier.name}</h3>
 							<div className="plan__audience">{tier.audience}</div>
 							<div className="plan__price">
 								<span className={tier.period ? 'plan__amount' : 'plan__amount plan__amount--sm'}>
@@ -46,10 +46,12 @@ export function Pricing() {
 					))}
 				</div>
 
-				{/* The most-asked pricing questions, answered inline; the rest live on /faq. */}
+				{/* Cost, number porting, and human-handoff — the questions that stall
+				    a signup — answered inline; the rest live on /faq. */}
 				<div className="price-faq">
+					<p className="eyebrow price-faq__eyebrow">OWNERS ASK</p>
 					<div className="faq-list">
-						{pricingFaqTeasers.map((entry) => (
+						{homeFaqTeasers.map((entry) => (
 							<details key={entry.question} className="faq-item">
 								<summary className="faq-item__q">{entry.question}</summary>
 								<p className="faq-item__a">{entry.answer}</p>
@@ -59,6 +61,10 @@ export function Pricing() {
 					<p className="price-faq__more">
 						<Link className="card__link" href="/faq">
 							More questions answered in the FAQ
+							<ArrowRightIcon size={15} />
+						</Link>
+						<Link className="card__link" href="/compare">
+							Compare with an answering service
 							<ArrowRightIcon size={15} />
 						</Link>
 					</p>

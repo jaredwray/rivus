@@ -1,5 +1,6 @@
 import { slugify } from '@rivus/core';
 import type { IconName } from '../components/marketing/icons';
+import { industries } from './industries';
 
 /** Named color tints for icon tiles and avatars; resolved to colors in CSS. */
 export type Tint = 'red' | 'amber' | 'indigo' | 'violet' | 'cyan' | 'green';
@@ -7,10 +8,15 @@ export type Tint = 'red' | 'amber' | 'indigo' | 'violet' | 'cyan' | 'green';
 export const siteConfig = {
 	name: 'Rivus',
 	tagline: 'The AI agent that runs your front office.',
+	/**
+	 * Document / Open Graph title for the home page. Brand + job-to-be-done +
+	 * audience, kept in the ~50–60 character window search results display.
+	 */
+	title: 'Rivus — AI answering and booking for local businesses',
 	description:
-		'Rivus answers every call, text, and message the second it comes in — booking jobs straight to your calendar and handling billing, reviews, ads, and your newsletter. Around the clock.',
+		'Rivus answers every call and text 24/7 for local businesses, books jobs to your calendar, and handles billing and reviews. Free human setup. No credit card.',
 	heroLead:
-		'Rivus is the AI agent that runs your front office — answering every call, text, and message the second it comes in, booking jobs straight to your calendar, and handling billing, reviews, ads, and your newsletter. Around the clock.',
+		"Rivus is the AI agent for local business owners who can't sit by the phone. It answers every call, text, and message the second it comes in, books the job to your calendar, and handles billing, reviews, ads, and your newsletter — around the clock.",
 	domains: 'riv.us · rivus.ai',
 };
 
@@ -19,6 +25,7 @@ export const navLinks = [
 	{ label: 'Features', href: '/#features' },
 	{ label: 'Setup', href: '/#onboarding' },
 	{ label: 'Pricing', href: '/#pricing' },
+	{ label: 'FAQ', href: '/faq' },
 ];
 
 export interface Feature {
@@ -232,7 +239,7 @@ export interface FoundingBenefit {
  */
 export const foundingBenefits: FoundingBenefit[] = [
 	{
-		title: 'White-glove setup, free',
+		title: 'A specialist sets it up, free',
 		description:
 			'A dedicated human specialist connects your tools, imports your customers, and trains Rivus on your voice — before you pay a thing.',
 		icon: 'heart',
@@ -345,6 +352,13 @@ export const footerColumns: FooterColumn[] = [
 			{ label: 'FAQ', href: '/faq' },
 			{ label: 'Compare', href: '/compare' },
 		],
+	},
+	{
+		title: 'Industries',
+		links: industries.map((industry) => ({
+			label: industry.name,
+			href: `/industries/${industry.slug}`,
+		})),
 	},
 	{
 		title: 'Resources',

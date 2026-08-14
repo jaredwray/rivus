@@ -28,6 +28,32 @@ export const publicRoutes: readonly string[] = [
 	...industries.map((industry) => `/industries/${industry.slug}`),
 ];
 
+/** Legal pages exist for crawlers, but they are not conversion or landing URLs. */
+const legalRoutes = new Set([
+	'/privacy',
+	'/terms',
+	'/security',
+	'/sms-terms',
+	'/sms-opt-in',
+	'/acceptable-use',
+]);
+
+/** High-intent marketing URLs we want crawled ahead of company/legal pages. */
+const leadRoutes = new Set(['/faq', '/compare', '/demo']);
+
+function sitemapPriority(route: string): number {
+	if (route === '/') {
+		return 1;
+	}
+	if (route.startsWith('/industries/') || leadRoutes.has(route)) {
+		return 0.8;
+	}
+	if (legalRoutes.has(route)) {
+		return 0.3;
+	}
+	return 0.6;
+}
+
 export default function sitemap(): MetadataRoute.Sitemap {
 	// Build time is the honest lastModified for a fully static site: every
 	// deploy re-renders every page.
@@ -35,7 +61,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 	return publicRoutes.map((route) => ({
 		url: `${baseUrl}${route}`,
 		lastModified,
-		changeFrequency: route === '/' ? 'weekly' : 'monthly',
-		priority: route === '/' ? 1 : 0.6,
+		changeFrequency: route === '/' || route.startsWith('/industries/') ? 'weekly' : 'monthly',
+		priority: sitemapPriority(route),
 	}));
 }

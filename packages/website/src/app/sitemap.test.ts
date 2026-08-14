@@ -28,10 +28,16 @@ describe('sitemap', () => {
 		}
 	});
 
-	it('ranks the home page highest', () => {
-		const home = sitemap().at(0);
-		expect(home?.url).toBe(`${baseUrl}/`);
-		expect(home?.priority).toBe(1);
+	it('ranks the home page highest, then trades and lead pages, then legal last', () => {
+		const entries = sitemap();
+		const byPath = new Map(entries.map((entry) => [entry.url.slice(baseUrl.length) || '/', entry]));
+		expect(byPath.get('/')?.priority).toBe(1);
+		expect(byPath.get('/industries/plumbers')?.priority).toBe(0.8);
+		expect(byPath.get('/faq')?.priority).toBe(0.8);
+		expect(byPath.get('/compare')?.priority).toBe(0.8);
+		expect(byPath.get('/demo')?.priority).toBe(0.8);
+		expect(byPath.get('/about')?.priority).toBe(0.6);
+		expect(byPath.get('/privacy')?.priority).toBe(0.3);
 	});
 
 	it('stamps every entry with a build-time lastModified', () => {

@@ -168,8 +168,25 @@ export const faqCategories: FaqCategory[] = [
 /** Flat list of every entry, for the FAQPage structured data. */
 export const allFaqEntries: FaqEntry[] = faqCategories.flatMap((category) => category.entries);
 
-/** The pricing-adjacent questions teased under the pricing grid. */
-export const pricingFaqTeasers: FaqEntry[] = [
-	...(faqCategories.find((category) => category.title === 'Plans & pricing')?.entries.slice(0, 3) ??
-		[]),
-];
+/** Look up one FAQ by its question text — teasers must stay in lockstep with the page. */
+function faqByQuestion(question: string): FaqEntry {
+	const entry = allFaqEntries.find((item) => item.question === question);
+	if (!entry) {
+		throw new Error(`FAQ teaser is missing its source entry: ${question}`);
+	}
+	return entry;
+}
+
+/**
+ * Questions teased on the home page (under pricing). Mixes the cost questions
+ * owners open with and the two objections that actually stall a signup:
+ * keeping their number, and whether the agent sounds like them / a human
+ * can take over.
+ */
+export const homeFaqTeasers: FaqEntry[] = [
+	'How much does Rivus cost?',
+	'Are there per-call or per-message fees?',
+	'Do I keep my existing phone number?',
+	'Will Rivus sound like my business?',
+	'Can a human step in?',
+].map(faqByQuestion);

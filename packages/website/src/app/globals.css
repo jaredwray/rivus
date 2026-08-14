@@ -150,6 +150,16 @@ svg {
 	color: var(--body-2);
 }
 
+.lead a {
+	font-weight: 600;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+.lead a:hover {
+	color: var(--violet);
+}
+
 .grad-text {
 	background: var(--grad-text);
 	-webkit-background-clip: text;
@@ -369,6 +379,10 @@ button:focus-visible {
 	font-weight: 700;
 	margin-top: 16px;
 	margin-bottom: 7px;
+}
+
+.card > .card__title:first-child {
+	margin-top: 0;
 }
 
 .card__body {
@@ -2425,9 +2439,21 @@ button:focus-visible {
 	margin: 34px auto 0;
 }
 
+.price-faq__eyebrow {
+	text-align: center;
+}
+
 .price-faq__more {
 	margin-top: 14px;
 	text-align: center;
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 4px 28px;
+}
+
+.price-faq__more .card__link {
+	margin-top: 8px;
 }
 
 /* Hero trust-bar trade links (see DESIGN_SYSTEM.md · Navigation) */
