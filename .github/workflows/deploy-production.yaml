@@ -25,7 +25,14 @@ jobs:
     name: Build, test & lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Socket Firewall
+        uses: SocketDev/action@ba6de6cc0565af1f42295590380973573297e31f # v1.3.2
+        with:
+          mode: firewall-free
+          firewall-version: "1.15.0"
       - uses: ./.github/actions/setup
       - run: pnpm lint
       - run: pnpm type-check
@@ -55,7 +62,14 @@ jobs:
       # workflow token is enough — `permissions: contents: read` covers it.
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Socket Firewall
+        uses: SocketDev/action@ba6de6cc0565af1f42295590380973573297e31f # v1.3.2
+        with:
+          mode: firewall-free
+          firewall-version: "1.15.0"
       - uses: ./.github/actions/setup
       - run: pnpm --filter @rivus/docs build
       - run: pnpm --filter @rivus/docs exec wrangler deploy --env production
@@ -79,7 +93,14 @@ jobs:
       # Optional: address-autocomplete key (referrer-restricted). Unset → plain field.
       EXPO_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Socket Firewall
+        uses: SocketDev/action@ba6de6cc0565af1f42295590380973573297e31f # v1.3.2
+        with:
+          mode: firewall-free
+          firewall-version: "1.15.0"
       - uses: ./.github/actions/setup
       - run: pnpm --filter @rivus/app export:web
       # The signup address field needs the Maps key inlined into the web bundle;
@@ -112,7 +133,14 @@ jobs:
       # OpenNext build).
       NEXT_PUBLIC_API_URL: https://api.rivus.ai
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Socket Firewall
+        uses: SocketDev/action@ba6de6cc0565af1f42295590380973573297e31f # v1.3.2
+        with:
+          mode: firewall-free
+          firewall-version: "1.15.0"
       - uses: ./.github/actions/setup
       - run: pnpm --filter @rivus/website exec opennextjs-cloudflare build
       - run: pnpm --filter @rivus/website exec opennextjs-cloudflare deploy -- --env production
@@ -129,7 +157,14 @@ jobs:
       PROD_JWT_SECRET: ${{ secrets.PROD_JWT_SECRET }}
       PROD_RESEND_API_KEY: ${{ secrets.PROD_RESEND_API_KEY }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Socket Firewall
+        uses: SocketDev/action@ba6de6cc0565af1f42295590380973573297e31f # v1.3.2
+        with:
+          mode: firewall-free
+          firewall-version: "1.15.0"
       - uses: ./.github/actions/setup
       # The container always runs with NODE_ENV=production, where the API refuses
       # to boot without a real MONGODB_URI, a strong JWT_SECRET, and a RESEND_API_KEY
@@ -211,4 +246,9 @@ jobs:
       name: production
       url: https://rivus.ai
     steps:
+      - name: Install Socket Firewall
+        uses: SocketDev/action@ba6de6cc0565af1f42295590380973573297e31f # v1.3.2
+        with:
+          mode: firewall-free
+          firewall-version: "1.15.0"
       - run: echo "All production services deployed for ${{ github.sha }}"
