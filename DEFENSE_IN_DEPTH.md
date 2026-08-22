@@ -41,5 +41,5 @@ Profile: website/app · public
 The lockdown script is not vendored in this repo. Apply it from the skill copy in `jaredwray/agentic` (do not add `scripts/lockdown-repo.sh` here).
 
 - [x] `lockdown-repo.sh` applied; `--check` with `--required-checks` and `--allowed-actions` passes (PRs required on the default branch, merges blocked unless required status checks pass, tag ruleset, immutable releases, fork-PR approval (public repos), read-only workflow tokens, Actions allowlist, secret scanning, Dependabot disabled, private vulnerability reporting (public repos)) — PR #155
-- [ ] Phishing-resistant 2FA (passkeys / hardware keys) on the GitHub and npm accounts (manual)
-- [ ] Recovery codes stored offline in a password manager (manual)
+- [x] Phishing-resistant 2FA (passkeys / hardware keys) on the GitHub and npm accounts (manual) — verified 2026-08-22
+- [x] Recovery codes stored offline in a password manager (manual) — verified 2026-08-22
