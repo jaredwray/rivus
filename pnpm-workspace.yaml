@@ -36,6 +36,22 @@ minimumReleaseAgeIgnoreMissingTime: false
 # Refuse transitive dependencies that resolve outside the npm registry
 # (git/URL/exotic sources anywhere in the graph). The lockfile contains none.
 blockExoticSubdeps: true
+# Fail if a later-published version has weaker trust evidence than an earlier
+# one (trusted publisher → provenance-only → none).
+trustPolicy: no-downgrade
+# Historical third-party versions published after a later major that already
+# had provenance (pnpm checks publish date, not semver). First-party packages
+# are never excluded — pin those instead (see overrides.writr).
+trustPolicyExclude:
+  - semver@6.3.1
+  - ua-parser-js@1.0.41
+# Fail the install when a dependency's lifecycle script is neither allowed nor
+# denied in allowBuilds (no silent ignore of unreviewed build scripts).
+strictDepBuilds: true
+# Pin first-party writr to a provenance-attested release. 6.1.2 in the
+# lockfile is a trust downgrade vs later 6.1.x (docula → writr).
+overrides:
+  writr: 6.1.5
 
 # Install (build) scripts are blocked by default. allowBuilds explicitly
 # allows (true) or denies (false) each dependency that ships one. Add entries
