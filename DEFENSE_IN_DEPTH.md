@@ -5,18 +5,18 @@ Tracking against https://github.com/jaredwray/agentic/blob/main/skills/security/
 Profile: website/app · public
 
 ## 1. Security docs
-- [ ] `SECURITY.md` present — contact info + "How this repository is secured" summary (PR pending)
-- [ ] `DEFENSE_IN_DEPTH.md` present (this file) (PR pending)
+- [ ] `SECURITY.md` present — contact info + "How this repository is secured" summary (PR #153 pending)
+- [ ] `DEFENSE_IN_DEPTH.md` present (this file) (PR #153 pending)
 
 ## 2. CODEOWNERS and cloud bootstrap
-- [ ] `.github/CODEOWNERS` covers `/.github/`, `/.cursor/`, `/.devcontainer/`, `/scripts/` with owners the maintainer names (PR pending)
-- [ ] Codespaces and Cursor Cloud Agents bootstrap Aikido Safe Chain via scripts/setup-cloud-environment.sh (--ci shims, frozen lockfile) (PR pending)
+- [ ] `.github/CODEOWNERS` covers `/.github/`, `/.cursor/`, `/.devcontainer/`, `/scripts/` with owners the maintainer names (PR #153 pending)
+- [ ] Codespaces and Cursor Cloud Agents bootstrap Aikido Safe Chain via scripts/setup-cloud-environment.sh (--ci shims, frozen lockfile) (PR #153 pending)
 
 ## 3. Dependencies (pnpm)
 - [x] `packageManager: pnpm@11.3+` pinned in `package.json` — verified 2026-08-22
 - [x] 7-day cooldown: `minimumReleaseAge: 10080`, `minimumReleaseAgeStrict: true`, `minimumReleaseAgeIgnoreMissingTime: false`; no first-party `minimumReleaseAgeExclude` — verified 2026-08-22
-- [ ] `trustPolicy: no-downgrade`; no first-party `trustPolicyExclude` (PR pending)
-- [ ] Lifecycle scripts blocked: `strictDepBuilds: true`, `dangerouslyAllowAllBuilds: false`, `allowBuilds: {}` baseline (PR pending)
+- [ ] `trustPolicy: no-downgrade`; no first-party `trustPolicyExclude` (PR #153 pending)
+- [ ] Lifecycle scripts blocked: `strictDepBuilds: true`, `dangerouslyAllowAllBuilds: false`, `allowBuilds: {}` baseline (PR #153 pending)
 - [x] `blockExoticSubdeps: true` — verified 2026-08-22
 - [x] Lockfile committed; CI installs with `pnpm install --frozen-lockfile` — verified 2026-08-22
 - [x] No `.github/dependabot.yml`; other dependency-update tools (if any) open PRs only — never auto-merge — verified 2026-08-22
