@@ -36,7 +36,7 @@ jobs:
       - run: pnpm lint
 
   test:
-    name: Type-check, test & build (Node ${{ matrix.node-version }})
+    name: Type-check test and build (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
