@@ -133,3 +133,11 @@ Tests are an inventory of failure modes, not a coverage ritual.
 - GitHub Actions are pinned to full commit SHAs and default to
   `permissions: contents: read`. CI runs lint, type-check, test (with coverage),
   and build on Node 24, plus CodeQL.
+
+## Safe Chain
+
+Package installs in this environment go through Aikido Safe Chain shims. Never bypass them:
+
+- Keep `~/.safe-chain/shims` first on `PATH`.
+- Do not call unshimmed `npm`, `pnpm`, `npx`, or `pnpx`.
+- Do not install packages with `curl | sh` or by pointing at a package manager outside the shim directory.

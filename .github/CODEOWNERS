@@ -1,4 +1,8 @@
-# Code owners — required review on every change, including CI workflows,
-# manifests, lockfiles, and release/security policy.
-# See agentic/defense-in-depth-nodejs.md §5.
-*       @jaredwray
+# High-risk paths. Last matching pattern wins.
+# Root-anchored so nested copies (e.g. skills/**/scripts/) are not owned here.
+# `*` keeps review on every other path as well.
+*              @jaredwray
+/.github/      @jaredwray
+/.cursor/      @jaredwray
+/.devcontainer/ @jaredwray
+/scripts/      @jaredwray
