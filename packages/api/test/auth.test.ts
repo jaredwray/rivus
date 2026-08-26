@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { type AccountId, gravatarUrl, type UserId } from '@rivus/core';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -43,6 +44,22 @@ function verifyCode(app: FastifyInstance, email: string, code: string) {
 /** A 6-digit code guaranteed to differ from `code`. */
 function wrongCode(code: string): string {
 	return code === '000000' ? '111111' : '000000';
+}
+
+const TEST_JWT_SECRET = 'test-secret-value-1234';
+
+function decodeJwtPart(part: string): Record<string, unknown> {
+	return JSON.parse(Buffer.from(part, 'base64url').toString()) as Record<string, unknown>;
+}
+
+/** Forge an HS512 JWT signed with the test HMAC secret (the allowlist should reject it). */
+function hs512Jwt(payload: Record<string, unknown>): string {
+	const header = Buffer.from(JSON.stringify({ alg: 'HS512', typ: 'JWT' })).toString('base64url');
+	const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+	const signature = createHmac('sha512', TEST_JWT_SECRET)
+		.update(`${header}.${body}`)
+		.digest('base64url');
+	return `${header}.${body}.${signature}`;
 }
 
 describe('signup', () => {
@@ -399,6 +416,22 @@ describe('me', () => {
 			method: 'GET',
 			url: '/v1/auth/me',
 			headers: authHeader('garbage.token.value'),
+		});
+		expect(response.statusCode).toBe(401);
+	});
+
+	it('issues HS256 session tokens and rejects a same-secret token with another alg', async () => {
+		const { token } = await signupOwner(app);
+		const [headerPart, payloadPart] = token.split('.');
+		if (!headerPart || !payloadPart) {
+			throw new Error('session token is not a JWT');
+		}
+		expect(decodeJwtPart(headerPart)).toMatchObject({ alg: 'HS256' });
+
+		const response = await app.inject({
+			method: 'GET',
+			url: '/v1/auth/me',
+			headers: authHeader(hs512Jwt(decodeJwtPart(payloadPart))),
 		});
 		expect(response.statusCode).toBe(401);
 	});
