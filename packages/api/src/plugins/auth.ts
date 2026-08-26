@@ -42,7 +42,15 @@ export default fp(
 		await app.register(fastifyCookie);
 		await app.register(fastifyJwt, {
 			secret: app.deps.config.JWT_SECRET,
-			sign: { expiresIn: app.deps.config.JWT_EXPIRES_IN },
+			sign: {
+				expiresIn: app.deps.config.JWT_EXPIRES_IN,
+				// Sessions are HMAC-signed with JWT_SECRET. Pinning HS256 (and
+				// refusing every other alg on verify) closes the RSA→HMAC confusion
+				// class even if a future key source handed us PEM material
+				// (GHSA-ww5h-9m49-7xx4 / AIKIDO-2026-933024).
+				algorithm: 'HS256',
+			},
+			verify: { algorithms: ['HS256'] },
 			// Web clients authenticate via the HttpOnly cookie; native clients keep
 			// sending the bearer token. `jwtVerify` checks the Authorization header
 			// first and falls back to this cookie.

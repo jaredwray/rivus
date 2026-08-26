@@ -50,8 +50,14 @@ trustPolicyExclude:
 strictDepBuilds: true
 # Pin first-party writr to a provenance-attested release. 6.1.2 in the
 # lockfile is a trust downgrade vs later 6.1.x (docula → writr).
+#
+# @fastify/jwt still declares fast-jwt ^6.2.4, which would keep the lockfile
+# on 6.2.4. That range includes GHSA-ww5h-9m49-7xx4 (RSA public keys with
+# non-whitespace prefixes misclassified as HMAC secrets). Force the patched
+# 6.3 line.
 overrides:
   writr: 6.1.5
+  fast-jwt: ^6.3.0
 
 # Install (build) scripts are blocked by default. allowBuilds explicitly
 # allows (true) or denies (false) each dependency that ships one. Add entries
