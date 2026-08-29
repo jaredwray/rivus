@@ -13,8 +13,8 @@
 			"!**/build",
 			"!**/coverage",
 			"!**/node_modules",
-			"!**/.next",
-			"!**/.open-next",
+			"!**/.astro",
+			"!**/*.astro",
 			"!**/.expo",
 			"!**/.wrangler",
 			"!**/.docula",
@@ -22,8 +22,7 @@
 			"!**/*.svg",
 			"!**/openapi.json",
 			"!**/worker-configuration.d.ts",
-			"!**/expo-env.d.ts",
-			"!**/next-env.d.ts"
+			"!**/expo-env.d.ts"
 		]
 	},
 	"formatter": {

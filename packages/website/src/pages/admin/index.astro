@@ -1,0 +1,9 @@
+---
+import { AdminOverviewPage } from '../../views/admin-pages';
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { adminMeta } from '../../lib/meta';
+---
+
+<AdminLayout title={adminMeta.overview.title} robots={adminMeta.overview.robots}>
+	<AdminOverviewPage client:load />
+</AdminLayout>

@@ -1,10 +1,7 @@
-'use client';
-
-import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { type FormEvent, useEffect, useState } from 'react';
 import { apiUrl } from '../../lib/site';
 import { CheckIcon } from './icons';
+import { Link } from './link';
 
 interface PublicAccount {
 	name: string;
@@ -30,15 +27,14 @@ const RETRY_MESSAGE = 'Something went wrong on our end. Check your connection an
  * links unrecognized email senders here; after registering, the visitor goes
  * back to their inbox and replies to Rivus to pick a time.
  *
- * Uses `useSearchParams` (to prefill the email the agent already saw), so the
- * page wraps it in a `<Suspense>` boundary as Next requires.
+ * Prefill `emailPrefill` from the `?email=` query the scheduling agent already
+ * saw — passed in from the page so this island does not need a router hook.
  */
-export function CustomerJoin({ slug }: { slug: string }) {
-	const searchParams = useSearchParams();
+export function CustomerJoin({ slug, emailPrefill = '' }: { slug: string; emailPrefill?: string }) {
 	const [lookup, setLookup] = useState<Lookup>({ phase: 'loading' });
 	const [submission, setSubmission] = useState<Submission>({ phase: 'idle' });
 	const [name, setName] = useState('');
-	const [email, setEmail] = useState(searchParams.get('email') ?? '');
+	const [email, setEmail] = useState(emailPrefill);
 	const [phone, setPhone] = useState('');
 	const [address, setAddress] = useState('');
 

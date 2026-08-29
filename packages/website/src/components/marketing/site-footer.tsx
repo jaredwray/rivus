@@ -1,7 +1,7 @@
-import Link from 'next/link';
 import { footerColumns, siteConfig } from '../../lib/site';
 import { ApiStatus } from '../api-status';
 import { BrandImg } from './brand-img';
+import { Link } from './link';
 
 export function SiteFooter() {
 	return (
@@ -25,9 +25,9 @@ export function SiteFooter() {
 								<div className="footer__col-title">{column.title}</div>
 								<div className="footer__col-links">
 									{column.links.map((link) =>
-										// Site-internal links get client navigation; absolute URLs
-										// (the docs deploy) are plain anchors — the same conditional
-										// legal-page.tsx's renderInline uses.
+										// Site-internal links stay relative; absolute URLs (the docs
+										// deploy) are plain anchors with rel=noreferrer — the same
+										// conditional legal-page.tsx's renderInline uses.
 										link.href.startsWith('/') ? (
 											<Link key={link.label} href={link.href}>
 												{link.label}

@@ -1,6 +1,6 @@
-import Link from 'next/link';
 import { industries } from '../../lib/industries';
 import { ArrowRightIcon } from './icons';
+import { Link } from './link';
 
 /**
  * Trade cards on the home page. The hero mock is plumber-flavored, so this

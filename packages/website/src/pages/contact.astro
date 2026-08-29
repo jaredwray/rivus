@@ -1,0 +1,9 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { pageMeta } from '../lib/meta';
+import { ContactPage } from '../views/contact-page';
+---
+
+<Layout {...pageMeta['/contact']}>
+	<ContactPage client:load />
+</Layout>

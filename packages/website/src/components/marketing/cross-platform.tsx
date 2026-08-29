@@ -1,6 +1,6 @@
-import Link from 'next/link';
 import { platforms } from '../../lib/site';
 import { Icon } from './icons';
+import { Link } from './link';
 
 export function CrossPlatform() {
 	return (

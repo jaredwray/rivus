@@ -1,0 +1,9 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { notFoundMeta } from '../lib/meta';
+import { NotFoundPage } from '../views/not-found-page';
+---
+
+<Layout {...notFoundMeta}>
+	<NotFoundPage client:load />
+</Layout>

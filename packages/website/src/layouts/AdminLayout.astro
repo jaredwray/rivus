@@ -1,0 +1,11 @@
+---
+import '../styles/admin.css';
+import Layout from './Layout.astro';
+import type { PageMeta } from '../lib/meta';
+
+type Props = PageMeta;
+---
+
+<Layout {...Astro.props}>
+	<slot />
+</Layout>

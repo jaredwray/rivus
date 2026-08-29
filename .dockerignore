@@ -5,8 +5,7 @@
 **/dist
 **/build
 **/coverage
-**/.next
-**/.open-next
+**/.astro
 **/.expo
 **/.wrangler
 **/.turbo

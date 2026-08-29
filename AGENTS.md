@@ -9,7 +9,7 @@ small, typed, and tested.
 packages/
   core/      # @rivus/core   — shared types, Zod schemas, utilities (tsdown lib)
   api/       # @rivus/api    — Fastify REST API on MongoDB Atlas (Mongoose) + JWT
-  website/   # @rivus/website— Next.js 16 marketing site
+  website/   # @rivus/website— Astro marketing site
   docs/      # @rivus/docs   — Docula site (docs, changelog, API reference)
   app/       # @rivus/app    — Expo app (iOS / Android / Web)
 ```
@@ -38,7 +38,7 @@ Before committing, the three gates that CI runs must pass locally:
   `typescript`, `vitest`, `@vitest/coverage-v8`, `@faker-js/faker`, `tsdown`,
   `zod`, and `@biomejs/biome`, depend on `"catalog:"` rather than a literal range.
 - **`@rivus/core` is consumed as source** (`workspace:*`; its `main` points at
-  `src`). Apps bundle it: tsdown `deps.alwaysBundle`, Next `transpilePackages`,
+  `src`). Apps bundle it: tsdown `deps.alwaysBundle`, Astro/Vite,
   Metro/esbuild inline it. There is no build-order dependency on it.
 
 ## Design system
@@ -119,8 +119,9 @@ Tests are an inventory of failure modes, not a coverage ritual.
     Register its adapter in `services/agent/channels.ts` and it inherits inbox
     reply-out automatically. Provider wire details stay behind config +
     `TODO(<provider>)` markers (see `services/zernio-whatsapp.ts`).
-- **website** — `type-check` runs `next typegen` first; `next-env.d.ts` is
-  generated, not committed. All UI follows [`DESIGN_SYSTEM.md`](./DESIGN_SYSTEM.md).
+- **website** — static Astro build with React islands; `type-check` runs
+  `tsc --noEmit` (Astro pages are type-checked by `astro build`). Biome does
+  not lint `.astro` files. All UI follows [`DESIGN_SYSTEM.md`](./DESIGN_SYSTEM.md).
 - **docs** — `scripts/sync-openapi.mjs` copies the API spec into the site on
   build. `githubPath` is gated on `GITHUB_TOKEN` so builds stay green offline.
 - **app** — The API client (`src/api`) is RN-free so it is unit-tested under

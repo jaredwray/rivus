@@ -1,0 +1,9 @@
+---
+import { AdminEscalationsPage } from '../../views/admin-pages';
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { adminMeta } from '../../lib/meta';
+---
+
+<AdminLayout title={adminMeta.escalations.title} robots={adminMeta.escalations.robots}>
+	<AdminEscalationsPage client:load />
+</AdminLayout>

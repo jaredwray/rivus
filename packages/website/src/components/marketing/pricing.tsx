@@ -1,7 +1,7 @@
-import Link from 'next/link';
 import { homeFaqTeasers } from '../../lib/faq';
 import { pricingTiers, signupUrl } from '../../lib/site';
 import { ArrowRightIcon, CheckIcon } from './icons';
+import { Link } from './link';
 
 export function Pricing() {
 	return (

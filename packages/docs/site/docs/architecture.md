@@ -14,7 +14,7 @@ rivus/
 ├── packages/
 │   ├── core/      # shared types, Zod schemas, utilities
 │   ├── api/       # Fastify REST API (MongoDB Atlas)
-│   ├── website/   # Next.js marketing site
+│   ├── website/   # Astro marketing site
 │   ├── docs/      # this site (Docula)
 │   └── app/       # Expo app (iOS / Android / Web)
 ├── docker-compose.yml

@@ -13,9 +13,7 @@ coverage/
 .vitest/
 
 # Framework caches
-.next/
-.open-next/
-next-env.d.ts
+.astro/
 .expo/
 .expo-shared/
 web-build/

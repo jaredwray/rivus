@@ -1,0 +1,11 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { pageMeta } from '../lib/meta';
+import { HomePage } from '../views/home-page';
+
+const meta = pageMeta['/'];
+---
+
+<Layout {...meta}>
+	<HomePage client:load />
+</Layout>

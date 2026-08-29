@@ -1,0 +1,9 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { pageMeta } from '../lib/meta';
+import { PressPage } from '../views/press-page';
+---
+
+<Layout {...pageMeta['/press']}>
+	<PressPage client:load />
+</Layout>

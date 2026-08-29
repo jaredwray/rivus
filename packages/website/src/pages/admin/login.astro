@@ -1,0 +1,9 @@
+---
+import { AdminLogin } from '../../components/admin/admin-login';
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { adminMeta } from '../../lib/meta';
+---
+
+<AdminLayout title={adminMeta.login.title} robots={adminMeta.login.robots}>
+	<AdminLogin client:load />
+</AdminLayout>

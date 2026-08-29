@@ -1,12 +1,7 @@
-'use client';
-
-import { usePathname } from 'next/navigation';
 import { adminNav, urgentEscalations } from '../../lib/admin';
 import { AdminNavIcon } from './admin-icons';
 
-export function AdminBottomNav() {
-	const pathname = usePathname();
-
+export function AdminBottomNav({ pathname }: { pathname: string }) {
 	return (
 		<nav className="admin-bottomnav">
 			{adminNav.map((item) => {

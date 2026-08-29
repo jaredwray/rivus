@@ -1,0 +1,9 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { pageMeta } from '../lib/meta';
+import { AcceptableUsePage } from '../views/legal-pages';
+---
+
+<Layout {...pageMeta['/acceptable-use']}>
+	<AcceptableUsePage client:load />
+</Layout>

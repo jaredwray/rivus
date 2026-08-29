@@ -18,7 +18,7 @@ app — all sharing one core library and one toolchain.
 | ------------------------------------ | --------------------------------------- | -------------------------------------------------------------------- |
 | [`@rivus/core`](./packages/core)     | TypeScript, Zod                         | Shared domain types, schemas, and utilities                          |
 | [`@rivus/api`](./packages/api)       | Fastify, Mongoose (MongoDB Atlas), JWT  | REST API with an OpenAPI document generated from its route schemas   |
-| [`@rivus/website`](./packages/website) | Next.js 16 (App Router), React 19     | Marketing site                                                       |
+| [`@rivus/website`](./packages/website) | Astro + React islands               | Marketing site                                                       |
 | [`@rivus/docs`](./packages/docs)     | Docula                                  | Docs, changelog, and the API reference                              |
 | [`@rivus/app`](./packages/app)       | Expo (iOS / Android / Web)              | Cross-platform client application                                   |
 

@@ -13,7 +13,7 @@ of four workspaces:
 | Package          | What it is                                               |
 | ---------------- | -------------------------------------------------------- |
 | `@rivus/api`     | Fastify REST API backed by MongoDB Atlas (Mongoose)      |
-| `@rivus/website` | Next.js marketing site                                   |
+| `@rivus/website` | Astro marketing site                                     |
 | `@rivus/app`     | Expo client for iOS, Android, and Web                    |
 | `@rivus/docs`    | This documentation site (Docula)                         |
 
