@@ -1,5 +1,3 @@
-'use client';
-
 import { useState } from 'react';
 import { adminUser } from '../../lib/admin';
 import { BrandImg } from '../marketing/brand-img';

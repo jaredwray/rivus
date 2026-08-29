@@ -127,11 +127,10 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       # Crawlable: allow-all robots.txt and indexable metadata for the
-      # production site; read at build time by robots.ts and the root layout.
+      # production site; read at build time by robots.txt.ts and the root layout.
       RIVUS_ENV: production
-      # Inlined into the Next client bundle by `next build` (run inside the
-      # OpenNext build).
-      NEXT_PUBLIC_API_URL: https://api.rivus.ai
+      # Inlined into the Astro client islands by `astro build`.
+      PUBLIC_API_URL: https://api.rivus.ai
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -142,8 +141,8 @@ jobs:
           mode: firewall-free
           firewall-version: "1.15.0"
       - uses: ./.github/actions/setup
-      - run: pnpm --filter @rivus/website exec opennextjs-cloudflare build
-      - run: pnpm --filter @rivus/website exec opennextjs-cloudflare deploy -- --env production
+      - run: pnpm --filter @rivus/website build
+      - run: pnpm --filter @rivus/website exec wrangler deploy --env production
 
   deploy-api:
     name: Deploy api (container)

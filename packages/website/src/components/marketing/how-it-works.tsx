@@ -1,7 +1,7 @@
-import Link from 'next/link';
 import { channels, outcomes, steps } from '../../lib/site';
 import { BrandImg } from './brand-img';
 import { ArrowRightIcon, CheckIcon, Icon } from './icons';
+import { Link } from './link';
 
 export function HowItWorks() {
 	return (

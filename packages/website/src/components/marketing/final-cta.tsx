@@ -1,7 +1,7 @@
-import Link from 'next/link';
 import { appUrl } from '../../lib/site';
 import { BrandImg } from './brand-img';
 import { ArrowRightIcon } from './icons';
+import { Link } from './link';
 
 export function FinalCta() {
 	return (

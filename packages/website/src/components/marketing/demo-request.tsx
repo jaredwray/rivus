@@ -1,10 +1,8 @@
-'use client';
-
 import { SMS_CONSENT_DISCLOSURE } from '@rivus/core';
-import Link from 'next/link';
 import { type FormEvent, useState } from 'react';
 import { apiUrl } from '../../lib/site';
 import { CheckIcon } from './icons';
+import { Link } from './link';
 
 type Submission =
 	| { phase: 'idle' }

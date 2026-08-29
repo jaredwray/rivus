@@ -33,14 +33,29 @@ describe('resolveAppUrl', () => {
 		expect(resolveAppUrl({})).toBe('https://app.rivus.ai');
 	});
 
-	it('lets NEXT_PUBLIC_APP_URL override the environment mapping', () => {
+	it('lets PUBLIC_APP_URL override the environment mapping', () => {
+		expect(
+			resolveAppUrl({ RIVUS_ENV: 'development', PUBLIC_APP_URL: 'http://localhost:8081' }),
+		).toBe('http://localhost:8081');
+	});
+
+	it('still honors the legacy NEXT_PUBLIC_APP_URL override', () => {
 		expect(
 			resolveAppUrl({ RIVUS_ENV: 'development', NEXT_PUBLIC_APP_URL: 'http://localhost:8081' }),
 		).toBe('http://localhost:8081');
 	});
 
+	it('prefers PUBLIC_APP_URL when both overrides are set', () => {
+		expect(
+			resolveAppUrl({
+				PUBLIC_APP_URL: 'http://localhost:4321',
+				NEXT_PUBLIC_APP_URL: 'http://localhost:8081',
+			}),
+		).toBe('http://localhost:4321');
+	});
+
 	it('strips trailing slashes from the override so appended paths stay clean', () => {
-		expect(resolveAppUrl({ NEXT_PUBLIC_APP_URL: 'https://app.example.com/' })).toBe(
+		expect(resolveAppUrl({ PUBLIC_APP_URL: 'https://app.example.com/' })).toBe(
 			'https://app.example.com',
 		);
 	});
@@ -63,14 +78,20 @@ describe('resolveDocsUrl', () => {
 		expect(resolveDocsUrl({})).toBe('https://docs.rivus.ai');
 	});
 
-	it('lets NEXT_PUBLIC_DOCS_URL override the environment mapping', () => {
+	it('lets PUBLIC_DOCS_URL override the environment mapping', () => {
+		expect(
+			resolveDocsUrl({ RIVUS_ENV: 'development', PUBLIC_DOCS_URL: 'http://localhost:3010' }),
+		).toBe('http://localhost:3010');
+	});
+
+	it('still honors the legacy NEXT_PUBLIC_DOCS_URL override', () => {
 		expect(
 			resolveDocsUrl({ RIVUS_ENV: 'development', NEXT_PUBLIC_DOCS_URL: 'http://localhost:3010' }),
 		).toBe('http://localhost:3010');
 	});
 
 	it('strips trailing slashes from the override so appended paths stay clean', () => {
-		expect(resolveDocsUrl({ NEXT_PUBLIC_DOCS_URL: 'https://docs.example.com/' })).toBe(
+		expect(resolveDocsUrl({ PUBLIC_DOCS_URL: 'https://docs.example.com/' })).toBe(
 			'https://docs.example.com',
 		);
 	});

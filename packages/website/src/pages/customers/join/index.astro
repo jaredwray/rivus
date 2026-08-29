@@ -1,0 +1,17 @@
+---
+import { CustomerJoinFromPath } from '../../../components/marketing/customer-join-from-path';
+import { SiteFooter } from '../../../components/marketing/site-footer';
+import { SiteNav } from '../../../components/marketing/site-nav';
+import Layout from '../../../layouts/Layout.astro';
+import { customerJoinMeta } from '../../../lib/meta';
+---
+
+<Layout {...customerJoinMeta}>
+	<SiteNav client:load />
+	<main id="main" class="join">
+		<div class="join__container">
+			<CustomerJoinFromPath client:load />
+		</div>
+	</main>
+	<SiteFooter client:load />
+</Layout>

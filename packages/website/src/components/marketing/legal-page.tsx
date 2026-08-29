@@ -1,6 +1,6 @@
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 import type { LegalBlock, LegalDoc } from '../../lib/legal';
+import { Link } from './link';
 import { SiteFooter } from './site-footer';
 import { SiteNav } from './site-nav';
 

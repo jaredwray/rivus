@@ -1,0 +1,9 @@
+---
+import { AdminOnboardingPage } from '../../views/admin-pages';
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { adminMeta } from '../../lib/meta';
+---
+
+<AdminLayout title={adminMeta.onboarding.title} robots={adminMeta.onboarding.robots}>
+	<AdminOnboardingPage client:load />
+</AdminLayout>

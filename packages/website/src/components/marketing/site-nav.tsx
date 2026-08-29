@@ -1,10 +1,8 @@
-'use client';
-
-import Link from 'next/link';
 import { useState } from 'react';
 import { appUrl, navLinks, signupUrl } from '../../lib/site';
 import { BrandImg } from './brand-img';
 import { MenuIcon } from './icons';
+import { Link } from './link';
 
 export function SiteNav() {
 	const [open, setOpen] = useState(false);

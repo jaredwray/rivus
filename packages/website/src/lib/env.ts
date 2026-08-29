@@ -18,19 +18,21 @@ export function isProductionEnv(env?: Record<string, string | undefined>): boole
  * The product-app base URL this deployment should link to. Each marketing
  * environment points at its sibling app deployment — dev.rivus.ai must send
  * sign-ups to dev-app.rivus.ai, never the production app — with
- * `NEXT_PUBLIC_APP_URL` as an explicit override for either.
+ * `PUBLIC_APP_URL` (or the legacy `NEXT_PUBLIC_APP_URL`) as an explicit
+ * override for either.
  *
- * Called from next.config.ts at build time (the deploy workflows set
- * `RIVUS_ENV` in the build job's env), which inlines the result into both the
- * server and client bundles as `NEXT_PUBLIC_APP_URL`; client components can't
- * read `RIVUS_ENV` themselves.
+ * Called from astro.config.ts at build time (the deploy workflows set
+ * `RIVUS_ENV` in the build job's env), which inlines the result into the
+ * client bundle as `PUBLIC_APP_URL`; client islands can't read `RIVUS_ENV`
+ * themselves.
  */
 export function resolveAppUrl(env?: Record<string, string | undefined>): string {
 	const target = env ?? (typeof process !== 'undefined' ? process.env : {});
-	if (target.NEXT_PUBLIC_APP_URL) {
+	const override = target.PUBLIC_APP_URL ?? target.NEXT_PUBLIC_APP_URL;
+	if (override) {
 		// Strip trailing slashes so consumers can safely append paths
 		// (`${appUrl}/signup`) without producing `https://host//signup`.
-		return target.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '');
+		return override.replace(/\/+$/, '');
 	}
 	return target.RIVUS_ENV === 'development' ? 'https://dev-app.rivus.ai' : 'https://app.rivus.ai';
 }
@@ -39,12 +41,13 @@ export function resolveAppUrl(env?: Record<string, string | undefined>): string 
  * The docs-site base URL this deployment should link to — the docs sibling of
  * {@link resolveAppUrl}, so dev.rivus.ai sends readers to dev-docs.rivus.ai
  * rather than the production docs. Same build-time inlining contract via
- * `NEXT_PUBLIC_DOCS_URL` in next.config.ts.
+ * `PUBLIC_DOCS_URL` in astro.config.ts.
  */
 export function resolveDocsUrl(env?: Record<string, string | undefined>): string {
 	const target = env ?? (typeof process !== 'undefined' ? process.env : {});
-	if (target.NEXT_PUBLIC_DOCS_URL) {
-		return target.NEXT_PUBLIC_DOCS_URL.replace(/\/+$/, '');
+	const override = target.PUBLIC_DOCS_URL ?? target.NEXT_PUBLIC_DOCS_URL;
+	if (override) {
+		return override.replace(/\/+$/, '');
 	}
 	return target.RIVUS_ENV === 'development' ? 'https://dev-docs.rivus.ai' : 'https://docs.rivus.ai';
 }

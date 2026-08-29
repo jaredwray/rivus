@@ -1,0 +1,9 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { pageMeta } from '../lib/meta';
+import { AppsPage } from '../views/apps-page';
+---
+
+<Layout {...pageMeta['/apps']}>
+	<AppsPage client:load />
+</Layout>

@@ -1,0 +1,6 @@
+# Per-business join pages are a single static template. The slug lives in the
+# URL so the scheduling agent's emailed link stays stable; the page reads it
+# from the path on the client. A 200 rewrite keeps the visible URL.
+# Drop a trailing slash first so `/customers/join/:slug/` still keeps the slug.
+/customers/join/:slug/ /customers/join/:slug 307
+/customers/join/:slug /customers/join 200

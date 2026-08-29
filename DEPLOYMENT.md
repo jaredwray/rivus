@@ -15,7 +15,7 @@ validate the monorepo, then deploy all four packages in parallel:
 | ---------------- | ------------------------------------------ | --------------------------- | ----------------- |
 | `@rivus/api`     | Worker + **Container** (Fastify on Node)   | `dev-api.rivus.ai`          | `api.rivus.ai`    |
 | `@rivus/app`     | Worker **Static Assets** (Expo web export) | `dev-app.rivus.ai`          | `app.rivus.ai`    |
-| `@rivus/website` | Worker via **OpenNext** (Next.js)          | `dev.rivus.ai`              | `rivus.ai`        |
+| `@rivus/website` | Worker **Static Assets** (Astro build)     | `dev.rivus.ai`              | `rivus.ai`        |
 | `@rivus/docs`    | Worker **Static Assets** (Docula build)    | `dev-docs.rivus.ai`         | `docs.rivus.ai`   |
 
 The Rivus chat is served by the API (`POST /v1/chat`) — there is no separate
@@ -55,7 +55,7 @@ default is "don't crawl":
 
 | Package          | Crawl rule emitted                                             |
 | ---------------- | ------------------------------------------------------------- |
-| `@rivus/website` | `src/app/robots.ts` builds `/robots.txt`; the root layout also adds a `noindex, nofollow` meta tag outside production. |
+| `@rivus/website` | `src/pages/robots.txt.ts` builds `/robots.txt`; the root layout also adds a `noindex, nofollow` meta tag outside production. |
 | `@rivus/docs`    | `scripts/write-robots.mjs` writes `site/dist/robots.txt` after the Docula build. |
 | `@rivus/app`     | `scripts/write-robots.mjs` writes `dist/robots.txt` after the Expo web export. |
 
@@ -222,9 +222,9 @@ pnpm --filter @rivus/docs    build && pnpm --filter @rivus/docs exec wrangler de
 EXPO_PUBLIC_API_URL=https://dev-api.rivus.ai \
   pnpm --filter @rivus/app export:web && \
   pnpm --filter @rivus/app exec wrangler deploy --env development
-NEXT_PUBLIC_API_URL=https://dev-api.rivus.ai \
-  pnpm --filter @rivus/website exec opennextjs-cloudflare build && \
-  pnpm --filter @rivus/website exec opennextjs-cloudflare deploy -- --env development
+PUBLIC_API_URL=https://dev-api.rivus.ai \
+  pnpm --filter @rivus/website build && \
+  pnpm --filter @rivus/website exec wrangler deploy --env development
 pnpm --filter @rivus/api     exec wrangler deploy --env development   # needs Docker
 ```
 

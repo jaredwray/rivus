@@ -326,14 +326,36 @@ export const pricingTiers: PricingTier[] = [
 ];
 
 /**
+ * Read a PUBLIC_* build-time URL. Vite/Astro inline `import.meta.env.PUBLIC_*`
+ * into the client bundle; tests and Node read `process.env`. The NEXT_PUBLIC_*
+ * aliases keep existing local `.env` files working after the Next.js migration.
+ */
+function publicUrl(
+	viteValue: string | undefined,
+	names: readonly string[],
+	fallback: string,
+): string {
+	const fromProcess =
+		typeof process !== 'undefined'
+			? names.map((name) => process.env[name]).find(Boolean)
+			: undefined;
+	const value = fromProcess || viteValue;
+	return typeof value === 'string' && value.length > 0 ? value.replace(/\/+$/, '') : fallback;
+}
+
+/**
  * Base URL of the docs site (Docula: guides, API reference, changelog) — the
- * docs sibling of `appUrl` below, resolved per environment by next.config.ts
+ * docs sibling of `appUrl` below, resolved per environment by astro.config.ts
  * (`resolveDocsUrl`) so dev deploys link dev-docs.rivus.ai. The docs are a
  * separate deploy, so links to them are absolute external URLs rendered as
  * plain anchors (see SiteFooter). Defined above `footerColumns`, which
  * references it.
  */
-export const docsUrl = process.env.NEXT_PUBLIC_DOCS_URL ?? 'https://docs.rivus.ai';
+export const docsUrl = publicUrl(
+	import.meta.env.PUBLIC_DOCS_URL,
+	['PUBLIC_DOCS_URL', 'NEXT_PUBLIC_DOCS_URL'],
+	'https://docs.rivus.ai',
+);
 
 export interface FooterColumn {
 	title: string;
@@ -390,19 +412,27 @@ export const footerColumns: FooterColumn[] = [
 	},
 ];
 
-export const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+export const apiUrl = publicUrl(
+	import.meta.env.PUBLIC_API_URL,
+	['PUBLIC_API_URL', 'NEXT_PUBLIC_API_URL'],
+	'http://localhost:4000',
+);
 
 /**
  * Base URL of the Rivus product app — where sign-in, signup, and demo booking
  * live. It's a separate deploy from this marketing site, so links to it are
- * absolute external URLs (plain anchors, not next/link).
+ * absolute external URLs (plain anchors, not the in-site `Link`).
  *
- * `NEXT_PUBLIC_APP_URL` is injected at build time by next.config.ts
+ * `PUBLIC_APP_URL` is injected at build time by astro.config.ts
  * (`resolveAppUrl`), which points each environment at its sibling app deploy —
  * dev.rivus.ai links to dev-app.rivus.ai. The fallback here only matters in
  * tests, where the config's env injection doesn't run.
  */
-export const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.rivus.ai';
+export const appUrl = publicUrl(
+	import.meta.env.PUBLIC_APP_URL,
+	['PUBLIC_APP_URL', 'NEXT_PUBLIC_APP_URL'],
+	'https://app.rivus.ai',
+);
 
 /** Where every "Get started" CTA lands: the product app's signup. */
 export const signupUrl = `${appUrl}/signup`;

@@ -1,0 +1,9 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { pageMeta } from '../lib/meta';
+import { DemoPage } from '../views/demo-page';
+---
+
+<Layout {...pageMeta['/demo']}>
+	<DemoPage client:load />
+</Layout>

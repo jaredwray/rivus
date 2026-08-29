@@ -1,0 +1,9 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { pageMeta } from '../lib/meta';
+import { ComparePage } from '../views/compare-page';
+---
+
+<Layout {...pageMeta['/compare']}>
+	<ComparePage client:load />
+</Layout>

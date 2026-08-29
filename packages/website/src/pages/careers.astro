@@ -1,0 +1,9 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { pageMeta } from '../lib/meta';
+import { CareersPage } from '../views/careers-page';
+---
+
+<Layout {...pageMeta['/careers']}>
+	<CareersPage client:load />
+</Layout>

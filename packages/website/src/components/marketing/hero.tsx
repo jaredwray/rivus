@@ -1,9 +1,9 @@
-import Link from 'next/link';
 import { Fragment } from 'react';
 import { industries } from '../../lib/industries';
 import { signupUrl, siteConfig } from '../../lib/site';
 import { BrandImg } from './brand-img';
 import { ArrowRightIcon, BoltIcon, CheckIcon, PlayIcon } from './icons';
+import { Link } from './link';
 
 export function Hero() {
 	return (

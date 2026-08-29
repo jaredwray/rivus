@@ -3,14 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiUrl } from '../../lib/site';
 import { CustomerJoin } from './customer-join';
 
-// The component reads the ?email= prefill through next/navigation's
-// useSearchParams; back it with a plain URLSearchParams the tests control.
-const params = vi.hoisted(() => ({ search: '' }));
-
-vi.mock('next/navigation', () => ({
-	useSearchParams: () => new URLSearchParams(params.search),
-}));
-
 const account = { name: 'Cascade Plumbing', slug: 'cascade-plumbing' };
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -54,7 +46,6 @@ function fillAndSubmit(fields: { name: string; email?: string; phone?: string; a
 
 afterEach(() => {
 	vi.unstubAllGlobals();
-	params.search = '';
 });
 
 describe('CustomerJoin', () => {
@@ -178,9 +169,11 @@ describe('CustomerJoin', () => {
 		expect(screen.getByRole('alert').textContent).toContain('try again');
 	});
 
-	it('prefills the email field from the ?email= query param', async () => {
-		params.search = 'email=dana%40example.com';
-		await renderLoaded();
+	it('prefills the email field from the emailPrefill prop', async () => {
+		const mock = stubLookup(jsonResponse(account, 200));
+		render(<CustomerJoin slug={account.slug} emailPrefill="dana@example.com" />);
+		await screen.findByRole('heading', { name: `Join ${account.name}` });
+		expect(mock).toHaveBeenCalled();
 
 		const input = screen.getByLabelText('Email') as HTMLInputElement;
 		expect(input.value).toBe('dana@example.com');

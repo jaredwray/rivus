@@ -1,13 +1,8 @@
-'use client';
-
-import { usePathname } from 'next/navigation';
 import { adminNav, adminUser } from '../../lib/admin';
 import { BrandImg } from '../marketing/brand-img';
 import { AdminNavIcon, ChevronDownIcon } from './admin-icons';
 
-export function AdminSidebar() {
-	const pathname = usePathname();
-
+export function AdminSidebar({ pathname }: { pathname: string }) {
 	return (
 		<aside className="admin-sidebar">
 			<div className="admin-sidebar__brand">

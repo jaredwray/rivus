@@ -1,0 +1,17 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { industryPageMeta, industryStaticParams } from '../../lib/meta';
+import { IndustryPage, requireIndustry } from '../../views/industry-page';
+
+export function getStaticPaths() {
+	return industryStaticParams().map(({ slug }) => ({ params: { slug } }));
+}
+
+const slug = Astro.params.slug ?? '';
+const industry = requireIndustry(slug);
+const meta = industryPageMeta(slug);
+---
+
+<Layout {...meta}>
+	<IndustryPage client:load industry={industry} />
+</Layout>
